@@ -21,11 +21,11 @@ def test_rest_positions():
 
 
 def test_gutter_curve():
-    from page_curl import gutter_rise
+    from page_curl import gutter_rise, GUTTER
     rise = gutter_rise(W)
     assert 0.03 < rise < 0.1
     for t, sign in ((0.0, 1), (1.0, -1)):
-        g = sheet_vertices(t, W, H, NX, NY, ZR, ZR, gutter=0.38).reshape(NY, NX, 3)
+        g = sheet_vertices(t, W, H, NX, NY, ZR, ZR, gutter=GUTTER).reshape(NY, NX, 3)
         assert np.allclose(g[:, 0, 2], ZR)                     # starts at the spine
         assert abs(g[0, -1, 2] - (ZR + rise)) < 2e-3           # outer part sits a rise higher
         assert np.all(np.diff(g[0, :, 2]) >= -1e-9)            # never dips

@@ -1,5 +1,11 @@
 # Changes
 
+## 0.4.0
+- Move the camera with the mouse: in "Set up the shot", drag to look around the book, right-drag to move it, mouse wheel to zoom, double-click to reset.
+- Pages curve down into the spine like a real open book.
+- Thicker book with a paper block that follows the page curve; page edges show stacked sheets.
+- Leather: fine pebbled grain and a faint waxed sheen instead of cloudy blotches.
+
 ## 0.3.0
 - New Camera panel: start from Eye level, Top-down, Angled or Low angle, then adjust tilt, turn, picture tilt, perspective, size and position.
 - Live outline of the shot that updates while you drag, before any rendering.
