@@ -599,7 +599,7 @@ def setup_render(job):
         r.engine = 'CYCLES'
         kind = enable_gpu_cycles()
         scene.cycles.device = 'GPU' if kind else 'CPU'
-        scene.cycles.samples = 96
+        scene.cycles.samples = int(job.get('samples', 96))
         scene.cycles.use_denoising = True
         log(f'INFO Cycles on {kind or "CPU (no GPU found)"}')
     else:

@@ -1,0 +1,98 @@
+name: Test renders
+
+# Renders key frames with real Blender whenever the 3D scene changes, and publishes a
+# contact sheet to the "previews" branch so the look can be checked without a PC.
+on:
+  push:
+    branches: [main]
+    paths:
+      - book_scene.py
+      - page_curl.py
+      - camera_fit.py
+      - templates.py
+      - blender_bridge.py
+      - resources/**
+      - tools/**
+      - .github/workflows/preview.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: previews
+  cancel-in-progress: true
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Python packages
+        run: python -m pip install numpy pillow
+
+      - name: Find the newest Blender
+        id: blender
+        run: |
+          python - <<'EOF' >> "$GITHUB_OUTPUT"
+          import re, urllib.request
+          base = 'https://download.blender.org/release/'
+          html = urllib.request.urlopen(base, timeout=30).read().decode()
+          dirs = sorted(set(re.findall(r'Blender(\d+)\.(\d+)/', html)), key=lambda v: (int(v[0]), int(v[1])))
+          for major, minor in reversed(dirs):
+              page = urllib.request.urlopen(f'{base}Blender{major}.{minor}/', timeout=30).read().decode()
+              files = re.findall(r'(blender-(\d+)\.(\d+)\.(\d+)-linux-x64\.tar\.xz)"', page)
+              if files:
+                  best = max(files, key=lambda f: (int(f[1]), int(f[2]), int(f[3])))
+                  print(f'url={base}Blender{major}.{minor}/{best[0]}')
+                  print(f'version={best[1]}.{best[2]}.{best[3]}')
+                  break
+          EOF
+
+      - name: Cache Blender
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ~/blender
+          key: blender-${{ steps.blender.outputs.version }}
+
+      - name: Download Blender ${{ steps.blender.outputs.version }}
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/blender
+          curl -sSL "${{ steps.blender.outputs.url }}" | tar -xJ -C ~/blender --strip-components=1
+
+      - name: System libraries
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libxi6 libxxf86vm1 libxfixes3 libxrender1 libgl1 libegl1 \
+            libxkbcommon0 libsm6 xvfb libgl1-mesa-dri fonts-dejavu-core > /dev/null
+
+      - name: Render with EEVEE (software OpenGL, may be unsupported)
+        continue-on-error: true
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+        run: xvfb-run -a -s "-screen 0 1280x720x24" python tools/ci_preview.py ~/blender/blender out eevee
+
+      - name: Render with Cycles (CPU)
+        run: python tools/ci_preview.py ~/blender/blender out cycles
+
+      - name: Publish to the previews branch
+        run: |
+          mkdir -p pub
+          cp out/sheet_*.png pub/ 2>/dev/null || true
+          cp out/*.log pub/ 2>/dev/null || true
+          echo "commit ${GITHUB_SHA} · Blender ${{ steps.blender.outputs.version }}" > pub/INFO.txt
+          cd pub
+          git init -q -b previews
+          git config user.name "preview-bot"
+          git config user.email "preview-bot@users.noreply.github.com"
+          git add -A
+          git commit -qm "Test renders for ${GITHUB_SHA::7}"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" previews
