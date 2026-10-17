@@ -542,7 +542,9 @@ def setup_camera(job):
     vfov = 2 * math.atan(math.tan(hfov / 2) * h / w)
     book_w = 2 * (PAGE_W + COVER_MARGIN)
     book_h = PAGE_H + 2 * COVER_MARGIN
-    dist = max(book_w / 2 / math.tan(hfov / 2), book_h / 2 / math.tan(vfov / 2)) * 1.12 / job['zoom']
+    # Extra room above the book: a page rising mid-turn comes towards the camera and looks bigger.
+    room = {'top': 1.38, 'angled': 1.25, 'low': 1.18}[job['camera']]
+    dist = max(book_w / 2 / math.tan(hfov / 2), book_h / 2 / math.tan(vfov / 2)) * room / job['zoom']
     elevation = {'top': 89.9, 'angled': 58.0, 'low': 34.0}[job['camera']]
     e = math.radians(elevation)
     tz = COVER_T + BLOCK_H

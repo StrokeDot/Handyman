@@ -784,6 +784,11 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setStyle('Fusion')
+    check = (paths.resource_dir() / 'assets' / 'check.svg').as_posix()
+    app.setStyleSheet(
+        'QCheckBox::indicator{width:15px;height:15px;border:1px solid #8a8a92;border-radius:3px;background:#2a2a30}'
+        'QCheckBox::indicator:hover{border-color:#c0c0c8}'
+        f'QCheckBox::indicator:checked{{background:#2f7de1;border-color:#2f7de1;image:url("{check}")}}')
     w = Studio()
     w.resize(1440, 860)
     w.show()
