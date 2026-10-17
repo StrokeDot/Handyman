@@ -11,6 +11,7 @@ on:
       - camera_fit.py
       - templates.py
       - blender_bridge.py
+      - book_model.py
       - resources/**
       - tools/**
       - .github/workflows/preview.yml

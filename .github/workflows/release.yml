@@ -32,6 +32,7 @@ jobs:
           python test_curl.py
           python test_support.py
           python test_camera.py
+          python test_model.py
           python test_scene_mock.py > scene_mock.log
           python test_app_smoke.py
 
@@ -52,6 +53,7 @@ jobs:
           --add-data "book_scene.py;."
           --add-data "page_curl.py;."
           --add-data "camera_fit.py;."
+          --add-data "book_model.py;."
           --add-data "resources;resources"
           --add-data "assets;assets"
           app.py
@@ -65,6 +67,7 @@ jobs:
           test -f dist/Handyman/_internal/book_scene.py
           test -f dist/Handyman/_internal/page_curl.py
           test -f dist/Handyman/_internal/camera_fit.py
+          test -f dist/Handyman/_internal/book_model.py
           test -f dist/Handyman/_internal/resources/books/leather-journal/book.json
 
       - name: Build installer

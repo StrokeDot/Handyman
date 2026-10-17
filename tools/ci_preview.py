@@ -86,7 +86,7 @@ def main():
                           new_image=str(out / 'emblem.png'))
     quality = 'final' if engine == 'eevee' else 'cycles'
     base = dict(width=640, height=360, fps=24, start_hold=0.3, turn_seconds=1.4, pause=0.4, end_hold=0.3,
-                start_closed=True, open_seconds=1.6, curl=0.9, quality='Final (recommended)',
+                start_closed=True, open_seconds=1.6, open_at=0.04, curl=0.9, quality='Final (recommended)',
                 blend='Ink on paper (blends in)')
     shots = []
     for name, cam in (('eye', dict(tilt=50, turn=0, roll=-3, lens=35, zoom=1.0, move='none')),

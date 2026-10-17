@@ -56,8 +56,9 @@ def sheet_vertices(p, width, height, nx, ny, z_right, z_left,
     lag    how far the top edge trails the bottom edge
     corner extra curl near the bottom corner
     peel   how far the corner lifts before the turn (radians at the corner)
-    gutter curve of a resting page out of the spine (0 = flat). z_right / z_left are the spine
-           heights; the flat part of a resting page sits gutter_rise() higher.
+    gutter curve of a resting page out of the spine (0 = flat), or (right, left) when the two
+           stacks differ in thickness. z_right / z_left are the spine heights; the flat part of
+           a resting page sits gutter_rise() higher.
     Returns float array of shape (ny * nx, 3).
     """
     p = float(np.clip(p, 0.0, 1.0))
@@ -76,9 +77,12 @@ def sheet_vertices(p, width, height, nx, ny, z_right, z_left,
     bend = curl * np.sin(math.pi * tr) * (1.0 + corner * (1.0 - v))
     frac = (s / width) ** power
     angle = theta[:, None] + bend[:, None] * frac[None, :]
-    if gutter:
+    g_right, g_left = gutter if isinstance(gutter, (tuple, list)) else (gutter, gutter)
+    if g_right or g_left:
         # Resting on the right the page rises out of the spine; resting on the left, mirrored.
-        angle = angle + gutter_angle(s, width, gutter)[None, :] * (1.0 - 2.0 * ease(tr))[:, None]
+        e = ease(tr)[:, None]
+        angle = angle + gutter_angle(s, width, g_right)[None, :] * (1.0 - e) \
+            - gutter_angle(s, width, g_left)[None, :] * e
 
     # Corner peel: only the outer part of the lower rows, fading out as the turn gets going.
     hold = lift * (1.0 - float(ease(t / 0.45)))

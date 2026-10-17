@@ -15,15 +15,14 @@ import bpy
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from page_curl import (ease, sheet_vertices, grid_faces, grid_uvs, Timeline, layout_pages,  # noqa: E402
-                       GUTTER, gutter_rise, rest_profile)
+import book_model as bm  # noqa: E402
+from page_curl import ease, sheet_vertices, grid_faces, grid_uvs, Timeline, layout_pages  # noqa: E402
 
-PAGE_W = 1.0
+PAGE_W = bm.PAGE_W
 PAGE_H = 1.4              # replaced from the template's page_aspect
-COVER_MARGIN = 0.05
-COVER_T = 0.03
-BLOCK_H = 0.11            # paper block thickness: a real journal, not a pamphlet
-SHEET_GAP = 0.0012
+COVER_MARGIN = bm.COVER_MARGIN
+COVER_T = bm.COVER_T
+LAYOUT = bm.Layout()      # replaced in build_book
 GRID_X, GRID_Y = 48, 28
 
 
@@ -390,7 +389,7 @@ def quad(name, cx, cy, z, w, h, mat, parent=None):
 
 
 def make_sheet(name, mat, t, z_right, z_left, curl, parent):
-    verts = sheet_vertices(t, PAGE_W, PAGE_H, GRID_X, GRID_Y, z_right, z_left, curl=curl, gutter=GUTTER)
+    verts = sheet_vertices(t, PAGE_W, PAGE_H, GRID_X, GRID_Y, z_right, z_left, curl=curl, gutter=LAYOUT.gutter)
     mesh = bpy.data.meshes.new(name)
     mesh.from_pydata(verts.tolist(), [], grid_faces(GRID_X, GRID_Y))
     uvs = grid_uvs(GRID_X, GRID_Y)
@@ -408,60 +407,26 @@ def make_sheet(name, mat, t, z_right, z_left, curl, parent):
 
 
 def update_sheet(ob, t, z_right, z_left, curl):
-    verts = sheet_vertices(t, PAGE_W, PAGE_H, GRID_X, GRID_Y, z_right, z_left, curl=curl, gutter=GUTTER)
+    verts = sheet_vertices(t, PAGE_W, PAGE_H, GRID_X, GRID_Y, z_right, z_left, curl=curl, gutter=LAYOUT.gutter)
     ob.data.vertices.foreach_set('co', verts.astype(np.float32).ravel())
     ob.data.update()
 
 
-def page_block(name, side, z_bottom, z_spine, mat, parent):
+def page_block(name, side, mat, parent):
     """Paper block whose top follows the gutter curve. side = +1 right half, -1 left half."""
-    px, pz = rest_profile(PAGE_W - 0.004, 24)
-    px = side * (px + 0.002)
-    y0, y1 = -PAGE_H / 2 + 0.004, PAGE_H / 2 - 0.004
-    n = len(px)
-    verts = []
-    for y in (y0, y1):
-        verts += [(px[i], y, z_spine + pz[i]) for i in range(n)]        # top curve
-        verts += [(px[-1], y, z_bottom), (px[0], y, z_bottom)]           # bottom outer, bottom spine
-    m = n + 2
-    faces = []
-    for i in range(n - 1):                                                # curved top
-        faces.append((i, i + 1, m + i + 1, m + i))
-    faces.append((n - 1, n, m + n, m + n - 1))                            # outer side
-    faces.append((n, n + 1, m + n + 1, m + n))                            # bottom
-    faces.append((n + 1, 0, m, m + n + 1))                                # spine side
-    faces.append(tuple(range(m - 1, -1, -1)))                             # front end
-    faces.append(tuple(range(m, 2 * m)))                                  # back end
-    if side < 0:
-        faces = [tuple(reversed(f)) for f in faces]
+    verts, faces = bm.block_prism(LAYOUT, side)
     mesh = bpy.data.meshes.new(name)
-    mesh.from_pydata(verts, [], faces)
+    mesh.from_pydata(verts.tolist(), [], faces)
     mesh.validate()
     mesh.materials.append(mat)
     return link_object(bpy.data.objects.new(name, mesh), parent)
 
 
-def spine_object(book, height_closed, leather, parent):
+def spine_object(book, leather, parent):
     """Leather strip under the gutter when open, wrapping the book's side when closed."""
-    nu, nv = 9, 60
-    hy = PAGE_H / 2 + COVER_MARGIN
-    u = np.linspace(0, 1, nu)
-    yv = np.linspace(-hy, hy, nv)
-    bands = np.zeros(nv)
-    n = book['spine_bands']
-    for i in range(n):
-        c = -hy * 0.7 + (1.4 * hy) * (i + 0.5) / n
-        bands += 0.007 * np.exp(-((yv - c) / 0.025) ** 2)
-    open_pts, closed_pts = [], []
-    for j in range(nv):
-        for i in range(nu):
-            bulge = math.sin(math.pi * u[i])
-            open_pts.append(((u[i] - 0.5) * 0.12, yv[j], -0.004 - 0.01 * bulge - bands[j]))
-            closed_pts.append((-0.03 * bulge - bands[j], yv[j], u[i] * height_closed))
-    faces = [(j * nu + i, j * nu + i + 1, (j + 1) * nu + i + 1, (j + 1) * nu + i)
-             for j in range(nv - 1) for i in range(nu - 1)]
+    open_pts, closed_pts, faces = bm.spine_shapes(LAYOUT, int(book['spine_bands']))
     mesh = bpy.data.meshes.new('Spine')
-    mesh.from_pydata(open_pts, [], faces)
+    mesh.from_pydata(open_pts.tolist(), [], faces)
     if hasattr(mesh, 'shade_smooth'):
         mesh.shade_smooth()
     mesh.materials.append(leather)
@@ -471,7 +436,7 @@ def spine_object(book, height_closed, leather, parent):
     link_object(ob, parent)
     ob.shape_key_add(name='Open')
     key = ob.shape_key_add(name='Closed')
-    key.data.foreach_set('co', np.array(closed_pts, dtype=np.float32).ravel())
+    key.data.foreach_set('co', closed_pts.astype(np.float32).ravel())
     return key
 
 
@@ -512,16 +477,15 @@ def title_text(book, cx, cy, z, cover_h, parent, leather):
 
 def build_book(job):
     """Creates every object. Returns what the frame loop animates."""
-    global PAGE_H
+    global PAGE_H, LAYOUT
     book = job['book']
-    PAGE_H = PAGE_W * book['page_aspect']
-    m = COVER_MARGIN
-    hy = PAGE_H / 2 + m
-    top = COVER_T + BLOCK_H
     images = job['images']
     turns, left_i, sheets, right_i = layout_pages(len(images))
-    hinge_z = top + (turns + 1) * SHEET_GAP + 0.001
-    rise = gutter_rise(PAGE_W)   # the flat part of each page is at `top`; the spine sits lower
+    LAYOUT = L = bm.Layout(book['page_aspect'], turns, job.get('open_at', 0.04))
+    PAGE_H = L.page_h
+    m = COVER_MARGIN
+    hy = L.cover_h / 2
+    hinge_z = L.hinge
 
     leather = leather_material(book['leather_color'])
     edges = page_edge_material(book)
@@ -533,22 +497,21 @@ def build_book(job):
 
     # Open-book layout. The left half (front cover side) hangs on the hinge.
     box('CoverRight', 0, PAGE_W + m, -hy, hy, 0, COVER_T, leather, root, bevel=0.012)
-    page_block('PagesRight', 1, COVER_T, top - rise - 0.002, edges, root)
+    page_block('PagesRight', 1, edges, root)
     box('CoverLeft', -PAGE_W - m, 0, -hy, hy, 0, COVER_T, leather, pivot, bevel=0.012)
-    page_block('PagesLeft', -1, COVER_T, top - rise - 0.002, edges, pivot)
+    page_block('PagesLeft', -1, edges, pivot)
     get = lambda i: images[i] if i is not None else None  # noqa: E731
     curl = job['curl']
-    base = top - rise
-    make_sheet('LeftPage', sheet_material('Left', None, get(left_i), job), 1.0, base, base, curl, pivot)
-    make_sheet('LastRightPage', sheet_material('LastRight', get(right_i), None, job), 0.0, base, base, curl, root)
+    make_sheet('LeftPage', sheet_material('Left', None, get(left_i), job), 1.0, L.base_left, L.base_left, curl, pivot)
+    make_sheet('LastRightPage', sheet_material('LastRight', get(right_i), None, job), 0.0,
+               L.base_right, L.base_right, curl, root)
     moving = []
     for k, (f, b) in enumerate(sheets):
-        zr = base + (turns - k) * SHEET_GAP
-        zl = base + (k + 1) * SHEET_GAP
+        zr, zl = L.sheet_levels(k)
         ob = make_sheet(f'Sheet{k + 1}', sheet_material(f'Sheet{k + 1}', get(f), get(b), job), 0.0, zr, zl, curl, root)
         moving.append((ob, zr, zl))
 
-    spine_key = spine_object(book, 2 * hinge_z, leather, root)
+    spine_key = spine_object(book, leather, root)
 
     # Front-cover decorations are placed with the book closed, so they read correctly on top.
     pivot.rotation_euler = (0, math.pi, 0)
@@ -585,7 +548,7 @@ class Camera:
         self.cf = cf
         self.settings = job['cam']
         self.aspect = job['width'] / job['height']
-        top = COVER_T + BLOCK_H
+        top = LAYOUT.camera_top()
         self.target = (0.0, 0.0, top)
         self.book_w, self.book_h = 2 * (PAGE_W + COVER_MARGIN), PAGE_H + 2 * COVER_MARGIN
         self.points = cf.book_points(PAGE_W, PAGE_H, COVER_MARGIN, top)
@@ -702,10 +665,10 @@ def main():
     for i, f in enumerate(frames):
         if camera.moving:
             camera.place(f / max(1, tl.frames - 1))
-        o = float(ease(tl.opening(f)))
-        pivot.rotation_euler = (0, math.pi * (1.0 - o), 0)
-        spine_key.value = 1.0 - o
-        root.location = (-(cover_w / 2) * (1.0 - o) if job.get('slide', True) else 0.0, 0, 0)
+        angle, slide = LAYOUT.opening(tl.opening(f), job.get('slide', True))
+        pivot.rotation_euler = (0, angle, 0)
+        spine_key.value = angle / math.pi
+        root.location = (slide, 0, 0)
         for k, (ob, zr, zl) in enumerate(moving):
             t = tl.progress(f, k)
             if t != last_t[k]:

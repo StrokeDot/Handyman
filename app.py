@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 import blender_bridge as bb
+import book_model
 import camera_fit as cf
 import encode
 import paths
@@ -327,6 +328,9 @@ class Studio(QMainWindow):
         self.start_closed.setChecked(True)
         self.start_closed.toggled.connect(self._update_summary)
         f.addRow(self.start_closed)
+        self.open_at = self._combo(book_model.OPEN_AT)
+        self.open_at.currentTextChanged.connect(self._update_summary)
+        f.addRow('Book opens at', self.open_at)
         self.open_s = self._spin(0.5, 6, 1.6)
         self.turn_s = self._spin(0.3, 6, 1.4)
         self.pause_s = self._spin(0, 10, 0.8)
@@ -533,6 +537,7 @@ class Studio(QMainWindow):
                     start_hold=self.start_s.value(), turn_seconds=self.turn_s.value(),
                     pause=self.pause_s.value(), end_hold=self.end_s.value(),
                     start_closed=self.start_closed.isChecked(), open_seconds=self.open_s.value(),
+                    open_at=book_model.OPEN_AT[self.open_at.currentText()], open_at_label=self.open_at.currentText(),
                     curl=self.curl.value() / 100, cam=self._cam(), quality=self.quality.currentText(),
                     blend=self.blend.currentText())
 
@@ -544,7 +549,7 @@ class Studio(QMainWindow):
         return v
 
     def _apply_state(self, v):
-        combos = dict(quality=self.quality, blend=self.blend, resolution=self.resolution)
+        combos = dict(quality=self.quality, blend=self.blend, resolution=self.resolution, open_at_label=self.open_at)
         for key, combo in combos.items():
             if v.get(key) and combo.findText(v[key]) >= 0:
                 combo.setCurrentText(v[key])
