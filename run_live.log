@@ -1,0 +1,4 @@
+GL: b'llvmpipe (LLVM 20.1.2, 256 bits)' / b'4.5 (Compatibility Profile) Mesa 25.2.8-0ubuntu0.24.04.4'
+drag: turn 0 -> 21
+play 1 s at 1x: frame 28.3 (fps 30.0)
+play 0.5 s at 2x: +31.3 frames
