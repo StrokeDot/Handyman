@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QFormLayout,
     QGroupBox, QHBoxLayout, QInputDialog, QLabel, QListWidget, QListWidgetItem, QMainWindow,
     QMessageBox, QProgressBar, QProgressDialog, QPushButton, QScrollArea, QSlider, QSplitter,
-    QVBoxLayout, QWidget,
+    QStackedWidget, QVBoxLayout, QWidget,
 )
 
 import blender_bridge as bb
@@ -174,6 +174,7 @@ class Studio(QMainWindow):
         self._update_summary()
         self._update_blender_label()
         self._camera_changed()
+        self._show_view(0)
         if self.settings.value('auto_update', 'true') == 'true':
             QTimer.singleShot(2500, lambda: self._check_updates(quiet=True))
 
@@ -224,7 +225,20 @@ class Studio(QMainWindow):
         self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview.setMinimumSize(640, 360)
         self.preview.setStyleSheet('background:#26262b;color:#aaa;border-radius:6px')
-        mv.addWidget(self.preview, 1)
+        # Two views in the big area: the live camera outline (drag it) and the rendered preview.
+        self.views = QStackedWidget()
+        self.framing = FramingView()
+        self.views.addWidget(self.framing)
+        self.views.addWidget(self.preview)
+        row = QHBoxLayout()
+        self.view_shot = QPushButton('Set up the shot (drag to move the camera)')
+        self.view_render = QPushButton('Rendered preview')
+        for b, i in ((self.view_shot, 0), (self.view_render, 1)):
+            b.setCheckable(True)
+            b.clicked.connect(lambda _=False, i=i: self._show_view(i))
+            row.addWidget(b)
+        mv.addLayout(row)
+        mv.addWidget(self.views, 1)
         row = QHBoxLayout()
         self.still_btn = QPushButton('Preview still')
         self.still_btn.clicked.connect(self._preview_still)
@@ -278,8 +292,12 @@ class Studio(QMainWindow):
 
         cambox = QGroupBox('Camera')
         f = QFormLayout(cambox)
-        self.framing = FramingView()
-        f.addRow(self.framing)
+        self.framing.orbit.connect(self._orbit)
+        self.framing.pan.connect(self._pan)
+        self.framing.zoomed.connect(lambda n: self.zoom.setValue(round(self.zoom.value() * 1.08 ** n)))
+        self.framing.reset.connect(lambda: self._apply_preset(self.shot.currentText()))
+        f.addRow(QLabel('<small>Or drag the big picture: left = look around, right = move, wheel = zoom, '
+                        'double-click = reset</small>'))
         self.shot = self._combo(cf.PRESETS)
         self.shot.currentTextChanged.connect(self._apply_preset)
         f.addRow('Start from', self.shot)
@@ -572,6 +590,15 @@ class Studio(QMainWindow):
                 self.move.setCurrentText(label)
         self._camera_changed()
 
+    def _orbit(self, dx, dy):
+        self.turn.setValue(round(self.turn.value() - dx * 0.35))
+        self.tilt.setValue(round(self.tilt.value() + dy * 0.35))
+
+    def _pan(self, dx, dy):
+        k = 100 / max(1, self.framing.width()) / (self.zoom.value() / 100)
+        self.shift_x.setValue(round(self.shift_x.value() - dx * k))
+        self.shift_y.setValue(round(self.shift_y.value() + dy * k))
+
     def _apply_preset(self, name):
         if name in cf.PRESETS:
             self._set_cam(dict(cf.PRESETS[name], zoom=1.0, shift_x=0.0, shift_y=0.0))
@@ -582,6 +609,9 @@ class Studio(QMainWindow):
         w, h = RESOLUTIONS[self.resolution.currentText()]
         aspect = float(self._book().get('page_aspect', 1.4)) if self.books else 1.4
         self.framing.set_view(self._cam(), aspect, w / h)
+        if self.views.currentIndex() != 0:
+            self.play_timer.stop()
+            self._show_view(0)
 
     def _save_settings(self):
         self.settings.setValue('state', json.dumps(self._state()))
@@ -725,11 +755,17 @@ class Studio(QMainWindow):
         job = self._job(v, self._scratch('still'), frames=[mid], width=960, height=540)
         self._start(job, self._show_still)
 
+    def _show_view(self, i):
+        self.views.setCurrentIndex(i)
+        self.view_shot.setChecked(i == 0)
+        self.view_render.setChecked(i == 1)
+
     def _show_still(self, folder):
         self._busy(False)
         self.status.setText('Preview ready: the first page mid-turn.')
         self.preview_frames = [str(Path(folder) / 'frame_000000.png')]
         self.preview_index = 0
+        self._show_view(1)
         self._next_preview_frame()
 
     def _preview_anim(self):
@@ -747,6 +783,7 @@ class Studio(QMainWindow):
         self.status.setText('Draft preview (15 fps, low quality). The final render is smoother and sharper.')
         self.preview_frames = sorted(str(p) for p in Path(folder).glob('frame_*.png'))
         self.preview_index = 0
+        self._show_view(1)
         self.play_timer.start(1000 // 15)
 
     def _next_preview_frame(self):

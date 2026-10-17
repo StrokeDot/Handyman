@@ -40,20 +40,17 @@ jobs:
       - name: Find the newest Blender
         id: blender
         run: |
-          python - <<'EOF' >> "$GITHUB_OUTPUT"
-          import re, urllib.request
-          base = 'https://download.blender.org/release/'
-          html = urllib.request.urlopen(base, timeout=30).read().decode()
-          dirs = sorted(set(re.findall(r'Blender(\d+)\.(\d+)/', html)), key=lambda v: (int(v[0]), int(v[1])))
-          for major, minor in reversed(dirs):
-              page = urllib.request.urlopen(f'{base}Blender{major}.{minor}/', timeout=30).read().decode()
-              files = re.findall(r'(blender-(\d+)\.(\d+)\.(\d+)-linux-x64\.tar\.xz)"', page)
-              if files:
-                  best = max(files, key=lambda f: (int(f[1]), int(f[2]), int(f[3])))
-                  print(f'url={base}Blender{major}.{minor}/{best[0]}')
-                  print(f'version={best[1]}.{best[2]}.{best[3]}')
-                  break
-          EOF
+          mkdir -p out
+          UA="Mozilla/5.0 (X11; Linux x86_64) handyman-ci"
+          curl -sSL -A "$UA" https://download.blender.org/release/ -o out/releases.html
+          DIR=$(grep -oE 'Blender[0-9]+\.[0-9]+/' out/releases.html | sort -u -V | tail -1)
+          curl -sSL -A "$UA" "https://download.blender.org/release/$DIR" -o out/dir.html
+          FILE=$(grep -oE 'blender-[0-9]+\.[0-9]+\.[0-9]+-linux-x64\.tar\.xz' out/dir.html | sort -u -V | tail -1)
+          VER=$(echo "$FILE" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          echo "Blender dir=$DIR file=$FILE" | tee out/find.log
+          test -n "$FILE"
+          echo "url=https://download.blender.org/release/$DIR$FILE" >> "$GITHUB_OUTPUT"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
 
       - name: Cache Blender
         id: cache
@@ -66,7 +63,7 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
           mkdir -p ~/blender
-          curl -sSL "${{ steps.blender.outputs.url }}" | tar -xJ -C ~/blender --strip-components=1
+          curl -sSL -A "Mozilla/5.0 handyman-ci" "${{ steps.blender.outputs.url }}" | tar -xJ -C ~/blender --strip-components=1
 
       - name: System libraries
         run: |
@@ -78,17 +75,18 @@ jobs:
         continue-on-error: true
         env:
           LIBGL_ALWAYS_SOFTWARE: "1"
-        run: xvfb-run -a -s "-screen 0 1280x720x24" python tools/ci_preview.py ~/blender/blender out eevee
+        run: xvfb-run -a -s "-screen 0 1280x720x24" python tools/ci_preview.py ~/blender/blender out eevee 2>&1 | tee out/run_eevee.log; exit ${PIPESTATUS[0]}
 
       - name: Render with Cycles (CPU)
-        run: python tools/ci_preview.py ~/blender/blender out cycles
+        run: python tools/ci_preview.py ~/blender/blender out cycles 2>&1 | tee out/run_cycles.log; exit ${PIPESTATUS[0]}
 
       - name: Publish to the previews branch
+        if: always()
         run: |
           mkdir -p pub
           cp out/sheet_*.png pub/ 2>/dev/null || true
           cp out/*.log pub/ 2>/dev/null || true
-          echo "commit ${GITHUB_SHA} · Blender ${{ steps.blender.outputs.version }}" > pub/INFO.txt
+          echo "commit ${GITHUB_SHA} · Blender ${{ steps.blender.outputs.version }} · ${{ job.status }}" > pub/INFO.txt
           cd pub
           git init -q -b previews
           git config user.name "preview-bot"

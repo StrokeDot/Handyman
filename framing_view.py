@@ -1,6 +1,6 @@
 """Instant outline of the book as the camera will see it. No Blender needed, updates while dragging."""
 import numpy as np
-from PySide6.QtCore import QPointF, Qt
+from PySide6.QtCore import QPointF, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
@@ -11,8 +11,18 @@ PAGE_W, MARGIN, TOP = 1.0, 0.05, 0.105
 
 
 class FramingView(QWidget):
+    """Also the mouse control: left-drag orbits, right-drag moves, wheel zooms, double-click resets."""
+    orbit = Signal(float, float)     # pixels dragged (x, y)
+    pan = Signal(float, float)
+    zoomed = Signal(int)             # wheel steps (+ = closer)
+    reset = Signal()
+
     def __init__(self):
         super().__init__()
+        self._last = None
+        self._button = None
+        self.setCursor(Qt.CursorShape.OpenHandCursor)
+        self.setToolTip('Drag to look around the book · right-drag to move it · wheel to zoom · double-click to reset')
         self.settings = None
         self.page_aspect = 1.4
         self.aspect = 16 / 9
@@ -28,6 +38,32 @@ class FramingView(QWidget):
     def set_view(self, settings, page_aspect, aspect):
         self.settings, self.page_aspect, self.aspect = dict(settings), page_aspect, aspect
         self.update()
+
+    def mousePressEvent(self, e):
+        self._last, self._button = e.position(), e.button()
+        self.setCursor(Qt.CursorShape.ClosedHandCursor)
+
+    def mouseMoveEvent(self, e):
+        if self._last is None:
+            return
+        d = e.position() - self._last
+        self._last = e.position()
+        if self._button == Qt.MouseButton.LeftButton:
+            self.orbit.emit(d.x(), d.y())
+        else:
+            self.pan.emit(d.x(), d.y())
+
+    def mouseReleaseEvent(self, _):
+        self._last = None
+        self.setCursor(Qt.CursorShape.OpenHandCursor)
+
+    def mouseDoubleClickEvent(self, _):
+        self.reset.emit()
+
+    def wheelEvent(self, e):
+        steps = round(e.angleDelta().y() / 120)
+        if steps:
+            self.zoomed.emit(steps)
 
     def paintEvent(self, _):
         p = QPainter(self)

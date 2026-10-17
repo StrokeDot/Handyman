@@ -30,6 +30,14 @@ def main():
         w.shot.setCurrentText(name)
         assert w._cam()['tilt'] == round(app.cf.PRESETS[name]['tilt'])
         assert not w.framing.grab().isNull()          # the live outline draws without errors
+    t0, tilt0 = w.turn.value(), w.tilt.value()
+    w._orbit(-40, -20)                                # dragging the outline moves the camera
+    assert w.turn.value() > t0 and w.tilt.value() < tilt0
+    w._pan(30, 0)
+    assert w.shift_x.value() < 0
+    z0 = w.zoom.value()
+    w.framing.zoomed.emit(2)
+    assert w.zoom.value() > z0
     w.turn.setValue(25)
     w.zoom.setValue(180)
     w.move.setCurrentText('Slow push-in')
