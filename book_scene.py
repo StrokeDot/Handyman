@@ -15,13 +15,14 @@ import bpy
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from page_curl import ease, sheet_vertices, grid_faces, grid_uvs, Timeline, layout_pages  # noqa: E402
+from page_curl import (ease, sheet_vertices, grid_faces, grid_uvs, Timeline, layout_pages,  # noqa: E402
+                       GUTTER, gutter_rise, rest_profile)
 
 PAGE_W = 1.0
 PAGE_H = 1.4              # replaced from the template's page_aspect
 COVER_MARGIN = 0.05
-COVER_T = 0.035
-BLOCK_H = 0.07
+COVER_T = 0.03
+BLOCK_H = 0.11            # paper block thickness: a real journal, not a pamphlet
 SHEET_GAP = 0.0012
 GRID_X, GRID_Y = 48, 28
 
@@ -142,29 +143,45 @@ def load_image(path):
 # ------------------------------------------------------------------ materials
 
 def leather_material(color, name='Leather', k=1.0):
+    """Fine pebbled grain with gentle colour variation (no big cloudy blotches)."""
     mat, nt, bsdf, _ = new_material(name)
     coord = nt.nodes.new('ShaderNodeTexCoord').outputs['Object']
-    big = nt.nodes.new('ShaderNodeTexNoise')
-    set_input(big, 'Scale', 3.0)
-    set_input(big, 'Detail', 8.0)
-    nt.links.new(coord, big.inputs['Vector'])
-    base = ramp(nt, big.outputs['Fac'], [(0.3, rgba(color, 0.4 * k)), (0.55, rgba(color, k)),
-                                         (0.8, rgba(color, 1.3 * k))])
+    tone = nt.nodes.new('ShaderNodeTexNoise')
+    set_input(tone, 'Scale', 9.0)
+    set_input(tone, 'Detail', 6.0)
+    set_input(tone, 'Roughness', 0.45)
+    nt.links.new(coord, tone.inputs['Vector'])
+    base = ramp(nt, tone.outputs['Fac'], [(0.25, rgba(color, 0.82 * k)), (0.55, rgba(color, k)),
+                                          (0.85, rgba(color, 1.12 * k))])
+
+    # Pebbled grain: small cells, darker in the creases between them.
+    grain = nt.nodes.new('ShaderNodeTexVoronoi')
+    set_input(grain, 'Scale', 320.0)
+    set_input(grain, 'Randomness', 0.9)
+    nt.links.new(coord, grain.inputs['Vector'])
+    cell = sock(grain.outputs, 'Distance')
+    crease = nt.nodes.new('ShaderNodeMapRange')
+    nt.links.new(cell, crease.inputs['Value'])
+    set_input(crease, 'From Min', 0.0)
+    set_input(crease, 'From Max', 0.35)
+    set_input(crease, 'To Min', 0.0)
+    set_input(crease, 'To Max', 1.0)
+    base = mix_rgb(nt, 'MULTIPLY', math_node(nt, 'MULTIPLY', crease.outputs['Result'], 0.18), base, (0.6, 0.6, 0.6, 1))
     nt.links.new(base, bsdf.inputs['Base Color'])
 
-    grain = nt.nodes.new('ShaderNodeTexVoronoi')
-    set_input(grain, 'Scale', 140.0)
-    nt.links.new(coord, grain.inputs['Vector'])
-    nt.links.new(bump(nt, sock(grain.outputs, 'Distance'), 0.25, 0.01), bsdf.inputs['Normal'])
+    pores = nt.nodes.new('ShaderNodeTexNoise')
+    set_input(pores, 'Scale', 900.0)
+    nt.links.new(coord, pores.inputs['Vector'])
+    height = math_node(nt, 'ADD', math_node(nt, 'MULTIPLY', cell, -1.0), math_node(nt, 'MULTIPLY', pores.outputs['Fac'], 0.15))
+    nt.links.new(bump(nt, height, 0.22, 0.004), bsdf.inputs['Normal'])
 
-    rough = nt.nodes.new('ShaderNodeTexNoise')
-    set_input(rough, 'Scale', 18.0)
-    nt.links.new(coord, rough.inputs['Vector'])
-    rmap = nt.nodes.new('ShaderNodeMapRange')
-    nt.links.new(rough.outputs['Fac'], rmap.inputs['Value'])
-    set_input(rmap, 'To Min', 0.42)
-    set_input(rmap, 'To Max', 0.78)
-    nt.links.new(rmap.outputs['Result'], bsdf.inputs['Roughness'])
+    rough = nt.nodes.new('ShaderNodeMapRange')
+    nt.links.new(tone.outputs['Fac'], rough.inputs['Value'])
+    set_input(rough, 'To Min', 0.45)
+    set_input(rough, 'To Max', 0.68)
+    nt.links.new(rough.outputs['Result'], bsdf.inputs['Roughness'])
+    set_input(bsdf, 'Coat Weight', 0.12)        # a faint waxed sheen
+    set_input(bsdf, 'Coat Roughness', 0.35)
     return mat
 
 
@@ -185,17 +202,26 @@ def paper_tone(book, shade):
 
 
 def page_edge_material(book):
+    """Stacked paper seen from the side: hundreds of fine sheet lines, darker towards the edges."""
     mat, nt, bsdf, _ = new_material('PageEdges')
+    coord = nt.nodes.new('ShaderNodeTexCoord').outputs['Object']
     wave = nt.nodes.new('ShaderNodeTexWave')
     wave.wave_type = 'BANDS'
     wave.bands_direction = 'Z'
-    set_input(wave, 'Scale', 60.0)
-    set_input(wave, 'Distortion', 2.0)
-    nt.links.new(nt.nodes.new('ShaderNodeTexCoord').outputs['Object'], wave.inputs['Vector'])
+    set_input(wave, 'Scale', 900.0)
+    set_input(wave, 'Distortion', 1.5)
+    set_input(wave, 'Detail', 3.0)
+    nt.links.new(coord, wave.inputs['Vector'])
+    dirt = nt.nodes.new('ShaderNodeTexNoise')
+    set_input(dirt, 'Scale', 14.0)
+    nt.links.new(coord, dirt.inputs['Vector'])
     light = paper_tone(book, 0.0)
-    col = ramp(nt, wave.outputs['Fac'], [(0.0, rgba(light, 0.7)), (1.0, light)])
+    col = ramp(nt, wave.outputs['Fac'], [(0.0, rgba(light, 0.62)), (0.5, rgba(light, 0.92)), (1.0, light)])
+    col = mix_rgb(nt, 'MULTIPLY', math_node(nt, 'MULTIPLY', dirt.outputs['Fac'], 0.5 * book['burn'] + 0.1),
+                  col, (0.45, 0.30, 0.18, 1))
     nt.links.new(col, bsdf.inputs['Base Color'])
-    set_input(bsdf, 'Roughness', 0.9)
+    nt.links.new(bump(nt, wave.outputs['Fac'], 0.3, 0.002), bsdf.inputs['Normal'])
+    set_input(bsdf, 'Roughness', 0.92)
     return mat
 
 
@@ -364,7 +390,7 @@ def quad(name, cx, cy, z, w, h, mat, parent=None):
 
 
 def make_sheet(name, mat, t, z_right, z_left, curl, parent):
-    verts = sheet_vertices(t, PAGE_W, PAGE_H, GRID_X, GRID_Y, z_right, z_left, curl=curl)
+    verts = sheet_vertices(t, PAGE_W, PAGE_H, GRID_X, GRID_Y, z_right, z_left, curl=curl, gutter=GUTTER)
     mesh = bpy.data.meshes.new(name)
     mesh.from_pydata(verts.tolist(), [], grid_faces(GRID_X, GRID_Y))
     uvs = grid_uvs(GRID_X, GRID_Y)
@@ -382,9 +408,37 @@ def make_sheet(name, mat, t, z_right, z_left, curl, parent):
 
 
 def update_sheet(ob, t, z_right, z_left, curl):
-    verts = sheet_vertices(t, PAGE_W, PAGE_H, GRID_X, GRID_Y, z_right, z_left, curl=curl)
+    verts = sheet_vertices(t, PAGE_W, PAGE_H, GRID_X, GRID_Y, z_right, z_left, curl=curl, gutter=GUTTER)
     ob.data.vertices.foreach_set('co', verts.astype(np.float32).ravel())
     ob.data.update()
+
+
+def page_block(name, side, z_bottom, z_spine, mat, parent):
+    """Paper block whose top follows the gutter curve. side = +1 right half, -1 left half."""
+    px, pz = rest_profile(PAGE_W - 0.004, 24)
+    px = side * (px + 0.002)
+    y0, y1 = -PAGE_H / 2 + 0.004, PAGE_H / 2 - 0.004
+    n = len(px)
+    verts = []
+    for y in (y0, y1):
+        verts += [(px[i], y, z_spine + pz[i]) for i in range(n)]        # top curve
+        verts += [(px[-1], y, z_bottom), (px[0], y, z_bottom)]           # bottom outer, bottom spine
+    m = n + 2
+    faces = []
+    for i in range(n - 1):                                                # curved top
+        faces.append((i, i + 1, m + i + 1, m + i))
+    faces.append((n - 1, n, m + n, m + n - 1))                            # outer side
+    faces.append((n, n + 1, m + n + 1, m + n))                            # bottom
+    faces.append((n + 1, 0, m, m + n + 1))                                # spine side
+    faces.append(tuple(range(m - 1, -1, -1)))                             # front end
+    faces.append(tuple(range(m, 2 * m)))                                  # back end
+    if side < 0:
+        faces = [tuple(reversed(f)) for f in faces]
+    mesh = bpy.data.meshes.new(name)
+    mesh.from_pydata(verts, [], faces)
+    mesh.validate()
+    mesh.materials.append(mat)
+    return link_object(bpy.data.objects.new(name, mesh), parent)
 
 
 def spine_object(book, height_closed, leather, parent):
@@ -467,6 +521,7 @@ def build_book(job):
     images = job['images']
     turns, left_i, sheets, right_i = layout_pages(len(images))
     hinge_z = top + (turns + 1) * SHEET_GAP + 0.001
+    rise = gutter_rise(PAGE_W)   # the flat part of each page is at `top`; the spine sits lower
 
     leather = leather_material(book['leather_color'])
     edges = page_edge_material(book)
@@ -478,17 +533,18 @@ def build_book(job):
 
     # Open-book layout. The left half (front cover side) hangs on the hinge.
     box('CoverRight', 0, PAGE_W + m, -hy, hy, 0, COVER_T, leather, root, bevel=0.012)
-    box('PagesRight', 0.004, PAGE_W - 0.004, -PAGE_H / 2 + 0.004, PAGE_H / 2 - 0.004, COVER_T, top - 0.001, edges, root)
+    page_block('PagesRight', 1, COVER_T, top - rise - 0.002, edges, root)
     box('CoverLeft', -PAGE_W - m, 0, -hy, hy, 0, COVER_T, leather, pivot, bevel=0.012)
-    box('PagesLeft', -PAGE_W + 0.004, -0.004, -PAGE_H / 2 + 0.004, PAGE_H / 2 - 0.004, COVER_T, top - 0.001, edges, pivot)
+    page_block('PagesLeft', -1, COVER_T, top - rise - 0.002, edges, pivot)
     get = lambda i: images[i] if i is not None else None  # noqa: E731
     curl = job['curl']
-    make_sheet('LeftPage', sheet_material('Left', None, get(left_i), job), 1.0, top, top, curl, pivot)
-    make_sheet('LastRightPage', sheet_material('LastRight', get(right_i), None, job), 0.0, top, top, curl, root)
+    base = top - rise
+    make_sheet('LeftPage', sheet_material('Left', None, get(left_i), job), 1.0, base, base, curl, pivot)
+    make_sheet('LastRightPage', sheet_material('LastRight', get(right_i), None, job), 0.0, base, base, curl, root)
     moving = []
     for k, (f, b) in enumerate(sheets):
-        zr = top + (turns - k) * SHEET_GAP
-        zl = top + (k + 1) * SHEET_GAP
+        zr = base + (turns - k) * SHEET_GAP
+        zl = base + (k + 1) * SHEET_GAP
         ob = make_sheet(f'Sheet{k + 1}', sheet_material(f'Sheet{k + 1}', get(f), get(b), job), 0.0, zr, zl, curl, root)
         moving.append((ob, zr, zl))
 

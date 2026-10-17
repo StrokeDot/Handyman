@@ -20,9 +20,22 @@ def test_rest_positions():
     assert np.allclose(b[..., 2], ZL, atol=1e-9)
 
 
+def test_gutter_curve():
+    from page_curl import gutter_rise
+    rise = gutter_rise(W)
+    assert 0.03 < rise < 0.09
+    for t, sign in ((0.0, 1), (1.0, -1)):
+        g = sheet_vertices(t, W, H, NX, NY, ZR, ZR, gutter=0.38).reshape(NY, NX, 3)
+        assert np.allclose(g[:, 0, 2], ZR)                     # starts at the spine
+        assert abs(g[0, -1, 2] - (ZR + rise)) < 2e-3           # outer part sits a rise higher
+        assert np.all(np.diff(g[0, :, 2]) >= -1e-9)            # never dips
+        assert sign * g[0, -1, 0] > 0.95 * W
+        assert np.allclose(np.diff(g[:, -1, 2]), 0)            # same curve on every row
+
+
 def test_paper_does_not_stretch_along_rows():
     for t in np.linspace(0, 1, 21):
-        g = grid(t)
+        g = grid(t, gutter=0.38)
         seg = np.linalg.norm(np.diff(g, axis=1), axis=2).sum(axis=1)
         assert np.allclose(seg, W, rtol=2e-3), (t, seg.min(), seg.max())
 

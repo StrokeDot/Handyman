@@ -7,7 +7,7 @@ from PySide6.QtWidgets import QSizePolicy, QWidget
 import camera_fit as cf
 from page_curl import sheet_vertices
 
-PAGE_W, MARGIN, TOP = 1.0, 0.05, 0.105
+PAGE_W, MARGIN, TOP = 1.0, 0.05, 0.14  # same proportions as book_scene.py
 
 
 class FramingView(QWidget):

@@ -14,6 +14,30 @@ import math
 import numpy as np
 
 PEEL_SHARE = 0.28   # part of each turn spent lifting the corner before the page goes over
+GUTTER = 0.38       # how steeply a resting page rises out of the spine (radians at the spine)
+GUTTER_POWER = 5.0  # higher = the curve stays closer to the spine
+
+
+def gutter_angle(s, width, gutter=GUTTER):
+    """Extra angle of a resting page near the spine: the curve of a real open book."""
+    return gutter * (1.0 - np.asarray(s) / width) ** GUTTER_POWER
+
+
+def gutter_rise(width, gutter=GUTTER, n=400):
+    """How much higher the flat part of a resting page is than the spine."""
+    s = np.linspace(0.0, width, n)
+    return float(np.trapezoid(np.sin(gutter_angle(s, width, gutter)), s)) if hasattr(np, 'trapezoid') \
+        else float(np.trapz(np.sin(gutter_angle(s, width, gutter)), s))
+
+
+def rest_profile(width, nx, gutter=GUTTER):
+    """(x, z) of a resting right-hand page from the spine outwards, z relative to the spine."""
+    s = np.linspace(0.0, width, nx)
+    a = gutter_angle(s, width, gutter)
+    ds = width / (nx - 1)
+    x = np.concatenate([[0.0], np.cumsum((np.cos(a[1:]) + np.cos(a[:-1])) * 0.5 * ds)])
+    z = np.concatenate([[0.0], np.cumsum((np.sin(a[1:]) + np.sin(a[:-1])) * 0.5 * ds)])
+    return x, z
 
 
 def ease(t):
@@ -23,7 +47,7 @@ def ease(t):
 
 
 def sheet_vertices(p, width, height, nx, ny, z_right, z_left,
-                   curl=0.9, lag=0.10, corner=0.6, power=1.6, peel=1.1, peel_share=PEEL_SHARE):
+                   curl=0.9, lag=0.10, corner=0.6, power=1.6, peel=1.1, peel_share=PEEL_SHARE, gutter=0.0):
     """Vertex positions of one sheet at turn progress p (0 = flat right, 1 = flat left).
 
     The first `peel_share` of the turn lifts the bottom outer corner (the hand grabbing it),
@@ -32,6 +56,8 @@ def sheet_vertices(p, width, height, nx, ny, z_right, z_left,
     lag    how far the top edge trails the bottom edge
     corner extra curl near the bottom corner
     peel   how far the corner lifts before the turn (radians at the corner)
+    gutter curve of a resting page out of the spine (0 = flat). z_right / z_left are the spine
+           heights; the flat part of a resting page sits gutter_rise() higher.
     Returns float array of shape (ny * nx, 3).
     """
     p = float(np.clip(p, 0.0, 1.0))
@@ -50,6 +76,9 @@ def sheet_vertices(p, width, height, nx, ny, z_right, z_left,
     bend = curl * np.sin(math.pi * tr) * (1.0 + corner * (1.0 - v))
     frac = (s / width) ** power
     angle = theta[:, None] + bend[:, None] * frac[None, :]
+    if gutter:
+        # Resting on the right the page rises out of the spine; resting on the left, mirrored.
+        angle = angle + gutter_angle(s, width, gutter)[None, :] * (1.0 - 2.0 * ease(tr))[:, None]
 
     # Corner peel: only the outer part of the lower rows, fading out as the turn gets going.
     hold = lift * (1.0 - float(ease(t / 0.45)))
