@@ -29,6 +29,10 @@ import templates
 import updater
 from book_dialog import BookDialog
 from framing_view import FramingView
+try:
+    from live_view import LiveView, GL_IMPORT_ERROR
+except Exception as _exc:  # PySide6 without OpenGL widgets, or PyOpenGL missing
+    LiveView, GL_IMPORT_ERROR = None, str(_exc)
 from page_curl import Timeline, layout_pages
 from version import APP_NAME, APP_VERSION
 
@@ -228,11 +232,12 @@ class Studio(QMainWindow):
         self.preview.setStyleSheet('background:#26262b;color:#aaa;border-radius:6px')
         # Two views in the big area: the live camera outline (drag it) and the rendered preview.
         self.views = QStackedWidget()
-        self.framing = FramingView()
+        self.live = LiveView() if (LiveView is not None and GL_IMPORT_ERROR is None) else None
+        self.framing = self.live or FramingView()
         self.views.addWidget(self.framing)
         self.views.addWidget(self.preview)
         row = QHBoxLayout()
-        self.view_shot = QPushButton('Set up the shot (drag to move the camera)')
+        self.view_shot = QPushButton('Live 3D view (drag to move the camera)')
         self.view_render = QPushButton('Rendered preview')
         for b, i in ((self.view_shot, 0), (self.view_render, 1)):
             b.setCheckable(True)
@@ -240,6 +245,35 @@ class Studio(QMainWindow):
             row.addWidget(b)
         mv.addLayout(row)
         mv.addWidget(self.views, 1)
+        # Playback for the live view: no rendering needed.
+        self.playbar = QWidget()
+        pb = QHBoxLayout(self.playbar)
+        pb.setContentsMargins(0, 0, 0, 0)
+        self.play_btn = QPushButton('▶ Play')
+        self.play_btn.setFixedWidth(90)
+        self.play_btn.clicked.connect(self._toggle_play)
+        self.scrub = QSlider(Qt.Orientation.Horizontal)
+        self.scrub.setRange(0, 1)
+        self.scrub.valueChanged.connect(self._scrubbed)
+        self.time_label = QLabel('0.0 s')
+        self.time_label.setFixedWidth(90)
+        self.speed = QComboBox()
+        self.speed.addItems(['0.25×', '0.5×', '1×', '1.5×', '2×'])
+        self.speed.setCurrentText('1×')
+        self.speed.currentTextChanged.connect(self._speed_changed)
+        self.loop = QCheckBox('Loop')
+        self.loop.setChecked(True)
+        self.loop.toggled.connect(lambda on: setattr(self.live, 'loop', on) if self.live else None)
+        for wdg in (self.play_btn, self.scrub, self.time_label, QLabel('Speed'), self.speed, self.loop):
+            pb.addWidget(wdg, 1 if wdg is self.scrub else 0)
+        mv.addWidget(self.playbar)
+        self.playbar.setVisible(self.live is not None)
+        if self.live is not None:
+            self.live.frameChanged.connect(self._live_frame)
+            self.live.failed.connect(self._live_failed)
+        self._live_timer = QTimer(self)
+        self._live_timer.setSingleShot(True)
+        self._live_timer.timeout.connect(self._refresh_live)
         row = QHBoxLayout()
         self.still_btn = QPushButton('Preview still')
         self.still_btn.clicked.connect(self._preview_still)
@@ -288,6 +322,7 @@ class Studio(QMainWindow):
             row.addWidget(b)
         f.addRow(row)
         self.blend = self._combo(bb.BLEND)
+        self.blend.currentTextChanged.connect(self._schedule_live)
         f.addRow('Page images', self.blend)
         rv.addWidget(bookbox)
 
@@ -342,6 +377,7 @@ class Studio(QMainWindow):
         f.addRow('Hold at start', self.start_s)
         f.addRow('Hold at end', self.end_s)
         self.curl = self._slider(0, 150, 90)
+        self.curl.valueChanged.connect(self._schedule_live)
         f.addRow('Page curl', self.curl)
         rv.addWidget(timing)
 
@@ -614,6 +650,7 @@ class Studio(QMainWindow):
         w, h = RESOLUTIONS[self.resolution.currentText()]
         aspect = float(self._book().get('page_aspect', 1.4)) if self.books else 1.4
         self.framing.set_view(self._cam(), aspect, w / h)
+        self._schedule_live()
         if self.views.currentIndex() != 0:
             self.play_timer.stop()
             self._show_view(0)
@@ -669,6 +706,64 @@ class Studio(QMainWindow):
         v = self._values()
         tl = self._timeline(v)
         self.summary.setText(f'Video length: {tl.frames / v["fps"]:.1f} s  ·  {tl.frames} frames  ·  {tl.turns} turn(s)')
+        self._schedule_live()
+
+    # ------------------------------------------------------------ live view
+    def _schedule_live(self, *_):
+        if getattr(self, 'live', None) is not None and hasattr(self, '_live_timer'):
+            self._live_timer.start(80)
+
+    def _refresh_live(self):
+        if self.live is None or not self.books:
+            return
+        try:
+            self.live.set_content(self._book(), self._page_paths(), self._values())
+        except Exception as exc:
+            self.status.setText(f'Live view could not update: {exc}')
+
+    def _toggle_play(self):
+        if self.live is None:
+            return
+        self._show_view(0)
+        self.live.play(not self.live.playing)
+        self.play_btn.setText('❚❚ Pause' if self.live.playing else '▶ Play')
+
+    def _scrubbed(self, value):
+        if self.live is not None and int(self.live.frame) != value:
+            self.live.seek(value)
+
+    def _speed_changed(self, text):
+        if self.live is not None:
+            self.live.speed = float(text.rstrip('×'))
+
+    def _live_frame(self, frame, total):
+        self.scrub.blockSignals(True)
+        self.scrub.setRange(0, max(0, total - 1))
+        self.scrub.setValue(frame)
+        self.scrub.blockSignals(False)
+        fps = self.live.timeline.fps
+        self.time_label.setText(f'{frame / fps:4.1f} / {(total - 1) / fps:.1f} s')
+        if not self.live.playing:
+            self.play_btn.setText('▶ Play')
+
+    def _live_failed(self, reason):
+        """No usable OpenGL on this PC: fall back to the outline view."""
+        if self.live is None:
+            return
+        old = self.live
+        self.live = None
+        self.framing = FramingView()
+        self.views.insertWidget(0, self.framing)
+        self.views.removeWidget(old)
+        old.deleteLater()
+        self.framing.orbit.connect(self._orbit)
+        self.framing.pan.connect(self._pan)
+        self.framing.zoomed.connect(lambda n: self.zoom.setValue(round(self.zoom.value() * 1.08 ** n)))
+        self.framing.reset.connect(lambda: self._apply_preset(self.shot.currentText()))
+        self.playbar.setVisible(False)
+        self._show_view(0)
+        self._camera_changed()
+        self.status.setText(f'The live 3D view is not available on this PC ({reason[:120]}); showing the outline instead.')
 
     # --------------------------------------------------------------- blender
     def _update_blender_label(self):

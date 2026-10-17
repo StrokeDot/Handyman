@@ -29,7 +29,8 @@ def main():
     for name in app.cf.PRESETS:
         w.shot.setCurrentText(name)
         assert w._cam()['tilt'] == round(app.cf.PRESETS[name]['tilt'])
-        assert not w.framing.grab().isNull()          # the live outline draws without errors
+        if w.live is None:
+            assert not w.framing.grab().isNull()      # the outline draws without errors
     t0, tilt0 = w.turn.value(), w.tilt.value()
     w._orbit(-40, -20)                                # dragging the outline moves the camera
     assert w.turn.value() > t0 and w.tilt.value() < tilt0
@@ -46,6 +47,16 @@ def main():
     assert w._cam()['tilt'] == 40 and w._cam()['move'] == 'drift'
     job = w._job(w._values(), tempfile.mkdtemp())
     assert job['cam']['lens'] == 28
+    # Playback controls work whether or not this machine has OpenGL.
+    w._refresh_live()
+    if w.live is not None:
+        w._toggle_play()
+        assert w.live.playing
+        w.speed.setCurrentText('2×')
+        assert w.live.speed == 2.0
+        w._toggle_play()
+        w._scrubbed(5)
+        assert int(w.live.frame) == 5
     d = BookDialog(w._book(), w)
     b = d.result_book()
     assert b['name'] and b['emblem_style'] in ('medallion', 'deboss')

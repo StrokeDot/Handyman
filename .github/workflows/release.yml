@@ -56,6 +56,9 @@ jobs:
           --add-data "book_model.py;."
           --add-data "resources;resources"
           --add-data "assets;assets"
+          --hidden-import OpenGL.GL
+          --collect-submodules OpenGL.platform
+          --collect-submodules OpenGL.arrays
           app.py
 
       - name: Check the built app starts
