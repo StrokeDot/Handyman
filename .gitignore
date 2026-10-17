@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+preview_cache/
+build/
+dist/
+*.spec
+scene_mock.log

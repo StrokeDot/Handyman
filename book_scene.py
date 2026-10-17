@@ -1,0 +1,668 @@
+"""Builds a book from a template inside Blender and renders transparent PNG frames.
+
+The app runs this for you in the background:
+    blender -b --factory-startup -P book_scene.py -- job.json
+You never need to open Blender.
+"""
+import json
+import math
+import os
+import sys
+import time
+
+import bmesh
+import bpy
+import numpy as np
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from page_curl import ease, sheet_vertices, grid_faces, grid_uvs, Timeline, layout_pages  # noqa: E402
+
+PAGE_W = 1.0
+PAGE_H = 1.4              # replaced from the template's page_aspect
+COVER_MARGIN = 0.05
+COVER_T = 0.035
+BLOCK_H = 0.07
+SHEET_GAP = 0.0012
+GRID_X, GRID_Y = 48, 28
+
+
+def log(msg):
+    print(msg, flush=True)
+
+
+# ---------------------------------------------------------------- node helpers
+
+def sock(sockets, name, kind=None):
+    for s in sockets:
+        if s.name == name and getattr(s, 'enabled', True) and (kind is None or s.type == kind):
+            return s
+    raise KeyError(name)
+
+
+def set_input(node, name, value):
+    try:
+        sock(node.inputs, name).default_value = value
+    except KeyError:
+        pass  # socket renamed in this Blender version; keep the default
+
+
+def link(nt, src, node, name):
+    try:
+        nt.links.new(src, sock(node.inputs, name))
+    except KeyError:
+        pass
+
+
+def new_material(name):
+    mat = bpy.data.materials.new(name)
+    mat.use_nodes = True
+    nt = mat.node_tree
+    nt.nodes.clear()
+    out = nt.nodes.new('ShaderNodeOutputMaterial')
+    bsdf = nt.nodes.new('ShaderNodeBsdfPrincipled')
+    nt.links.new(bsdf.outputs['BSDF'], out.inputs['Surface'])
+    return mat, nt, bsdf, out
+
+
+def use_alpha_cutout(mat):
+    """Let transparent parts of an image (around an emblem) disappear, shadows included."""
+    for attr, value in (('surface_render_method', 'DITHERED'), ('blend_method', 'CLIP'),
+                        ('shadow_method', 'CLIP')):
+        try:
+            setattr(mat, attr, value)
+        except (AttributeError, TypeError):
+            pass
+
+
+def mix_rgb(nt, blend, fac, a, b):
+    """Colour mix; fac/a/b may be sockets or constants. Returns the result socket."""
+    m = nt.nodes.new('ShaderNodeMix')
+    m.data_type = 'RGBA'
+    m.blend_type = blend
+    for name, val in (('Factor', fac), ('A', a), ('B', b)):
+        kind = 'VALUE' if name == 'Factor' else 'RGBA'
+        s = sock(m.inputs, name, kind)
+        if isinstance(val, bpy.types.NodeSocket):
+            nt.links.new(val, s)
+        else:
+            s.default_value = val
+    return sock(m.outputs, 'Result', 'RGBA')
+
+
+def math_node(nt, op, a, b=None):
+    n = nt.nodes.new('ShaderNodeMath')
+    n.operation = op
+    for i, val in enumerate((a, b)):
+        if val is None:
+            continue
+        if isinstance(val, bpy.types.NodeSocket):
+            nt.links.new(val, n.inputs[i])
+        else:
+            n.inputs[i].default_value = val
+    return n.outputs[0]
+
+
+def ramp(nt, src, stops):
+    r = nt.nodes.new('ShaderNodeValToRGB')
+    nt.links.new(src, r.inputs['Fac'])
+    els = r.color_ramp.elements
+    els[0].position, els[0].color = stops[0]
+    els[1].position, els[1].color = stops[-1]
+    for pos, col in stops[1:-1]:
+        e = els.new(pos)
+        e.color = col
+    return r.outputs['Color']
+
+
+def bump(nt, height, strength, distance=0.02):
+    b = nt.nodes.new('ShaderNodeBump')
+    set_input(b, 'Strength', strength)
+    set_input(b, 'Distance', distance)
+    nt.links.new(height, b.inputs['Height'])
+    return b.outputs['Normal']
+
+
+def rgba(c, k=1.0):
+    return (min(1.0, c[0] * k), min(1.0, c[1] * k), min(1.0, c[2] * k), 1.0)
+
+
+def load_image(path):
+    try:
+        img = bpy.data.images.load(path, check_existing=True)
+    except RuntimeError:
+        log(f'WARNING could not open image {path}')
+        return None
+    iw, ih = img.size
+    if not iw or not ih:
+        log(f'WARNING could not read image {path}')
+        return None
+    return img
+
+
+# ------------------------------------------------------------------ materials
+
+def leather_material(color, name='Leather', k=1.0):
+    mat, nt, bsdf, _ = new_material(name)
+    coord = nt.nodes.new('ShaderNodeTexCoord').outputs['Object']
+    big = nt.nodes.new('ShaderNodeTexNoise')
+    set_input(big, 'Scale', 3.0)
+    set_input(big, 'Detail', 8.0)
+    nt.links.new(coord, big.inputs['Vector'])
+    base = ramp(nt, big.outputs['Fac'], [(0.3, rgba(color, 0.4 * k)), (0.55, rgba(color, k)),
+                                         (0.8, rgba(color, 1.3 * k))])
+    nt.links.new(base, bsdf.inputs['Base Color'])
+
+    grain = nt.nodes.new('ShaderNodeTexVoronoi')
+    set_input(grain, 'Scale', 140.0)
+    nt.links.new(coord, grain.inputs['Vector'])
+    nt.links.new(bump(nt, sock(grain.outputs, 'Distance'), 0.25, 0.01), bsdf.inputs['Normal'])
+
+    rough = nt.nodes.new('ShaderNodeTexNoise')
+    set_input(rough, 'Scale', 18.0)
+    nt.links.new(coord, rough.inputs['Vector'])
+    rmap = nt.nodes.new('ShaderNodeMapRange')
+    nt.links.new(rough.outputs['Fac'], rmap.inputs['Value'])
+    set_input(rmap, 'To Min', 0.42)
+    set_input(rmap, 'To Max', 0.78)
+    nt.links.new(rmap.outputs['Result'], bsdf.inputs['Roughness'])
+    return mat
+
+
+def plain_material(name, color, roughness=0.6, metallic=0.0):
+    mat, nt, bsdf, _ = new_material(name)
+    bsdf.inputs['Base Color'].default_value = rgba(color)
+    set_input(bsdf, 'Roughness', roughness)
+    set_input(bsdf, 'Metallic', metallic)
+    return mat
+
+
+def paper_tone(book, shade):
+    fresh = np.array(book['paper_color'])
+    old = fresh * np.array([0.78, 0.68, 0.52])
+    c = fresh + (old - fresh) * book['paper_age']
+    c = c * (1.0 - 0.35 * shade)
+    return (float(c[0]), float(c[1]), float(c[2]), 1.0)
+
+
+def page_edge_material(book):
+    mat, nt, bsdf, _ = new_material('PageEdges')
+    wave = nt.nodes.new('ShaderNodeTexWave')
+    wave.wave_type = 'BANDS'
+    wave.bands_direction = 'Z'
+    set_input(wave, 'Scale', 60.0)
+    set_input(wave, 'Distortion', 2.0)
+    nt.links.new(nt.nodes.new('ShaderNodeTexCoord').outputs['Object'], wave.inputs['Vector'])
+    light = paper_tone(book, 0.0)
+    col = ramp(nt, wave.outputs['Fac'], [(0.0, rgba(light, 0.7)), (1.0, light)])
+    nt.links.new(col, bsdf.inputs['Base Color'])
+    set_input(bsdf, 'Roughness', 0.9)
+    return mat
+
+
+def image_layer(nt, uv, path, back, margin):
+    """Returns (colour, alpha) sockets of an image fitted inside the page, or None."""
+    img = load_image(path) if path else None
+    if img is None:
+        return None
+    iw, ih = img.size
+    mw = margin * PAGE_W
+    k = min((PAGE_W - 2 * mw) / iw, (PAGE_H - 2 * mw) / ih)
+    bw, bh = iw * k / PAGE_W, ih * k / PAGE_H
+    u0, v0 = (1 - bw) / 2, (1 - bh) / 2
+
+    vec = uv
+    if back:  # the back of a sheet is seen mirrored across the spine
+        sep = nt.nodes.new('ShaderNodeSeparateXYZ')
+        nt.links.new(uv, sep.inputs[0])
+        comb = nt.nodes.new('ShaderNodeCombineXYZ')
+        nt.links.new(math_node(nt, 'SUBTRACT', 1.0, sep.outputs['X']), comb.inputs['X'])
+        nt.links.new(sep.outputs['Y'], comb.inputs['Y'])
+        vec = comb.outputs[0]
+    mp = nt.nodes.new('ShaderNodeMapping')
+    nt.links.new(vec, mp.inputs['Vector'])
+    mp.inputs['Scale'].default_value = (1 / bw, 1 / bh, 1)
+    mp.inputs['Location'].default_value = (-u0 / bw, -v0 / bh, 0)
+    tex = nt.nodes.new('ShaderNodeTexImage')
+    tex.image = img
+    tex.extension = 'CLIP'
+    tex.interpolation = 'Cubic'
+    nt.links.new(mp.outputs['Vector'], tex.inputs['Vector'])
+    return tex.outputs['Color'], tex.outputs['Alpha']
+
+
+def sheet_material(name, front, back, job):
+    """Parchment with an image on each side (either may be None)."""
+    book = job['book']
+    mat, nt, bsdf, out = new_material(name)
+    uv = nt.nodes.new('ShaderNodeTexCoord').outputs['UV']
+    gen = nt.nodes.new('ShaderNodeTexCoord').outputs['Generated']
+
+    # Blotchy aged paper with darker, burnt-looking edges.
+    blotch = nt.nodes.new('ShaderNodeTexNoise')
+    set_input(blotch, 'Scale', 5.0)
+    set_input(blotch, 'Detail', 6.0)
+    nt.links.new(uv, blotch.inputs['Vector'])
+    paper = ramp(nt, blotch.outputs['Fac'], [(0.35, paper_tone(book, 0.4 * book['paper_age'])),
+                                             (0.65, paper_tone(book, 0.0))])
+    sep = nt.nodes.new('ShaderNodeSeparateXYZ')
+    nt.links.new(uv, sep.inputs[0])
+    u, v = sep.outputs['X'], sep.outputs['Y']
+    edge = math_node(nt, 'MINIMUM',
+                     math_node(nt, 'MINIMUM', u, math_node(nt, 'SUBTRACT', 1.0, u)),
+                     math_node(nt, 'MINIMUM', v, math_node(nt, 'SUBTRACT', 1.0, v)))
+    # Wobble the edge so the burn is irregular, not a clean frame.
+    wob = nt.nodes.new('ShaderNodeTexNoise')
+    set_input(wob, 'Scale', 14.0)
+    nt.links.new(uv, wob.inputs['Vector'])
+    edge = math_node(nt, 'ADD', edge, math_node(nt, 'MULTIPLY', wob.outputs['Fac'], 0.03))
+    vign = nt.nodes.new('ShaderNodeMapRange')
+    nt.links.new(edge, vign.inputs['Value'])
+    set_input(vign, 'From Min', 0.012)
+    set_input(vign, 'From Max', 0.03 + 0.07 * book['burn'])
+    set_input(vign, 'To Min', 0.9 * book['burn'])
+    set_input(vign, 'To Max', 0.0)
+    paper = mix_rgb(nt, 'MULTIPLY', vign.outputs['Result'], paper, (0.30, 0.16, 0.07, 1))
+
+    blend = 'MULTIPLY' if job['blend'] == 'ink' else 'MIX'
+    sides = []
+    for side_path, is_back in ((front, False), (back, True)):
+        layer = image_layer(nt, uv, side_path, is_back, job['margin'])
+        if layer:
+            col, alpha = layer
+            fac = math_node(nt, 'MULTIPLY', alpha, job['image_strength'])
+            sides.append(mix_rgb(nt, blend, fac, paper, col))
+        else:
+            sides.append(paper)
+    geo = nt.nodes.new('ShaderNodeNewGeometry')
+    color = mix_rgb(nt, 'MIX', geo.outputs['Backfacing'], sides[0], sides[1])
+    nt.links.new(color, bsdf.inputs['Base Color'])
+    set_input(bsdf, 'Roughness', 0.88)
+
+    fibre = nt.nodes.new('ShaderNodeTexNoise')
+    set_input(fibre, 'Scale', 220.0)
+    nt.links.new(gen, fibre.inputs['Vector'])
+    nt.links.new(bump(nt, fibre.outputs['Fac'], 0.05, 0.005), bsdf.inputs['Normal'])
+
+    # A little light shines through a lifted page.
+    trans = nt.nodes.new('ShaderNodeBsdfTranslucent')
+    nt.links.new(color, trans.inputs['Color'])
+    mix = nt.nodes.new('ShaderNodeMixShader')
+    mix.inputs['Fac'].default_value = 0.12
+    nt.links.new(bsdf.outputs['BSDF'], mix.inputs[1])
+    nt.links.new(trans.outputs['BSDF'], mix.inputs[2])
+    nt.links.new(mix.outputs['Shader'], out.inputs['Surface'])
+    return mat
+
+
+def emblem_material(img, style, leather):
+    """Medallion: the picture as it is, with a little relief. Deboss: pressed, darkened leather."""
+    mat, nt, bsdf, _ = new_material('Emblem')
+    tex = nt.nodes.new('ShaderNodeTexImage')
+    tex.image = img
+    tex.extension = 'CLIP'
+    nt.links.new(nt.nodes.new('ShaderNodeTexCoord').outputs['UV'], tex.inputs['Vector'])
+    lum = nt.nodes.new('ShaderNodeRGBToBW')
+    nt.links.new(tex.outputs['Color'], lum.inputs[0])
+    if style == 'deboss':
+        shade = ramp(nt, lum.outputs[0], [(0.0, rgba(leather, 0.25)), (1.0, rgba(leather, 0.7))])
+        nt.links.new(shade, bsdf.inputs['Base Color'])
+        nt.links.new(math_node(nt, 'MULTIPLY', tex.outputs['Alpha'], 0.92), sock(bsdf.inputs, 'Alpha'))
+        nt.links.new(bump(nt, lum.outputs[0], 0.6, 0.004), bsdf.inputs['Normal'])
+        set_input(bsdf, 'Roughness', 0.55)
+    else:
+        nt.links.new(tex.outputs['Color'], bsdf.inputs['Base Color'])
+        nt.links.new(tex.outputs['Alpha'], sock(bsdf.inputs, 'Alpha'))
+        nt.links.new(bump(nt, lum.outputs[0], 0.35, 0.003), bsdf.inputs['Normal'])
+        set_input(bsdf, 'Roughness', 0.45)
+        set_input(bsdf, 'Metallic', 0.25)
+    use_alpha_cutout(mat)
+    return mat
+
+
+# -------------------------------------------------------------------- objects
+
+def link_object(ob, parent=None):
+    bpy.context.scene.collection.objects.link(ob)
+    if parent is not None:
+        bpy.context.view_layer.update()
+        ob.parent = parent
+        ob.matrix_parent_inverse = parent.matrix_world.inverted()
+    return ob
+
+
+def add_box(bm, x0, x1, y0, y1, z0, z1):
+    v = [bm.verts.new(c) for c in ((x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0),
+                                   (x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1))]
+    for f in ((0, 3, 2, 1), (4, 5, 6, 7), (0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)):
+        bm.faces.new([v[i] for i in f])
+
+
+def box(name, x0, x1, y0, y1, z0, z1, mat, parent=None, bevel=0.0):
+    mesh = bpy.data.meshes.new(name)
+    bm = bmesh.new()
+    add_box(bm, x0, x1, y0, y1, z0, z1)
+    bm.to_mesh(mesh)
+    bm.free()
+    mesh.materials.append(mat)
+    ob = bpy.data.objects.new(name, mesh)
+    if bevel:
+        mod = ob.modifiers.new('Bevel', 'BEVEL')
+        mod.width = bevel
+        mod.segments = 3
+    return link_object(ob, parent)
+
+
+def quad(name, cx, cy, z, w, h, mat, parent=None):
+    """Flat picture plane facing up, UVs 0..1."""
+    mesh = bpy.data.meshes.new(name)
+    mesh.from_pydata([(cx - w / 2, cy - h / 2, z), (cx + w / 2, cy - h / 2, z),
+                      (cx + w / 2, cy + h / 2, z), (cx - w / 2, cy + h / 2, z)], [], [(0, 1, 2, 3)])
+    layer = mesh.uv_layers.new(name='UVMap')
+    layer.data.foreach_set('uv', [0, 0, 1, 0, 1, 1, 0, 1])
+    mesh.materials.append(mat)
+    return link_object(bpy.data.objects.new(name, mesh), parent)
+
+
+def make_sheet(name, mat, t, z_right, z_left, curl, parent):
+    verts = sheet_vertices(t, PAGE_W, PAGE_H, GRID_X, GRID_Y, z_right, z_left, curl=curl)
+    mesh = bpy.data.meshes.new(name)
+    mesh.from_pydata(verts.tolist(), [], grid_faces(GRID_X, GRID_Y))
+    uvs = grid_uvs(GRID_X, GRID_Y)
+    layer = mesh.uv_layers.new(name='UVMap')
+    loop_v = np.zeros(len(mesh.loops), dtype=np.int32)
+    mesh.loops.foreach_get('vertex_index', loop_v)
+    layer.data.foreach_set('uv', uvs[loop_v].astype(np.float32).ravel())
+    if hasattr(mesh, 'shade_smooth'):
+        mesh.shade_smooth()
+    else:
+        for p in mesh.polygons:
+            p.use_smooth = True
+    mesh.materials.append(mat)
+    return link_object(bpy.data.objects.new(name, mesh), parent)
+
+
+def update_sheet(ob, t, z_right, z_left, curl):
+    verts = sheet_vertices(t, PAGE_W, PAGE_H, GRID_X, GRID_Y, z_right, z_left, curl=curl)
+    ob.data.vertices.foreach_set('co', verts.astype(np.float32).ravel())
+    ob.data.update()
+
+
+def spine_object(book, height_closed, leather, parent):
+    """Leather strip under the gutter when open, wrapping the book's side when closed."""
+    nu, nv = 9, 60
+    hy = PAGE_H / 2 + COVER_MARGIN
+    u = np.linspace(0, 1, nu)
+    yv = np.linspace(-hy, hy, nv)
+    bands = np.zeros(nv)
+    n = book['spine_bands']
+    for i in range(n):
+        c = -hy * 0.7 + (1.4 * hy) * (i + 0.5) / n
+        bands += 0.007 * np.exp(-((yv - c) / 0.025) ** 2)
+    open_pts, closed_pts = [], []
+    for j in range(nv):
+        for i in range(nu):
+            bulge = math.sin(math.pi * u[i])
+            open_pts.append(((u[i] - 0.5) * 0.12, yv[j], -0.004 - 0.01 * bulge - bands[j]))
+            closed_pts.append((-0.03 * bulge - bands[j], yv[j], u[i] * height_closed))
+    faces = [(j * nu + i, j * nu + i + 1, (j + 1) * nu + i + 1, (j + 1) * nu + i)
+             for j in range(nv - 1) for i in range(nu - 1)]
+    mesh = bpy.data.meshes.new('Spine')
+    mesh.from_pydata(open_pts, [], faces)
+    if hasattr(mesh, 'shade_smooth'):
+        mesh.shade_smooth()
+    mesh.materials.append(leather)
+    ob = bpy.data.objects.new('Spine', mesh)
+    sol = ob.modifiers.new('Thickness', 'SOLIDIFY')
+    sol.thickness = 0.008
+    link_object(ob, parent)
+    ob.shape_key_add(name='Open')
+    key = ob.shape_key_add(name='Closed')
+    key.data.foreach_set('co', np.array(closed_pts, dtype=np.float32).ravel())
+    return key
+
+
+def stitches(name, cx, cy, z, w, h, inset, mat, parent):
+    """A row of short thread stitches around a rectangle (the cover's edge)."""
+    bm = bmesh.new()
+    step, length, width, height = 0.035, 0.022, 0.006, 0.0035
+    x0, x1, y0, y1 = cx - w / 2 + inset, cx + w / 2 - inset, cy - h / 2 + inset, cy + h / 2 - inset
+    for x in np.arange(x0, x1 - length, step):
+        for y in (y0, y1):
+            add_box(bm, x, x + length, y - width / 2, y + width / 2, z, z + height)
+    for y in np.arange(y0, y1 - length, step):
+        for x in (x0, x1):
+            add_box(bm, x - width / 2, x + width / 2, y, y + length, z, z + height)
+    mesh = bpy.data.meshes.new(name)
+    bm.to_mesh(mesh)
+    bm.free()
+    mesh.materials.append(mat)
+    return link_object(bpy.data.objects.new(name, mesh), parent)
+
+
+def title_text(book, cx, cy, z, cover_h, parent, leather):
+    curve = bpy.data.curves.new('Title', 'FONT')
+    curve.body = book['title']
+    curve.align_x = 'CENTER'
+    curve.align_y = 'CENTER'
+    curve.size = book['title_size'] * cover_h
+    curve.extrude = 0.0015
+    if book['title_style'] == 'gold':
+        mat = plain_material('TitleGold', (0.78, 0.52, 0.18), roughness=0.3, metallic=1.0)
+    else:
+        mat = plain_material('TitlePressed', rgba(leather, 0.3), roughness=0.55)
+    curve.materials.append(mat)
+    ob = bpy.data.objects.new('Title', curve)
+    ob.location = (cx, cy, z)
+    return link_object(ob, parent)
+
+
+def build_book(job):
+    """Creates every object. Returns what the frame loop animates."""
+    global PAGE_H
+    book = job['book']
+    PAGE_H = PAGE_W * book['page_aspect']
+    m = COVER_MARGIN
+    hy = PAGE_H / 2 + m
+    top = COVER_T + BLOCK_H
+    images = job['images']
+    turns, left_i, sheets, right_i = layout_pages(len(images))
+    hinge_z = top + (turns + 1) * SHEET_GAP + 0.001
+
+    leather = leather_material(book['leather_color'])
+    edges = page_edge_material(book)
+
+    root = link_object(bpy.data.objects.new('Book', None))
+    pivot = bpy.data.objects.new('FrontCoverHinge', None)
+    pivot.location = (0, 0, hinge_z)
+    link_object(pivot, root)
+
+    # Open-book layout. The left half (front cover side) hangs on the hinge.
+    box('CoverRight', 0, PAGE_W + m, -hy, hy, 0, COVER_T, leather, root, bevel=0.012)
+    box('PagesRight', 0.004, PAGE_W - 0.004, -PAGE_H / 2 + 0.004, PAGE_H / 2 - 0.004, COVER_T, top - 0.001, edges, root)
+    box('CoverLeft', -PAGE_W - m, 0, -hy, hy, 0, COVER_T, leather, pivot, bevel=0.012)
+    box('PagesLeft', -PAGE_W + 0.004, -0.004, -PAGE_H / 2 + 0.004, PAGE_H / 2 - 0.004, COVER_T, top - 0.001, edges, pivot)
+    get = lambda i: images[i] if i is not None else None  # noqa: E731
+    curl = job['curl']
+    make_sheet('LeftPage', sheet_material('Left', None, get(left_i), job), 1.0, top, top, curl, pivot)
+    make_sheet('LastRightPage', sheet_material('LastRight', get(right_i), None, job), 0.0, top, top, curl, root)
+    moving = []
+    for k, (f, b) in enumerate(sheets):
+        zr = top + (turns - k) * SHEET_GAP
+        zl = top + (k + 1) * SHEET_GAP
+        ob = make_sheet(f'Sheet{k + 1}', sheet_material(f'Sheet{k + 1}', get(f), get(b), job), 0.0, zr, zl, curl, root)
+        moving.append((ob, zr, zl))
+
+    spine_key = spine_object(book, 2 * hinge_z, leather, root)
+
+    # Front-cover decorations are placed with the book closed, so they read correctly on top.
+    pivot.rotation_euler = (0, math.pi, 0)
+    bpy.context.view_layer.update()
+    cover_w, cover_h = PAGE_W + m, 2 * hy
+    cx, z_top = cover_w / 2, 2 * hinge_z
+    if book['stitching']:
+        thread = plain_material('Thread', book['thread_color'], roughness=0.7)
+        stitches('Stitching', cx, 0, z_top, cover_w, cover_h, 0.035, thread, pivot)
+    if book['emblem']:
+        img = load_image(book['emblem'])
+        if img is not None:
+            size = book['emblem_size'] * cover_w
+            w, h = (size, size * img.size[1] / img.size[0])
+            em = quad('Emblem', cx, book['emblem_y'] * cover_h, z_top + 0.0012, w, h,
+                      emblem_material(img, book['emblem_style'], book['leather_color']), pivot)
+            if book['emblem_style'] == 'medallion':
+                sol = em.modifiers.new('Thickness', 'SOLIDIFY')
+                sol.thickness = 0.004
+                sol.offset = 1.0
+    if book['title'].strip():
+        title_text(book, cx, book['title_y'] * cover_h, z_top + 0.0008, cover_h, pivot, book['leather_color'])
+
+    return turns, moving, root, pivot, spine_key, cover_w
+
+
+# ------------------------------------------------------------- camera, lights
+
+def setup_camera(job):
+    target = bpy.data.objects.new('CameraTarget', None)
+    target.location = (0, 0, COVER_T + BLOCK_H)
+    bpy.context.scene.collection.objects.link(target)
+    cam_data = bpy.data.cameras.new('Camera')
+    cam_data.lens = 50
+    cam_data.clip_start = 0.3
+    cam_data.clip_end = 60
+    cam = bpy.data.objects.new('Camera', cam_data)
+    bpy.context.scene.collection.objects.link(cam)
+    bpy.context.scene.camera = cam
+    con = cam.constraints.new('TRACK_TO')
+    con.target = target
+    con.track_axis = 'TRACK_NEGATIVE_Z'
+    con.up_axis = 'UP_Y'
+
+    w, h = job['width'], job['height']
+    hfov = 2 * math.atan(18 / cam_data.lens)
+    vfov = 2 * math.atan(math.tan(hfov / 2) * h / w)
+    book_w = 2 * (PAGE_W + COVER_MARGIN)
+    book_h = PAGE_H + 2 * COVER_MARGIN
+    dist = max(book_w / 2 / math.tan(hfov / 2), book_h / 2 / math.tan(vfov / 2)) * 1.12 / job['zoom']
+    elevation = {'top': 89.9, 'angled': 58.0, 'low': 34.0}[job['camera']]
+    e = math.radians(elevation)
+    tz = COVER_T + BLOCK_H
+    cam.location = (0, -dist * math.cos(e), tz + dist * math.sin(e))
+
+
+def setup_lights(job):
+    sun_data = bpy.data.lights.new('Sun', 'SUN')
+    sun_data.energy = 3.2
+    sun_data.color = (1.0, 0.9, 0.78)
+    sun_data.angle = math.radians(6)
+    sun = bpy.data.objects.new('Sun', sun_data)
+    sun.rotation_euler = (math.radians(38), math.radians(-28), math.radians(20))
+    bpy.context.scene.collection.objects.link(sun)
+    world = bpy.data.worlds.new('World')
+    world.use_nodes = True
+    bg = world.node_tree.nodes.get('Background')
+    bg.inputs['Color'].default_value = (0.32, 0.30, 0.28, 1)
+    bg.inputs['Strength'].default_value = 0.55
+    bpy.context.scene.world = world
+
+
+# ------------------------------------------------------------ render settings
+
+def enable_gpu_cycles():
+    prefs = bpy.context.preferences.addons['cycles'].preferences
+    for kind in ('OPTIX', 'CUDA', 'HIP', 'ONEAPI', 'METAL'):
+        try:
+            prefs.compute_device_type = kind
+        except TypeError:
+            continue
+        refresh = getattr(prefs, 'refresh_devices', None) or prefs.get_devices
+        refresh()
+        found = [d for d in prefs.devices if d.type == kind]
+        if found:
+            for d in prefs.devices:
+                d.use = d.type == kind
+            return kind
+    return None
+
+
+def setup_render(job):
+    scene = bpy.context.scene
+    r = scene.render
+    if job['quality'] == 'cycles':
+        r.engine = 'CYCLES'
+        kind = enable_gpu_cycles()
+        scene.cycles.device = 'GPU' if kind else 'CPU'
+        scene.cycles.samples = 96
+        scene.cycles.use_denoising = True
+        log(f'INFO Cycles on {kind or "CPU (no GPU found)"}')
+    else:
+        for name in ('BLENDER_EEVEE_NEXT', 'BLENDER_EEVEE'):
+            try:
+                r.engine = name
+                break
+            except TypeError:
+                continue
+        scene.eevee.taa_render_samples = 8 if job['quality'] == 'draft' else 48
+        log(f'INFO {r.engine}')
+    r.film_transparent = True
+    r.resolution_x, r.resolution_y = job['width'], job['height']
+    r.resolution_percentage = 100
+    r.fps = int(job['fps'])
+    img = r.image_settings
+    img.file_format = 'PNG'
+    img.color_mode = 'RGBA'
+    img.color_depth = '8'
+    img.compression = int(job.get('png_compression', 15))  # low = faster saving
+    scene.view_settings.view_transform = 'Standard'
+
+
+# ------------------------------------------------------------------------ main
+
+def main():
+    job_path = sys.argv[sys.argv.index('--') + 1]
+    with open(job_path, encoding='utf-8') as fh:
+        job = json.load(fh)
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    setup_render(job)
+    turns, moving, root, pivot, spine_key, cover_w = build_book(job)
+    setup_camera(job)
+    setup_lights(job)
+
+    tl = Timeline(turns, job['fps'], job['start_hold'], job['turn_seconds'], job['pause'], job['end_hold'],
+                  job.get('open_seconds', 0.0))
+    frames = job.get('frames') or list(range(tl.frames))
+    out = job['out_dir']
+    os.makedirs(out, exist_ok=True)
+    last_t = [None] * len(moving)
+    started = time.time()
+    log(f'TOTAL {len(frames)}')
+    for i, f in enumerate(frames):
+        o = float(ease(tl.opening(f)))
+        pivot.rotation_euler = (0, math.pi * (1.0 - o), 0)
+        spine_key.value = 1.0 - o
+        root.location = (-(cover_w / 2) * (1.0 - o) if job.get('slide', True) else 0.0, 0, 0)
+        for k, (ob, zr, zl) in enumerate(moving):
+            t = tl.progress(f, k)
+            if t != last_t[k]:
+                update_sheet(ob, t, zr, zl, job['curl'])
+                last_t[k] = t
+        bpy.context.scene.frame_current = f
+        bpy.context.scene.render.filepath = os.path.join(out, f'frame_{i:06d}.png')
+        bpy.ops.render.render(write_still=True)
+        log(f'PROGRESS {i + 1} {len(frames)}')
+
+    with open(os.path.join(out, 'sequence.json'), 'w', encoding='utf-8') as fh:
+        json.dump(dict(width=job['width'], height=job['height'], fps=job['fps'], frames=len(frames),
+                       turns=turns, seconds=round(len(frames) / job['fps'], 3), alpha=True,
+                       render_seconds=round(time.time() - started, 1)), fh, indent=2)
+    log('DONE')
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except Exception as exc:  # report clearly to the app, then exit non-zero
+        import traceback
+        traceback.print_exc()
+        log(f'ERROR {exc}')
+        sys.stdout.flush()
+        os._exit(1)
