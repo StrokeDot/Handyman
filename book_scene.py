@@ -521,34 +521,40 @@ def build_book(job):
 
 # ------------------------------------------------------------- camera, lights
 
-def setup_camera(job):
-    target = bpy.data.objects.new('CameraTarget', None)
-    target.location = (0, 0, COVER_T + BLOCK_H)
-    bpy.context.scene.collection.objects.link(target)
-    cam_data = bpy.data.cameras.new('Camera')
-    cam_data.lens = 50
-    cam_data.clip_start = 0.3
-    cam_data.clip_end = 60
-    cam = bpy.data.objects.new('Camera', cam_data)
-    bpy.context.scene.collection.objects.link(cam)
-    bpy.context.scene.camera = cam
-    con = cam.constraints.new('TRACK_TO')
-    con.target = target
-    con.track_axis = 'TRACK_NEGATIVE_Z'
-    con.up_axis = 'UP_Y'
+class Camera:
+    """Camera from the app's angle settings; framing is recomputed each frame for slow moves."""
 
-    w, h = job['width'], job['height']
-    hfov = 2 * math.atan(18 / cam_data.lens)
-    vfov = 2 * math.atan(math.tan(hfov / 2) * h / w)
-    book_w = 2 * (PAGE_W + COVER_MARGIN)
-    book_h = PAGE_H + 2 * COVER_MARGIN
-    # Extra room above the book: a page rising mid-turn comes towards the camera and looks bigger.
-    room = {'top': 1.38, 'angled': 1.25, 'low': 1.18}[job['camera']]
-    dist = max(book_w / 2 / math.tan(hfov / 2), book_h / 2 / math.tan(vfov / 2)) * room / job['zoom']
-    elevation = {'top': 89.9, 'angled': 58.0, 'low': 34.0}[job['camera']]
-    e = math.radians(elevation)
-    tz = COVER_T + BLOCK_H
-    cam.location = (0, -dist * math.cos(e), tz + dist * math.sin(e))
+    def __init__(self, job):
+        import camera_fit as cf
+        self.cf = cf
+        self.settings = job['cam']
+        self.aspect = job['width'] / job['height']
+        top = COVER_T + BLOCK_H
+        self.target = (0.0, 0.0, top)
+        self.book_w, self.book_h = 2 * (PAGE_W + COVER_MARGIN), PAGE_H + 2 * COVER_MARGIN
+        self.points = cf.book_points(PAGE_W, PAGE_H, COVER_MARGIN, top)
+        data = bpy.data.cameras.new('Camera')
+        data.sensor_width = cf.SENSOR
+        data.sensor_fit = 'HORIZONTAL'
+        data.lens = float(self.settings['lens'])
+        data.clip_start = 0.05
+        data.clip_end = 200
+        self.ob = bpy.data.objects.new('Camera', data)
+        bpy.context.scene.collection.objects.link(self.ob)
+        bpy.context.scene.camera = self.ob
+        self.moving = self.settings.get('move', 'none') != 'none'
+        self.place(0.0)
+
+    def place(self, frac):
+        cam, r, u, f, lens = self.cf.shot(self.settings, frac, self.target, self.book_w, self.book_h,
+                                          self.points, self.aspect)
+        rows = self.cf.matrix_rows(cam, r, u, f)
+        try:
+            from mathutils import Matrix
+            rows = Matrix(rows)
+        except ImportError:
+            pass
+        self.ob.matrix_world = rows
 
 
 def setup_lights(job):
@@ -626,7 +632,7 @@ def main():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     setup_render(job)
     turns, moving, root, pivot, spine_key, cover_w = build_book(job)
-    setup_camera(job)
+    camera = Camera(job)
     setup_lights(job)
 
     tl = Timeline(turns, job['fps'], job['start_hold'], job['turn_seconds'], job['pause'], job['end_hold'],
@@ -638,6 +644,8 @@ def main():
     started = time.time()
     log(f'TOTAL {len(frames)}')
     for i, f in enumerate(frames):
+        if camera.moving:
+            camera.place(f / max(1, tl.frames - 1))
         o = float(ease(tl.opening(f)))
         pivot.rotation_euler = (0, math.pi * (1.0 - o), 0)
         spine_key.value = 1.0 - o

@@ -21,11 +21,13 @@ from PySide6.QtWidgets import (
 )
 
 import blender_bridge as bb
+import camera_fit as cf
 import encode
 import paths
 import templates
 import updater
 from book_dialog import BookDialog
+from framing_view import FramingView
 from page_curl import Timeline, layout_pages
 from version import APP_NAME, APP_VERSION
 
@@ -171,6 +173,7 @@ class Studio(QMainWindow):
         self._load_settings()
         self._update_summary()
         self._update_blender_label()
+        self._camera_changed()
         if self.settings.value('auto_update', 'true') == 'true':
             QTimer.singleShot(2500, lambda: self._check_updates(quiet=True))
 
@@ -260,6 +263,7 @@ class Studio(QMainWindow):
         f = QFormLayout(bookbox)
         self.book_combo = QComboBox()
         self.book_combo.currentIndexChanged.connect(self._update_summary)
+        self.book_combo.currentIndexChanged.connect(self._camera_changed)
         f.addRow('Template', self.book_combo)
         row = QHBoxLayout()
         for text, fn in (('Edit…', self._edit_book), ('Make a copy…', self._copy_book),
@@ -270,11 +274,34 @@ class Studio(QMainWindow):
         f.addRow(row)
         self.blend = self._combo(bb.BLEND)
         f.addRow('Page images', self.blend)
-        self.camera = self._combo(bb.CAMERAS)
-        f.addRow('Camera', self.camera)
-        self.zoom = self._slider(60, 160, 100)
-        f.addRow('Book size in frame', self.zoom)
         rv.addWidget(bookbox)
+
+        cambox = QGroupBox('Camera')
+        f = QFormLayout(cambox)
+        self.framing = FramingView()
+        f.addRow(self.framing)
+        self.shot = self._combo(cf.PRESETS)
+        self.shot.currentTextChanged.connect(self._apply_preset)
+        f.addRow('Start from', self.shot)
+        self.tilt = self._slider(15, 89, 50)
+        self.turn = self._slider(-60, 60, 0)
+        self.roll = self._slider(-20, 20, -3)
+        self.lens = self._slider(18, 100, 35)
+        self.zoom = self._slider(50, 250, 100)
+        self.shift_x = self._slider(-60, 60, 0)
+        self.shift_y = self._slider(-60, 60, 0)
+        for label, sl in (('Tilt (side ↔ top)', self.tilt), ('Turn around', self.turn), ('Tilt picture', self.roll),
+                          ('Perspective (lens)', self.lens), ('Book size', self.zoom),
+                          ('Left / right', self.shift_x), ('Down / up', self.shift_y)):
+            sl.valueChanged.connect(self._camera_changed)
+            f.addRow(label, sl)
+        self.move = self._combo(cf.MOVES)
+        self.move.currentTextChanged.connect(self._camera_changed)
+        f.addRow('Camera move', self.move)
+        b = QPushButton('Reset to the chosen start')
+        b.clicked.connect(lambda: self._apply_preset(self.shot.currentText()))
+        f.addRow(b)
+        rv.addWidget(cambox)
 
         timing = QGroupBox('Timing (seconds)')
         f = QFormLayout(timing)
@@ -299,6 +326,7 @@ class Studio(QMainWindow):
         out = QGroupBox('Export')
         f = QFormLayout(out)
         self.resolution = self._combo(RESOLUTIONS)
+        self.resolution.currentTextChanged.connect(self._camera_changed)
         self.fps = QComboBox()
         self.fps.addItems(['24', '30', '60'])
         self.fps.setCurrentText('30')
@@ -487,8 +515,7 @@ class Studio(QMainWindow):
                     start_hold=self.start_s.value(), turn_seconds=self.turn_s.value(),
                     pause=self.pause_s.value(), end_hold=self.end_s.value(),
                     start_closed=self.start_closed.isChecked(), open_seconds=self.open_s.value(),
-                    curl=self.curl.value() / 100, camera=self.camera.currentText(),
-                    zoom=self.zoom.value() / 100, quality=self.quality.currentText(),
+                    curl=self.curl.value() / 100, cam=self._cam(), quality=self.quality.currentText(),
                     blend=self.blend.currentText())
 
     def _state(self):
@@ -499,7 +526,7 @@ class Studio(QMainWindow):
         return v
 
     def _apply_state(self, v):
-        combos = dict(camera=self.camera, quality=self.quality, blend=self.blend, resolution=self.resolution)
+        combos = dict(quality=self.quality, blend=self.blend, resolution=self.resolution)
         for key, combo in combos.items():
             if v.get(key) and combo.findText(v[key]) >= 0:
                 combo.setCurrentText(v[key])
@@ -509,9 +536,10 @@ class Studio(QMainWindow):
                           ('end_hold', self.end_s), ('open_seconds', self.open_s)):
             if key in v:
                 spin.setValue(float(v[key]))
-        for key, s in (('curl', self.curl), ('zoom', self.zoom)):
-            if key in v:
-                s.setValue(round(float(v[key]) * 100))
+        if 'curl' in v:
+            self.curl.setValue(round(float(v['curl']) * 100))
+        if isinstance(v.get('cam'), dict):
+            self._set_cam(v['cam'])
         for key, box in (('mov', self.mov), ('webm', self.webm), ('keep_png', self.keep_png),
                          ('start_closed', self.start_closed)):
             if key in v:
@@ -519,6 +547,41 @@ class Studio(QMainWindow):
         if v.get('book'):
             self._reload_books(v['book'])
         return self._set_pages(v.get('pages', []))
+
+    # --------------------------------------------------------------- camera
+    def _cam(self):
+        return dict(tilt=float(self.tilt.value()), turn=float(self.turn.value()), roll=float(self.roll.value()),
+                    lens=float(self.lens.value()), zoom=self.zoom.value() / 100,
+                    shift_x=self.shift_x.value() / 100, shift_y=self.shift_y.value() / 100,
+                    move=cf.MOVES[self.move.currentText()])
+
+    def _set_cam(self, c):
+        sliders = dict(tilt=self.tilt, turn=self.turn, roll=self.roll, lens=self.lens)
+        for key, sl in sliders.items():
+            if key in c:
+                sl.blockSignals(True)
+                sl.setValue(round(float(c[key])))
+                sl.blockSignals(False)
+        for key, sl in (('zoom', self.zoom), ('shift_x', self.shift_x), ('shift_y', self.shift_y)):
+            if key in c:
+                sl.blockSignals(True)
+                sl.setValue(round(float(c[key]) * 100))
+                sl.blockSignals(False)
+        for label, value in cf.MOVES.items():
+            if value == c.get('move'):
+                self.move.setCurrentText(label)
+        self._camera_changed()
+
+    def _apply_preset(self, name):
+        if name in cf.PRESETS:
+            self._set_cam(dict(cf.PRESETS[name], zoom=1.0, shift_x=0.0, shift_y=0.0))
+
+    def _camera_changed(self, *_):
+        if not hasattr(self, 'framing') or not hasattr(self, 'resolution'):
+            return
+        w, h = RESOLUTIONS[self.resolution.currentText()]
+        aspect = float(self._book().get('page_aspect', 1.4)) if self.books else 1.4
+        self.framing.set_view(self._cam(), aspect, w / h)
 
     def _save_settings(self):
         self.settings.setValue('state', json.dumps(self._state()))

@@ -12,6 +12,7 @@ from unittest.mock import MagicMock
 bpy = MagicMock()
 bpy.types.NodeSocket = MagicMock
 bpy.data.images.load.return_value.size = (800, 600)
+bpy.data.objects.new.side_effect = lambda *a, **k: MagicMock()  # a separate object each time
 sys.modules['bpy'] = bpy
 sys.modules['bmesh'] = MagicMock()
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -23,7 +24,8 @@ import templates  # noqa: E402
 book_scene.sock = lambda sockets, name, kind=None: MagicMock()
 
 SETTINGS = dict(width=1920, height=1080, fps=30, start_hold=0.5, turn_seconds=1.0, pause=0.3,
-                end_hold=0.5, curl=0.9, camera='Angled', zoom=1.0, quality='Draft (fastest)',
+                end_hold=0.5, curl=0.9, quality='Draft (fastest)',
+                cam=dict(tilt=50, turn=10, roll=-3, lens=35, zoom=1.0, move='push', shift_x=0.1, shift_y=0),
                 blend='Ink on paper (blends in)', start_closed=True, open_seconds=1.5)
 
 
@@ -51,7 +53,8 @@ def test_full_book_with_cover_opening():
 
 
 def test_open_start_cycles_and_deboss():
-    s = dict(SETTINGS, start_closed=False, quality='Photoreal (Cycles, slow)', camera='Top-down (like a game journal)')
+    s = dict(SETTINGS, start_closed=False, quality='Photoreal (Cycles, slow)',
+             cam=dict(tilt=89.5, turn=0, roll=0, lens=50, zoom=1.2, move='none'))
     book = dict(templates.DEFAULTS, folder=None, title='', stitching=False, emblem_style='deboss')
     seq, renders = run(s, book, [])
     assert seq['turns'] == 1 and renders == seq['frames']

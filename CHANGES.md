@@ -1,5 +1,11 @@
 # Changes
 
+## 0.3.0
+- New Camera panel: start from Eye level, Top-down, Angled or Low angle, then adjust tilt, turn, picture tilt, perspective, size and position.
+- Live outline of the shot that updates while you drag, before any rendering.
+- Slow camera moves: push-in, pull-out or sideways drift.
+- The camera frames the book automatically from any angle.
+
 ## 0.2.1
 - More room above the book, so a page rising mid-turn stays inside the frame.
 - Unticked boxes now look clearly unticked.

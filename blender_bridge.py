@@ -12,7 +12,6 @@ import templates
 SCENE_SCRIPT = paths.resource_dir() / 'book_scene.py'
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 
-CAMERAS = {'Top-down (like a game journal)': 'top', 'Angled': 'angled', 'Low angle': 'low'}
 QUALITY = {'Draft (fastest)': 'draft', 'Final (recommended)': 'final', 'Photoreal (Cycles, slow)': 'cycles'}
 BLEND = {'Ink on paper (blends in)': 'ink', 'Photo (keeps bright colours)': 'photo'}
 
@@ -62,8 +61,7 @@ def make_job(settings, book, images, out_dir, frames=None, width=None, height=No
         pause=float(settings['pause']),
         end_hold=float(settings['end_hold']),
         curl=float(settings['curl']),
-        camera=CAMERAS[settings['camera']],
-        zoom=float(settings['zoom']),
+        cam=dict(settings['cam']),
         quality=quality or QUALITY[settings['quality']],
         blend=BLEND[settings['blend']],
         open_seconds=float(settings['open_seconds']) if settings['start_closed'] else 0.0,
