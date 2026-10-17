@@ -14,7 +14,7 @@ import math
 import numpy as np
 
 PEEL_SHARE = 0.28   # part of each turn spent lifting the corner before the page goes over
-GUTTER = 0.38       # how steeply a resting page rises out of the spine (radians at the spine)
+GUTTER = 0.5        # how steeply a resting page rises out of the spine (radians at the spine)
 GUTTER_POWER = 5.0  # higher = the curve stays closer to the spine
 
 
