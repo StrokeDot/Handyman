@@ -35,6 +35,21 @@ def _flip_v(img):
     return img.flipped(Qt.Orientation.Vertical) if hasattr(img, 'flipped') else img.mirrored(False, True)
 
 
+def _smooth_noise(rng, cx, cy, h, w):
+    """Random grid of cy × cx values, bilinearly stretched to h × w (no blocky squares)."""
+    g = rng.random((cy + 1, cx + 1)).astype(np.float32)
+    ys = np.linspace(0, cy, h, dtype=np.float32)
+    xs = np.linspace(0, cx, w, dtype=np.float32)
+    y0 = np.minimum(ys.astype(int), cy - 1)
+    x0 = np.minimum(xs.astype(int), cx - 1)
+    fy = (ys - y0)[:, None]
+    fx = (xs - x0)[None, :]
+    fy, fx = fy * fy * (3 - 2 * fy), fx * fx * (3 - 2 * fx)
+    a, b = g[y0][:, x0], g[y0][:, x0 + 1]
+    c, d = g[y0 + 1][:, x0], g[y0 + 1][:, x0 + 1]
+    return (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy
+
+
 def paper_image(book, aspect, seed):
     """Aged paper with darker burnt edges, like the final render's paper (approximation)."""
     h = int(TEX_W * aspect)
@@ -44,12 +59,10 @@ def paper_image(book, aspect, seed):
     burn = float(book.get('burn', 0.5))
     old = fresh * np.array([0.78, 0.68, 0.52])
     base = fresh + (old - fresh) * age
-    # Soft blotches: upsampled random noise.
-    small = rng.random((8, max(2, int(8 * aspect)))).astype(np.float32)
-    blot = np.kron(small, np.ones((TEX_W // 8 + 1, int(h / small.shape[1]) + 1)))[:TEX_W, :h].T
-    k = 9
-    pad = np.pad(blot, k, mode='edge')
-    blot = sum(pad[i:i + h, j:j + TEX_W] for i in range(0, 2 * k + 1, 3) for j in range(0, 2 * k + 1, 3)) / 49
+    # Soft blotches: a few octaves of smoothly upsampled random noise.
+    blot = np.zeros((h, TEX_W), dtype=np.float32)
+    for cells, weight in ((5, 1.0), (11, 0.5), (23, 0.25)):
+        blot += weight * _smooth_noise(rng, cells, max(2, int(cells * aspect)), h, TEX_W)
     shade = 1.0 - 0.18 * age * (blot - blot.mean()) / (blot.std() + 1e-6) * 0.5
     v, u = np.mgrid[0:h, 0:TEX_W]
     edge = np.minimum(np.minimum(u, TEX_W - 1 - u) / TEX_W, np.minimum(v, h - 1 - v) / h)
@@ -500,13 +513,14 @@ class LiveView(QOpenGLWidget):
             gl.glEnable(gl.GL_ALPHA_TEST)
             gl.glAlphaFunc(gl.GL_GREATER, 0.05)
             gl.glBindTexture(gl.GL_TEXTURE_2D, tex)
-            gl.glColor3f(1, 1, 1)
+            gl.glDisable(gl.GL_LIGHTING)          # printed art: show its own colours
+            gl.glColor3f(0.92, 0.9, 0.88)
             gl.glBegin(gl.GL_QUADS)
-            gl.glNormal3f(0, 0, -1)
             for x, y, s, t in reversed(corners):
                 gl.glTexCoord2f(s, t)
                 gl.glVertex3f(*bm.closed_to_open(L, x, y, z_top + lift))
             gl.glEnd()
+            gl.glEnable(gl.GL_LIGHTING)
             gl.glDisable(gl.GL_ALPHA_TEST)
             gl.glDisable(gl.GL_BLEND)
             gl.glDisable(gl.GL_TEXTURE_2D)

@@ -1,5 +1,11 @@
 # Changes
 
+## 0.5.0
+- Live 3D view: the book, your pages, the cover opening and the page turns play inside the app instantly, no rendering. Play / pause, speed (0.25× to 2×), loop, and a timeline you can drag.
+- Drag the live view with the mouse to move the camera; every setting change shows immediately. Blender is only needed for the final video.
+- "Book opens at": opening from the beginning now swings only the cover, with the pages staying on the right (no more half of the book lifting like a slab).
+- Pages on each side curve according to how thick that side is.
+
 ## 0.4.0
 - Move the camera with the mouse: in "Set up the shot", drag to look around the book, right-drag to move it, mouse wheel to zoom, double-click to reset.
 - Pages curve down into the spine like a real open book.
