@@ -37,7 +37,7 @@ jobs:
       - name: Check the update address answers (uses the permanent repository ID)
         shell: bash
         run: |
-          python -c "import json,urllib.request,updater;r=json.loads(urllib.request.urlopen(urllib.request.Request(updater.API,headers={'User-Agent':'ci'}),timeout=20).read());print('latest release seen by installed apps:',r.get('tag_name'),updater.pick_installer(r)['name'])" || echo "No release yet (first build)."
+          python -c "import json,urllib.request,updater;r=json.loads(urllib.request.urlopen(urllib.request.Request(updater.API,headers={'User-Agent':'ci'}),timeout=20).read());print('latest release seen by installed apps:',r.get('tag_name'),updater.pick_installer(r)['name'])"
 
       - name: Read version
         id: ver
