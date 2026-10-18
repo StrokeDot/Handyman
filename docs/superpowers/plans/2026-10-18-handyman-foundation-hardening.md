@@ -287,10 +287,10 @@ At the start of each implementation phase:
 
 **Interfaces:**
 - Produces: BookAnimation.create_job(settings: dict, book: dict, images: list, out_dir: Path, **overrides) -> dict, delegating to blender_bridge.make_job.
-- Produces: BookAnimation.timeline(pages_count: int, settings: dict) -> Timeline, matching current Studio._timeline.
+- Produces: BookAnimation.timeline(pages_count: int, settings: dict, turns_override: int | None = None) -> Timeline, matching current Studio._timeline and preserving the shortened two-turn draft preview.
 - BookAnimation.id = "book-page-turn". No plugin loading, new renderer, or animation marketplace in this phase.
 
-- [ ] **Step 1 — RED:** Add test_adapter_job_matches_existing_bridge and test_adapter_timeline_matches_existing_app for every existing camera preset, closed/open book, and 1/2/5 page count; verify output JSON equivalence, not just object identity.
+- [ ] **Step 1 — RED:** Add test_adapter_job_matches_existing_bridge and test_adapter_timeline_matches_existing_app for existing camera presets, closed/open book, 1/2/5/8 page counts, and turns_override=2 (draft preview); verify job JSON equivalence and matching timeline frame counts/timing, not just object identity.
 - [ ] **Step 2 — Verify red:** python -m unittest -v test_book_animation; class absent.
 - [ ] **Step 3 — GREEN:** Implement the small adapter and redirect only the two UI methods through it; retain public behavior and file naming.
 - [ ] **Step 4 — Verify green:** targeted test, recurring full suite, real Blender preview comparison (first/mid/last), and OpenGL live-preview regression screenshots.
