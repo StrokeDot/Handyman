@@ -58,29 +58,57 @@ class Layout:
         e = float(ease(o))
         return math.pi * (1.0 - e), (-(self.cover_w / 2) * (1.0 - e) if slide else 0.0)
 
+    def joint(self, angle):
+        """(x, z) of the front cover's spine edge for a cover angle (0 = lying open, pi = closed).
+
+        The front cover and everything on it turn by `angle` around this point, and the spine
+        leather always reaches it, so the cover never leaves the spine. Closing, the joint climbs
+        the side of the page block to the top of the book; the cover then folds over onto it. The
+        joint also steps out by the left stack's thickness so that stack slides past the right one
+        instead of through it.
+        """
+        x = -self.top_left * math.sin(angle)
+        z = 2 * self.hinge * float(ease(min(1.0, angle / (math.pi / 2))))
+        return x, z
+
     def camera_top(self):
         return max(self.top_left, self.top_right)
 
 
-def spine_shapes(layout, bands=4, nu=9, nv=60):
-    """(open, closed) vertex grids of the leather spine, plus quad faces."""
+SPINE_NU, SPINE_NV = 9, 60
+
+
+def spine_faces(nu=SPINE_NU, nv=SPINE_NV):
+    return [(j * nu + i, j * nu + i + 1, (j + 1) * nu + i + 1, (j + 1) * nu + i)
+            for j in range(nv - 1) for i in range(nu - 1)]
+
+
+def spine_vertices(layout, angle, bands=4, nu=SPINE_NU, nv=SPINE_NV):
+    """Vertex grid (nv rows up the book, nu across) of the leather spine for a cover angle.
+
+    It runs from the back cover's spine edge (0, 0) to the front cover's joint, bulging outwards,
+    so both covers stay attached to it at every angle. Lying open it is tucked under the gutter.
+    """
     hy = layout.cover_h / 2
-    u = np.linspace(0, 1, nu)
-    yv = np.linspace(-hy, hy, nv)
-    bump = np.zeros(nv)
+    u = np.linspace(0, 1, nu)[None, :]
+    yv = np.linspace(-hy, hy, nv)[:, None]
+    bump = np.zeros_like(yv)
     for i in range(bands):
         c = -hy * 0.7 + (1.4 * hy) * (i + 0.5) / max(1, bands)
         bump += 0.007 * np.exp(-((yv - c) / 0.025) ** 2)
+    bulge = np.sin(math.pi * u)
     height = 2 * layout.hinge
-    open_pts, closed_pts = [], []
-    for j in range(nv):
-        for i in range(nu):
-            bulge = math.sin(math.pi * u[i])
-            open_pts.append(((u[i] - 0.5) * 0.12, yv[j], -0.004 - 0.01 * bulge - bump[j]))
-            closed_pts.append((-0.03 * bulge - bump[j], yv[j], u[i] * height))
-    faces = [(j * nu + i, j * nu + i + 1, (j + 1) * nu + i + 1, (j + 1) * nu + i)
-             for j in range(nv - 1) for i in range(nu - 1)]
-    return np.array(open_pts), np.array(closed_pts), faces
+    # Lying open: a strip under both covers.
+    ox, oz = (u - 0.5) * 0.12 + 0 * yv, -0.004 - 0.01 * bulge - bump
+    # Wrapping: from the back cover's edge to the joint, pushed outwards (away from the pages).
+    jx, jz = layout.joint(angle)
+    chord = math.hypot(jx, jz)
+    nx, nz = (-jz / chord, jx / chord) if chord > 1e-9 else (0.0, -1.0)
+    out = 0.03 * min(1.0, chord / height) * bulge + bump
+    wx, wz = u * jx + nx * out, u * jz + nz * out
+    w = float(ease(min(1.0, chord / (0.3 * height))))
+    x, z = ox + (wx - ox) * w, oz + (wz - oz) * w
+    return np.stack([x, np.broadcast_to(yv, x.shape), z], axis=-1).reshape(-1, 3)
 
 
 def block_prism(layout, side, nx=24):

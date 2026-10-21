@@ -51,10 +51,43 @@ def test_opening_motion():
     assert L.opening(1.0) == (0.0, 0.0)
 
 
-def test_spine_shapes():
-    o, c, f = bm.spine_shapes(bm.Layout())
-    assert o.shape == c.shape and len(f) > 0
-    assert np.isclose(c[:, 2].max(), 2 * bm.Layout().hinge)
+def _left_half(L, angle, local):
+    """Front-cover side points (open-layout coordinates) at a cover angle, as both views place them."""
+    jx, jz = L.joint(angle)
+    c, s = np.cos(angle), np.sin(angle)
+    x, z = local[:, 0], local[:, 1]
+    return np.stack([jx + x * c + z * s, jz - x * s + z * c], axis=1)
+
+
+def test_closed_joint_matches_closed_layout():
+    L = bm.Layout(1.4, 3, 0.04)
+    pts = np.array([[-0.3, 0.01], [-1.0, bm.COVER_T], [0.0, L.top_left]])
+    got = _left_half(L, np.pi, pts)
+    want = np.array([bm.closed_to_open(L, x, 0, z)[::2] for x, z in pts])
+    assert np.allclose(got, want)
+    assert L.joint(0.0) == (0.0, 0.0)
+
+
+def test_cover_stays_on_the_spine():
+    """At every angle the spine ends exactly at the front cover's edge and starts at the back cover's."""
+    for at in bm.OPEN_AT.values():
+        L = bm.Layout(1.4, 3, at)
+        for angle in np.linspace(0, np.pi, 41):
+            v = bm.spine_vertices(L, angle, bands=0).reshape(bm.SPINE_NV, bm.SPINE_NU, 3)
+            if angle > 0.6:
+                assert np.allclose(v[:, 0, [0, 2]], 0.0, atol=1e-9)
+                assert np.allclose(v[:, -1, [0, 2]], L.joint(angle), atol=1e-9)
+
+
+def test_left_half_never_passes_through_the_right_block():
+    for at in bm.OPEN_AT.values():
+        L = bm.Layout(1.4, 3, at)
+        verts, _ = bm.block_prism(L, -1)
+        local = np.vstack([verts[:, [0, 2]], [[0.0, 0.0], [0.0, bm.COVER_T], [-L.cover_w, 0.0]]])
+        for angle in np.linspace(0, np.pi, 61):
+            p = _left_half(L, angle, local)
+            inside = (p[:, 0] > 0.003) & (p[:, 0] < L.page_w) & (p[:, 1] < L.top_right - 0.002)
+            assert not inside.any(), (at, angle)
 
 
 if __name__ == '__main__':

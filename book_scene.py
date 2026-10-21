@@ -423,21 +423,23 @@ def page_block(name, side, mat, parent):
 
 
 def spine_object(book, leather, parent):
-    """Leather strip under the gutter when open, wrapping the book's side when closed."""
-    open_pts, closed_pts, faces = bm.spine_shapes(LAYOUT, int(book['spine_bands']))
+    """Leather strip under the gutter when open, wrapping the book's side up to the front cover."""
+    verts = bm.spine_vertices(LAYOUT, 0.0, int(book['spine_bands']))
     mesh = bpy.data.meshes.new('Spine')
-    mesh.from_pydata(open_pts.tolist(), [], faces)
+    mesh.from_pydata(verts.tolist(), [], bm.spine_faces())
     if hasattr(mesh, 'shade_smooth'):
         mesh.shade_smooth()
     mesh.materials.append(leather)
     ob = bpy.data.objects.new('Spine', mesh)
     sol = ob.modifiers.new('Thickness', 'SOLIDIFY')
     sol.thickness = 0.008
-    link_object(ob, parent)
-    ob.shape_key_add(name='Open')
-    key = ob.shape_key_add(name='Closed')
-    key.data.foreach_set('co', closed_pts.astype(np.float32).ravel())
-    return key
+    return link_object(ob, parent)
+
+
+def update_spine(ob, angle, bands):
+    verts = bm.spine_vertices(LAYOUT, angle, bands)
+    ob.data.vertices.foreach_set('co', verts.astype(np.float32).ravel())
+    ob.data.update()
 
 
 def stitches(name, cx, cy, z, w, h, inset, mat, parent):
@@ -492,10 +494,9 @@ def build_book(job):
 
     root = link_object(bpy.data.objects.new('Book', None))
     pivot = bpy.data.objects.new('FrontCoverHinge', None)
-    pivot.location = (0, 0, hinge_z)
     link_object(pivot, root)
 
-    # Open-book layout. The left half (front cover side) hangs on the hinge.
+    # Open-book layout. The left half (front cover side) turns on its joint with the spine (the pivot).
     box('CoverRight', 0, PAGE_W + m, -hy, hy, 0, COVER_T, leather, root, bevel=0.012)
     page_block('PagesRight', 1, edges, root)
     box('CoverLeft', -PAGE_W - m, 0, -hy, hy, 0, COVER_T, leather, pivot, bevel=0.012)
@@ -511,9 +512,11 @@ def build_book(job):
         ob = make_sheet(f'Sheet{k + 1}', sheet_material(f'Sheet{k + 1}', get(f), get(b), job), 0.0, zr, zl, curl, root)
         moving.append((ob, zr, zl))
 
-    spine_key = spine_object(book, leather, root)
+    spine = spine_object(book, leather, root)
 
     # Front-cover decorations are placed with the book closed, so they read correctly on top.
+    jx, jz = L.joint(math.pi)
+    pivot.location = (jx, 0, jz)
     pivot.rotation_euler = (0, math.pi, 0)
     bpy.context.view_layer.update()
     cover_w, cover_h = PAGE_W + m, 2 * hy
@@ -535,7 +538,7 @@ def build_book(job):
     if book['title'].strip():
         title_text(book, cx, book['title_y'] * cover_h, z_top + 0.0008, cover_h, pivot, book['leather_color'])
 
-    return turns, moving, root, pivot, spine_key, cover_w
+    return turns, moving, root, pivot, spine, cover_w
 
 
 # ------------------------------------------------------------- camera, lights
@@ -650,7 +653,7 @@ def main():
         job = json.load(fh)
     bpy.ops.wm.read_factory_settings(use_empty=True)
     setup_render(job)
-    turns, moving, root, pivot, spine_key, cover_w = build_book(job)
+    turns, moving, root, pivot, spine, cover_w = build_book(job)
     camera = Camera(job)
     setup_lights(job)
 
@@ -666,8 +669,10 @@ def main():
         if camera.moving:
             camera.place(f / max(1, tl.frames - 1))
         angle, slide = LAYOUT.opening(tl.opening(f), job.get('slide', True))
+        jx, jz = LAYOUT.joint(angle)
+        pivot.location = (jx, 0, jz)
         pivot.rotation_euler = (0, angle, 0)
-        spine_key.value = angle / math.pi
+        update_spine(spine, angle, int(job['book']['spine_bands']))
         root.location = (slide, 0, 0)
         for k, (ob, zr, zl) in enumerate(moving):
             t = tl.progress(f, k)
