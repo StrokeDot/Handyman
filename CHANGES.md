@@ -1,5 +1,8 @@
 # Changes
 
+## 0.5.1
+- The front cover stays attached to the spine while it opens: it folds over the top of the book on its spine edge, and the leather spine follows it the whole way. No more cover floating away from the book or gap at the spine (live view and final video).
+
 ## 0.5.0
 - Live 3D view: the book, your pages, the cover opening and the page turns play inside the app instantly, no rendering. Play / pause, speed (0.25× to 2×), loop, and a timeline you can drag.
 - Drag the live view with the mouse to move the camera; every setting change shows immediately. Blender is only needed for the final video.

@@ -408,13 +408,13 @@ class LiveView(QOpenGLWidget):
         for k in range(turns):
             zr, zl = L.sheet_levels(k)
             self._sheet(tl.progress(f, k), zr, zl, self._tex_pages[('f', k)], self._tex_pages[('b', k)], k)
-        self._spine(angle / math.pi, leather)
+        self._spine(angle, leather)
 
-        # Left half, on the hinge.
+        # Left half, turning on its joint with the spine.
         gl.glPushMatrix()
-        gl.glTranslatef(0, 0, L.hinge)
+        jx, jz = L.joint(angle)
+        gl.glTranslatef(jx, 0, jz)
         gl.glRotatef(math.degrees(angle), 0, 1, 0)
-        gl.glTranslatef(0, 0, -L.hinge)
         self._box(-L.page_w - m, 0, -hy, hy, 0, bm.COVER_T, leather)
         self._prism(*bm.block_prism(L, -1), edge)
         self._sheet(1.0, L.base_left, L.base_left, self._tex_pages['blank'], self._tex_pages['left'])
@@ -481,12 +481,9 @@ class LiveView(QOpenGLWidget):
         gl.glDisableClientState(gl.GL_TEXTURE_COORD_ARRAY)
         gl.glDisable(gl.GL_TEXTURE_2D)
 
-    def _spine(self, closed, colour):
-        if not hasattr(self, '_spine_data') or self._spine_data[0] is not self.layout:
-            o, c, faces = bm.spine_shapes(self.layout, int(self.book.get('spine_bands', 4)))
-            self._spine_data = (self.layout, o, c, faces)
-        _, o, c, faces = self._spine_data
-        v = o + (c - o) * closed
+    def _spine(self, angle, colour):
+        v = bm.spine_vertices(self.layout, angle, int(self.book.get('spine_bands', 4)))
+        faces = bm.spine_faces()
         gl.glDisable(gl.GL_TEXTURE_2D)
         gl.glColor3f(*(np.array(colour) * 0.9))
         gl.glBegin(gl.GL_QUADS)
