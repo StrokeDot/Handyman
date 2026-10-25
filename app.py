@@ -265,7 +265,11 @@ class Studio(QMainWindow):
         self.loop = QCheckBox('Loop')
         self.loop.setChecked(True)
         self.loop.toggled.connect(lambda on: setattr(self.live, 'loop', on) if self.live else None)
-        for wdg in (self.play_btn, self.scrub, self.time_label, QLabel('Speed'), self.speed, self.loop):
+        self.drag_pages = QCheckBox('Drag pages')
+        self.drag_pages.setToolTip('Left-drag a page in the live view to turn it')
+        self.drag_pages.toggled.connect(lambda on: setattr(self.live, 'drag_pages', on) if self.live else None)
+        for wdg in (self.play_btn, self.scrub, self.time_label, QLabel('Speed'), self.speed, self.loop,
+                    self.drag_pages):
             pb.addWidget(wdg, 1 if wdg is self.scrub else 0)
         mv.addWidget(self.playbar)
         self.playbar.setVisible(self.live is not None)

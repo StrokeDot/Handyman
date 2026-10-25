@@ -15,6 +15,7 @@ import book_model as bm
 import camera_fit as cf
 import paths
 import scene
+from drag import DragState
 from page_curl import grid_faces, grid_uvs, layout_pages, sheet_vertices
 
 try:
@@ -181,6 +182,10 @@ class LiveView(QOpenGLWidget):
         self._sheet_cache = {}
         self._last = None
         self._button = None
+        self.page_drag = DragState()
+        self.drag_pages = False
+        self.drag_sheet = None
+        self.drag_progress = 0.0
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
         self._timer.start(16)
@@ -254,11 +259,33 @@ class LiveView(QOpenGLWidget):
         self.update()
 
     # ----------------------------------------------------------------- mouse
+    def _next_sheet(self):
+        """The sheet the user would turn next: the first one still on the right."""
+        if self.scene is None:
+            return None
+        for k, p in enumerate(self.scene.evaluate(self.frame)['sheet_progress']):
+            if p < 1.0:
+                return k
+        return None
+
     def mousePressEvent(self, e):
+        if self.drag_pages and e.button() == Qt.MouseButton.LeftButton:
+            sheet = self._next_sheet()
+            if sheet is not None:
+                self.drag_sheet = sheet
+                self.drag_progress = 0.0
+                self.page_drag.begin(e.position().x(), e.position().y())
+                self.setCursor(Qt.CursorShape.ClosedHandCursor)
+                return
         self._last, self._button = e.position(), e.button()
         self.setCursor(Qt.CursorShape.ClosedHandCursor)
 
     def mouseMoveEvent(self, e):
+        if self.drag_sheet is not None:
+            span = max(1.0, self.width() * 0.55)
+            self.drag_progress = self.page_drag.move(e.position().x(), e.position().y(), span)
+            self.update()
+            return
         if self._last is None:
             return
         d = e.position() - self._last
@@ -266,6 +293,17 @@ class LiveView(QOpenGLWidget):
         (self.orbit if self._button == Qt.MouseButton.LeftButton else self.pan).emit(d.x(), d.y())
 
     def mouseReleaseEvent(self, _):
+        if self.drag_sheet is not None:
+            done = self.page_drag.finish()
+            k = self.drag_sheet
+            self.drag_sheet = None
+            self.drag_progress = 0.0
+            if done >= 1.0:
+                tl = self.timeline
+                self.seek(min(tl.frames - 1, tl.turn_start(k) + tl.turn))
+            self.update()
+            self.setCursor(Qt.CursorShape.OpenHandCursor)
+            return
         self._last = None
         self.setCursor(Qt.CursorShape.OpenHandCursor)
 
@@ -440,7 +478,8 @@ class LiveView(QOpenGLWidget):
         self._sheet(0.0, L.base_right + 0.0015, L.base_right + 0.0015, self._tex_pages['right'], self._tex_pages['blank'])
         for k in range(L.turns):
             zr, zl = L.turn_levels(k)
-            self._sheet(pose['sheet_progress'][k], zr, zl, self._tex_pages[('f', k)], self._tex_pages[('b', k)], k,
+            t = self.drag_progress if k == self.drag_sheet else pose['sheet_progress'][k]
+            self._sheet(t, zr, zl, self._tex_pages[('f', k)], self._tex_pages[('b', k)], k,
                         smoothness=pose['smoothness'])
         self._spine(angle / math.pi, leather)
 
