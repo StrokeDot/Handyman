@@ -54,6 +54,7 @@ jobs:
           --add-data "page_curl.py;."
           --add-data "camera_fit.py;."
           --add-data "book_model.py;."
+          --add-data "scene.py;."
           --add-data "resources;resources"
           --add-data "assets;assets"
           --hidden-import OpenGL.GL
@@ -71,6 +72,7 @@ jobs:
           test -f dist/Handyman/_internal/page_curl.py
           test -f dist/Handyman/_internal/camera_fit.py
           test -f dist/Handyman/_internal/book_model.py
+          test -f dist/Handyman/_internal/scene.py
           test -f dist/Handyman/_internal/resources/books/leather-journal/book.json
 
       - name: Build installer

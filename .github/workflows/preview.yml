@@ -12,6 +12,7 @@ on:
       - templates.py
       - blender_bridge.py
       - book_model.py
+      - scene.py
       - live_view.py
       - app.py
       - resources/**

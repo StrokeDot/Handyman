@@ -13,7 +13,8 @@ from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
 import book_model as bm
 import camera_fit as cf
-from page_curl import Timeline, grid_faces, grid_uvs, layout_pages, sheet_vertices
+import scene
+from page_curl import grid_faces, grid_uvs, layout_pages, sheet_vertices
 
 try:
     from OpenGL import GL as gl
@@ -144,7 +145,8 @@ class LiveView(QOpenGLWidget):
         self.images = []
         self.values = None
         self.layout = None
-        self.timeline = Timeline(1, 30)
+        self.scene = scene.Scene(1)
+        self.timeline = self.scene.timeline
         self.frame = 0.0
         self.speed = 1.0
         self.playing = False
@@ -181,10 +183,13 @@ class LiveView(QOpenGLWidget):
             self._dirty_textures = True
         self.book, self.images, self.values = book, list(images), dict(values)
         turns = layout_pages(len(images))[0]
-        self.layout = bm.Layout(book.get('page_aspect', 1.4), turns, values.get('open_at', 0.04))
         v = values
-        self.timeline = Timeline(turns, v['fps'], v['start_hold'], v['turn_seconds'], v['pause'], v['end_hold'],
-                                 v['open_seconds'] if v.get('start_closed') else 0.0)
+        self.scene = scene.Scene(turns, book.get('page_aspect', 1.4), values.get('open_at', 0.04),
+                                 v['fps'], v['start_hold'], v['turn_seconds'], v['pause'], v['end_hold'],
+                                 v['open_seconds'] if v.get('start_closed') else 0.0,
+                                 v.get('start_closed', True))
+        self.layout = self.scene.layout
+        self.timeline = self.scene.timeline
         self.frame = min(self.frame, self.timeline.frames - 1)
         self._sheet_cache.clear()
         self.cam = dict(v.get('cam', self.cam))
@@ -368,9 +373,9 @@ class LiveView(QOpenGLWidget):
         if self._dirty_textures:
             self._build_textures()
         L = self.layout
-        tl = self.timeline
         f = self.frame
-        frac = f / max(1, tl.frames - 1)
+        pose = self.scene.evaluate(f)
+        frac = pose['camera_frac']
 
         # Camera, exactly as the final render frames it.
         top = L.camera_top()
@@ -393,7 +398,7 @@ class LiveView(QOpenGLWidget):
         gl.glLightfv(gl.GL_LIGHT1, gl.GL_POSITION, (-0.6, 0.4, 0.5, 0.0))
         gl.glEnable(gl.GL_LIGHTING)
 
-        angle, slide = L.opening(tl.opening(f), self.values.get('start_closed', True))
+        angle, slide = pose['cover_angle'], pose['cover_slide']
         gl.glPushMatrix()
         gl.glTranslatef(slide, 0, 0)
         leather = _hex_rgb(self.book.get('leather_color'))
@@ -407,7 +412,7 @@ class LiveView(QOpenGLWidget):
         turns, *_ = layout_pages(len(self.images))
         for k in range(turns):
             zr, zl = L.sheet_levels(k)
-            self._sheet(tl.progress(f, k), zr, zl, self._tex_pages[('f', k)], self._tex_pages[('b', k)], k)
+            self._sheet(pose['sheet_progress'][k], zr, zl, self._tex_pages[('f', k)], self._tex_pages[('b', k)], k)
         self._spine(angle / math.pi, leather)
 
         # Left half, on the hinge.

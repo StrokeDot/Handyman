@@ -16,7 +16,8 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import book_model as bm  # noqa: E402
-from page_curl import ease, sheet_vertices, grid_faces, grid_uvs, Timeline, layout_pages  # noqa: E402
+import scene  # noqa: E402
+from page_curl import ease, sheet_vertices, grid_faces, grid_uvs, layout_pages  # noqa: E402
 
 PAGE_W = bm.PAGE_W
 PAGE_H = 1.4              # replaced from the template's page_aspect
@@ -654,23 +655,25 @@ def main():
     camera = Camera(job)
     setup_lights(job)
 
-    tl = Timeline(turns, job['fps'], job['start_hold'], job['turn_seconds'], job['pause'], job['end_hold'],
-                  job.get('open_seconds', 0.0))
-    frames = job.get('frames') or list(range(tl.frames))
+    sc = scene.Scene(turns, job['book']['page_aspect'], job.get('open_at', 0.04), job['fps'],
+                     job['start_hold'], job['turn_seconds'], job['pause'], job['end_hold'],
+                     job.get('open_seconds', 0.0), job.get('slide', True))
+    frames = job.get('frames') or list(range(sc.frames))
     out = job['out_dir']
     os.makedirs(out, exist_ok=True)
     last_t = [None] * len(moving)
     started = time.time()
     log(f'TOTAL {len(frames)}')
     for i, f in enumerate(frames):
+        pose = sc.evaluate(f)
         if camera.moving:
-            camera.place(f / max(1, tl.frames - 1))
-        angle, slide = LAYOUT.opening(tl.opening(f), job.get('slide', True))
+            camera.place(pose['camera_frac'])
+        angle, slide = pose['cover_angle'], pose['cover_slide']
         pivot.rotation_euler = (0, angle, 0)
         spine_key.value = angle / math.pi
         root.location = (slide, 0, 0)
         for k, (ob, zr, zl) in enumerate(moving):
-            t = tl.progress(f, k)
+            t = pose['sheet_progress'][k]
             if t != last_t[k]:
                 update_sheet(ob, t, zr, zl, job['curl'])
                 last_t[k] = t
