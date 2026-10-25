@@ -27,6 +27,10 @@ class Layout:
         open_at = float(min(0.96, max(0.0, open_at)))
         self.h_left = max(MIN_STACK, BLOCK_H * open_at)
         self.h_right = max(MIN_STACK, BLOCK_H - self.h_left)
+        self._finish()
+
+    def _finish(self):
+        """Derived stack geometry, from page_w/page_h/turns and h_left/h_right."""
         full_rise = gutter_rise(PAGE_W, GUTTER)
         # A thin stack can only curve as far as it is thick.
         self.gutter_left = GUTTER * min(1.0, 0.7 * self.h_left / full_rise)
@@ -38,11 +42,14 @@ class Layout:
         self.top_right = COVER_T + self.h_right
         self.base_left = self.top_left - self.rise_left
         self.base_right = self.top_right - self.rise_right
-        # The front cover swings around this height so that, closed, it lands on top of everything.
-        self.hinge = (self.top_left + self.top_right + (self.turns + 1) * SHEET_GAP) / 2 + 0.0008
+        self.hinge = self._hinge()
         self.cover_w = PAGE_W + COVER_MARGIN
         self.cover_h = self.page_h + 2 * COVER_MARGIN
         self.book_w = 2 * self.cover_w
+
+    def _hinge(self):
+        # The front cover swings around this height so that, closed, it lands on top of everything.
+        return (self.top_left + self.top_right + (self.turns + 1) * SHEET_GAP) / 2 + 0.0008
 
     @property
     def gutter(self):
@@ -60,6 +67,45 @@ class Layout:
 
     def camera_top(self):
         return max(self.top_left, self.top_right)
+
+
+class SheetLayout(Layout):
+    """Real pages (step 2): a book of `page_count` real sheets, open with `left_count` on the left.
+
+    Every sheet has a front and a back. `turns` sheets turn during the animation, moving
+    from the right stack to the left stack. `Layout` above is the older fixed-block book and
+    is kept unchanged for comparison while the renderers migrate to this model.
+    """
+
+    def __init__(self, page_aspect=1.4, page_count=50, left_count=1, turns=1):
+        self.page_w = PAGE_W
+        self.page_h = PAGE_W * float(page_aspect)
+        self.page_count = int(page_count)
+        if self.page_count < 2:
+            raise ValueError('page_count must be at least 2 (a left and a right page)')
+        self.left_count = int(min(max(left_count, 1), self.page_count - 1))
+        self.right_count = self.page_count - self.left_count
+        self.turns = int(min(max(turns, 0), self.right_count))
+        self.h_left = self.left_count * SHEET_GAP
+        self.h_right = self.right_count * SHEET_GAP
+        self._finish()
+
+    def _hinge(self):
+        # Closed, all page_count sheets and both covers stack up; the hinge is at half the paper.
+        return COVER_T + self.page_count * SHEET_GAP / 2 + 0.0008
+
+    def turn_levels(self, t):
+        """Spine heights (right, left) of the t-th turning sheet (0-based)."""
+        return (self.base_right + (self.right_count - 1 - t) * SHEET_GAP,
+                self.base_left + (self.left_count + t) * SHEET_GAP)
+
+    def left_levels(self):
+        """Spine heights of the resting left sheets, bottom to top."""
+        return [self.base_left + j * SHEET_GAP for j in range(self.left_count)]
+
+    def right_levels(self):
+        """Spine heights of the resting right sheets (those that never turn), bottom to top."""
+        return [self.base_right + j * SHEET_GAP for j in range(self.right_count - self.turns)]
 
 
 def spine_shapes(layout, bands=4, nu=9, nv=60):
