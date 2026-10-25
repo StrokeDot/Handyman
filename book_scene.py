@@ -426,7 +426,11 @@ def make_sheet(name, mat, t, z_right, z_left, curl, parent):
         for p in mesh.polygons:
             p.use_smooth = True
     mesh.materials.append(mat)
-    return link_object(bpy.data.objects.new(name, mesh), parent)
+    ob = link_object(bpy.data.objects.new(name, mesh), parent)
+    paper = ob.modifiers.new('Paper', 'SOLIDIFY')
+    paper.thickness = 0.0012       # real paper thickness, so the edges read as paper
+    paper.offset = -1.0            # extrude downwards; the printed face stays on top
+    return ob
 
 
 def update_sheet(ob, t, z_right, z_left, curl, smoothness=1.0):
