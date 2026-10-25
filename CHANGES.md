@@ -1,5 +1,9 @@
 # Changes
 
+## 0.6.3
+- The live viewport now uses the real leather texture and a debossed tooled border, so the cover in the app matches the render.
+- Fixed the visible gap at the spine while the cover is opening.
+
 ## 0.6.2
 - Orbit the book to any angle, including from below and behind. The camera tilt and turn are no longer clamped.
 - Move, rotate and scale the whole book as a 3D object (X/Y/Z each), with a reset. It is saved in projects and applied to Blender exports.
