@@ -34,6 +34,8 @@ try:
 except Exception as _exc:  # PySide6 without OpenGL widgets, or PyOpenGL missing
     LiveView, GL_IMPORT_ERROR = None, str(_exc)
 from page_curl import Timeline, layout_pages
+from timeline_panel import TimelinePanel
+from clips import ClipTimeline, clip_to_dict
 from version import APP_NAME, APP_VERSION
 
 RESOLUTIONS = {'1920 × 1080 (Full HD)': (1920, 1080), '2560 × 1440 (2K)': (2560, 1440),
@@ -174,9 +176,11 @@ class Studio(QMainWindow):
         self.blender = bb.find_blender(self.settings.value('blender'))
         self.books = []
         self.recorded_clips = []
+        self.edited_clips = None
         self._build()
         self._reload_books(self.settings.value('book', ''))
         self._load_settings()
+        self._init_timeline()
         self._update_summary()
         self._update_blender_label()
         self._camera_changed()
@@ -223,6 +227,9 @@ class Studio(QMainWindow):
         b.clicked.connect(self._save_project)
         row.addWidget(b)
         lv.addLayout(row)
+        self.timeline_panel = TimelinePanel()
+        self.timeline_panel.changed.connect(self._timeline_changed)
+        lv.addWidget(self.timeline_panel, 1)
         root.addWidget(left)
 
         # Preview
@@ -634,7 +641,8 @@ class Studio(QMainWindow):
                     open_at=book_model.OPEN_AT[self.open_at.currentText()], open_at_label=self.open_at.currentText(),
                     curl=self.curl.value() / 100, cam=self._cam(), quality=self.quality.currentText(),
                     blend=self.blend.currentText(), page_count=self.page_count.value(),
-                    smoothness=self.smooth.value() / 100, recorded_clips=self.recorded_clips)
+                    smoothness=self.smooth.value() / 100, recorded_clips=self.recorded_clips,
+                    clip_list=self.edited_clips)
 
     def _state(self):
         v = self._values()
@@ -790,6 +798,24 @@ class Studio(QMainWindow):
                                     'smoothness': float(smoothness)})
         self._refresh_live()
         self.status.setText(f'Recorded a page turn ({len(self.recorded_clips)} clip(s)).')
+
+    # ----------------------------------------------------------- timeline
+    def _init_timeline(self):
+        """Fill the timeline editor from the current settings (the editable source of truth)."""
+        if not self.books:
+            return
+        v = self._values()
+        turns = layout_pages(self.pages.count())[0]
+        open_sec = v['open_seconds'] if v['start_closed'] else 0.0
+        tl = ClipTimeline(turns, v['fps'], v['start_hold'], v['turn_seconds'], v['pause'],
+                          v['end_hold'], open_sec, smoothness=v['smoothness'])
+        self.timeline_panel.base_frames = max(2, round(v['turn_seconds'] * v['fps']))
+        self.edited_clips = [clip_to_dict(c) for c in tl.clips]
+        self.timeline_panel.set_clips(tl.clips)
+
+    def _timeline_changed(self):
+        self.edited_clips = [clip_to_dict(c) for c in self.timeline_panel.editor.clips()]
+        self._refresh_live()
 
     def _toggle_play(self):
         if self.live is None:

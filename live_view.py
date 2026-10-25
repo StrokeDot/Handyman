@@ -219,7 +219,8 @@ class LiveView(QOpenGLWidget):
                                  v['open_seconds'] if v.get('start_closed') else 0.0,
                                  v.get('start_closed', True), page_count=values.get('page_count'),
                                  smoothness=values.get('smoothness', 1.0),
-                                 recorded_clips=values.get('recorded_clips'))
+                                 recorded_clips=values.get('recorded_clips'),
+                                 clip_list=values.get('clip_list'))
         self.layout = self.scene.layout
         self.timeline = self.scene.timeline
         self.frame = min(self.frame, self.timeline.frames - 1)

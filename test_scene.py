@@ -99,6 +99,17 @@ def test_scene_with_recorded_clips_extends_timeline():
     assert len(rec.evaluate(0)['sheet_progress']) == rec.turns
 
 
+def test_scene_from_clip_list():
+    from clips import Clip, clip_to_dict
+    clips = [clip_to_dict(Clip('open', 0, 20)), clip_to_dict(Clip('turn', 20, 30)),
+             clip_to_dict(Clip('turn', 60, 30))]
+    s = scene.Scene(2, 1.4, 0.04, page_count=20, clip_list=clips)
+    assert s.turns == 2
+    assert s.frames == 90                       # last turn ends at 89
+    assert len(s.evaluate(0)['sheet_progress']) == 2
+    assert s.evaluate(10)['cover_progress'] > 0
+
+
 if __name__ == '__main__':
     for name, fn in list(globals().items()):
         if name.startswith('test_'):

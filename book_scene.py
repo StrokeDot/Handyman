@@ -709,7 +709,7 @@ def main():
                      job['start_hold'], job['turn_seconds'], job['pause'], job['end_hold'],
                      job.get('open_seconds', 0.0), job.get('slide', True),
                      page_count=job.get('page_count'), smoothness=job.get('smoothness', 1.0),
-                     recorded_clips=job.get('recorded_clips'))
+                     recorded_clips=job.get('recorded_clips'), clip_list=job.get('clip_list'))
     frames = job.get('frames') or list(range(sc.frames))
     out = job['out_dir']
     os.makedirs(out, exist_ok=True)

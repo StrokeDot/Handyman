@@ -64,6 +64,15 @@ class TimelineEditor:
         self.selected = to
         return True
 
+    def reorder(self, order):
+        """Reorder clips by a list of old indices (used by drag-reorder)."""
+        if sorted(order) != list(range(len(self._clips))):
+            return False
+        self._push()
+        self._clips = [self._clips[i] for i in order]
+        self.selected = None
+        return True
+
     def delete(self, index):
         if not (0 <= index < len(self._clips)):
             return False
