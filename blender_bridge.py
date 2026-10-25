@@ -78,6 +78,7 @@ def make_job(settings, book, images, out_dir, frames=None, width=None, height=No
         smoothness=float(settings.get('smoothness', 1.0)),
         recorded_clips=list(settings.get('recorded_clips', [])),
         clip_list=list(settings['clip_list']) if settings.get('clip_list') else None,
+        transform=dict(settings.get('transform') or {}),
         book=templates.for_scene(book),
         image_strength=0.92,
         margin=0.08,

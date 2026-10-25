@@ -272,7 +272,8 @@ class LiveView(QOpenGLWidget):
         return None
 
     def mousePressEvent(self, e):
-        if self.drag_pages and e.button() == Qt.MouseButton.LeftButton:
+        shift = bool(e.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+        if (self.drag_pages or shift) and e.button() == Qt.MouseButton.LeftButton:
             sheet = self._next_sheet()
             if sheet is not None:
                 self.drag_sheet = sheet
@@ -469,7 +470,16 @@ class LiveView(QOpenGLWidget):
         gl.glEnable(gl.GL_LIGHTING)
 
         angle, slide = pose['cover_angle'], pose['cover_slide']
+        tf = self.values.get('transform') or {}
+        pos = tf.get('pos', (0.0, 0.0, 0.0))
+        rot = tf.get('rot', (0.0, 0.0, 0.0))
+        scale = tf.get('scale', (1.0, 1.0, 1.0))
         gl.glPushMatrix()
+        gl.glTranslatef(float(pos[0]), float(pos[1]), float(pos[2]))
+        gl.glRotatef(float(rot[2]), 0, 0, 1)
+        gl.glRotatef(float(rot[1]), 0, 1, 0)
+        gl.glRotatef(float(rot[0]), 1, 0, 0)
+        gl.glScalef(float(scale[0]), float(scale[1]), float(scale[2]))
         gl.glTranslatef(slide, 0, 0)
         leather = _hex_rgb(self.book.get('leather_color'))
         back_leather = _hex_rgb(self.book.get('back_cover_color') or self.book.get('leather_color'))

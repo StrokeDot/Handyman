@@ -358,14 +358,14 @@ class Studio(QMainWindow):
         self.shot = self._combo(cf.PRESETS)
         self.shot.currentTextChanged.connect(self._apply_preset)
         f.addRow('Start from', self.shot)
-        self.tilt = self._slider(15, 89, 50)
-        self.turn = self._slider(-60, 60, 0)
-        self.roll = self._slider(-20, 20, -3)
+        self.tilt = self._slider(-89, 89, 50)
+        self.turn = self._slider(-180, 180, 0)
+        self.roll = self._slider(-180, 180, -3)
         self.lens = self._slider(18, 100, 35)
         self.zoom = self._slider(50, 250, 100)
         self.shift_x = self._slider(-60, 60, 0)
         self.shift_y = self._slider(-60, 60, 0)
-        for label, sl in (('Tilt (side ↔ top)', self.tilt), ('Turn around', self.turn), ('Tilt picture', self.roll),
+        for label, sl in (('Tilt (below ↔ above)', self.tilt), ('Turn around', self.turn), ('Tilt picture', self.roll),
                           ('Perspective (lens)', self.lens), ('Book size', self.zoom),
                           ('Left / right', self.shift_x), ('Down / up', self.shift_y)):
             sl.valueChanged.connect(self._camera_changed)
@@ -377,6 +377,41 @@ class Studio(QMainWindow):
         b.clicked.connect(lambda: self._apply_preset(self.shot.currentText()))
         f.addRow(b)
         rv.addWidget(cambox)
+
+        xform = QGroupBox('3D transform (the whole book)')
+        f = QFormLayout(xform)
+
+        def num(lo, hi, val, step):
+            s = QDoubleSpinBox()
+            s.setRange(lo, hi)
+            s.setSingleStep(step)
+            s.setDecimals(2)
+            s.setValue(val)
+            s.valueChanged.connect(self._schedule_live)
+            return s
+
+        row = QHBoxLayout()
+        self.pos_x, self.pos_y, self.pos_z = num(-3, 3, 0, 0.1), num(-3, 3, 0, 0.1), num(-3, 3, 0, 0.1)
+        for w in (self.pos_x, self.pos_y, self.pos_z):
+            row.addWidget(w)
+        f.addRow('Position X / Y / Z', row)
+
+        row = QHBoxLayout()
+        self.rot_x, self.rot_y, self.rot_z = num(-180, 180, 0, 5), num(-180, 180, 0, 5), num(-180, 180, 0, 5)
+        for w in (self.rot_x, self.rot_y, self.rot_z):
+            row.addWidget(w)
+        f.addRow('Rotation X / Y / Z (°)', row)
+
+        row = QHBoxLayout()
+        self.scl_x, self.scl_y, self.scl_z = num(0.1, 5, 1, 0.1), num(0.1, 5, 1, 0.1), num(0.1, 5, 1, 0.1)
+        for w in (self.scl_x, self.scl_y, self.scl_z):
+            row.addWidget(w)
+        f.addRow('Scale X / Y / Z', row)
+
+        b = QPushButton('Reset transform')
+        b.clicked.connect(self._reset_transform)
+        f.addRow(b)
+        rv.addWidget(xform)
 
         timing = QGroupBox('Timing (seconds)')
         f = QFormLayout(timing)
@@ -642,7 +677,7 @@ class Studio(QMainWindow):
                     curl=self.curl.value() / 100, cam=self._cam(), quality=self.quality.currentText(),
                     blend=self.blend.currentText(), page_count=self.page_count.value(),
                     smoothness=self.smooth.value() / 100, recorded_clips=self.recorded_clips,
-                    clip_list=self.edited_clips)
+                    clip_list=self.edited_clips, transform=self._transform())
 
     def _state(self):
         v = self._values()
@@ -668,6 +703,7 @@ class Studio(QMainWindow):
             self.page_count.setValue(int(v['page_count']))
         if isinstance(v.get('cam'), dict):
             self._set_cam(v['cam'])
+        self._set_transform(v.get('transform'))
         for key, box in (('mov', self.mov), ('webm', self.webm), ('keep_png', self.keep_png),
                          ('start_closed', self.start_closed)):
             if key in v:
@@ -699,6 +735,28 @@ class Studio(QMainWindow):
             if value == c.get('move'):
                 self.move.setCurrentText(label)
         self._camera_changed()
+
+    def _transform(self):
+        return {'pos': [self.pos_x.value(), self.pos_y.value(), self.pos_z.value()],
+                'rot': [self.rot_x.value(), self.rot_y.value(), self.rot_z.value()],
+                'scale': [self.scl_x.value(), self.scl_y.value(), self.scl_z.value()]}
+
+    def _reset_transform(self):
+        for w in (self.pos_x, self.pos_y, self.pos_z):
+            w.setValue(0)
+        for w in (self.rot_x, self.rot_y, self.rot_z):
+            w.setValue(0)
+        for w in (self.scl_x, self.scl_y, self.scl_z):
+            w.setValue(1)
+
+    def _set_transform(self, t):
+        if not isinstance(t, dict):
+            return
+        for key, boxes in (('pos', (self.pos_x, self.pos_y, self.pos_z)),
+                           ('rot', (self.rot_x, self.rot_y, self.rot_z)),
+                           ('scale', (self.scl_x, self.scl_y, self.scl_z))):
+            for w, v in zip(boxes, t.get(key) or []):
+                w.setValue(float(v))
 
     def _orbit(self, dx, dy):
         self.turn.setValue(round(self.turn.value() - dx * 0.35))

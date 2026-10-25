@@ -32,8 +32,14 @@ def book_points(page_w, page_h, margin, top):
 
 
 def pose(tilt, turn, roll, dist, target):
-    """Camera position and axes (right, up, forward) for the given angles in degrees."""
-    el, az, rl = math.radians(min(tilt, 89.5)), math.radians(turn), math.radians(roll)
+    """Camera position and axes (right, up, forward) for the given angles in degrees.
+
+    Tilt is the elevation: negative looks up from below the book, positive looks down. It is
+    clamped just short of the poles so the up-vector stays well defined; everything in between
+    (including directly behind and underneath) is reachable.
+    """
+    el = math.radians(max(-89.5, min(tilt, 89.5)))
+    az, rl = math.radians(turn), math.radians(roll)
     target = np.asarray(target, dtype=float)
     offset = np.array([math.cos(el) * math.sin(az), -math.cos(el) * math.cos(az), math.sin(el)])
     cam = target + dist * offset

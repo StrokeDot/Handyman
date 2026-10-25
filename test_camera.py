@@ -60,6 +60,14 @@ def test_roll_tilts_the_picture():
     assert np.allclose(a[3], b[3]) and not np.allclose(a[1], b[1])  # same aim, rotated picture
 
 
+def test_camera_reaches_below_and_behind():
+    below = cf.shot(settings('Angled', tilt=-50), 0, TARGET, 2.1, 1.5, PTS, ASPECT)
+    assert below[0][2] < TARGET[2]                    # camera is under the book
+    front = cf.shot(settings('Angled', turn=0), 0, TARGET, 2.1, 1.5, PTS, ASPECT)
+    back = cf.shot(settings('Angled', turn=180), 0, TARGET, 2.1, 1.5, PTS, ASPECT)
+    assert (back[0] - TARGET)[1] * (front[0] - TARGET)[1] < 0   # opposite sides of the book
+
+
 if __name__ == '__main__':
     for name, fn in list(globals().items()):
         if name.startswith('test_'):

@@ -25,6 +25,7 @@ COVER_MARGIN = bm.COVER_MARGIN
 COVER_T = bm.COVER_T
 LAYOUT = bm.Layout()      # replaced in build_book
 GRID_X, GRID_Y = 48, 28
+BOOK_POS = (0.0, 0.0, 0.0)   # the book's whole-object position (the cover slide is added on top)
 
 
 def log(msg):
@@ -510,7 +511,7 @@ def title_text(book, cx, cy, z, cover_h, parent, leather):
 
 def build_book(job):
     """Creates every object. Returns what the frame loop animates."""
-    global PAGE_H, LAYOUT
+    global PAGE_H, LAYOUT, BOOK_POS
     book = job['book']
     images = job['images']
     turns, left_i, sheets, right_i = layout_pages(len(images))
@@ -531,6 +532,10 @@ def build_book(job):
     edges = page_edge_material(book)
 
     root = link_object(bpy.data.objects.new('Book', None))
+    tf = job.get('transform') or {}
+    BOOK_POS = tuple(float(v) for v in tf.get('pos', (0.0, 0.0, 0.0)))
+    root.rotation_euler = tuple(math.radians(float(v)) for v in tf.get('rot', (0.0, 0.0, 0.0)))
+    root.scale = tuple(float(v) for v in tf.get('scale', (1.0, 1.0, 1.0)))
     pivot = bpy.data.objects.new('FrontCoverHinge', None)
     pivot.location = (0, 0, hinge_z)
     link_object(pivot, root)
@@ -723,7 +728,7 @@ def main():
         angle, slide = pose['cover_angle'], pose['cover_slide']
         pivot.rotation_euler = (0, angle, 0)
         spine_key.value = angle / math.pi
-        root.location = (slide, 0, 0)
+        root.location = (slide + BOOK_POS[0], BOOK_POS[1], BOOK_POS[2])
         for k, (ob, zr, zl) in enumerate(moving):
             t = pose['sheet_progress'][k] if k < len(pose['sheet_progress']) else 1.0
             if t != last_t[k]:
