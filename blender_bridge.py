@@ -47,9 +47,16 @@ def blender_version(path):
     return m.group(1) if m else None
 
 
-def make_job(settings, book, images, out_dir, frames=None, width=None, height=None, quality=None):
+def make_job(settings, book, images, out_dir, frames=None, width=None, height=None, quality=None,
+             pages=None):
     """settings: plain dict of the UI choices (labels are translated here).
-    book: a template from templates.py."""
+    book: a template from templates.py.
+    pages: optional content sides (None | image path | {'kind':'text','text':...}); text is
+           rasterised to a PNG and treated like an image, so the Blender scene is unchanged."""
+    if pages is not None:
+        import page_text
+        images = page_text.sides_to_images(pages, str(Path(out_dir) / 'text'),
+                                           float(book.get('page_aspect', 1.4)))
     return dict(
         images=[str(p) if p else None for p in images],
         out_dir=str(out_dir),
