@@ -54,6 +54,18 @@ def test_cover_colors_fallback():
     assert s2['inside_cover_color'] == (1.0, 1.0, 1.0)
 
 
+def test_sha256_and_asset_digest():
+    import updater
+    with tempfile.TemporaryDirectory() as tmp:
+        p = os.path.join(tmp, 'x.bin')
+        with open(p, 'wb') as fh:
+            fh.write(b'hello updater')
+        digest = updater.sha256_file(p)
+        assert len(digest) == 64 and all(c in '0123456789abcdef' for c in digest)
+        assert updater._asset_digest({'digest': 'sha256:' + digest}) == digest
+        assert updater._asset_digest({}) == ''
+
+
 if __name__ == '__main__':
     for name, fn in list(globals().items()):
         if name.startswith('test_'):

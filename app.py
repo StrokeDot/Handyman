@@ -180,6 +180,7 @@ class Studio(QMainWindow):
         self._update_blender_label()
         self._camera_changed()
         self._show_view(0)
+        self._check_recovery()
         if self.settings.value('auto_update', 'true') == 'true':
             QTimer.singleShot(2500, lambda: self._check_updates(quiet=True))
 
@@ -1008,6 +1009,7 @@ class Studio(QMainWindow):
         if self.worker and self.worker.isRunning():
             QMessageBox.information(self, APP_NAME, 'Please wait for the current render to finish first.')
             return
+        self._pending_version = info['version']
         self.dl_dialog = QProgressDialog('Downloading update…', 'Cancel', 0, 100, self)
         self.dl_dialog.setWindowModality(Qt.WindowModality.WindowModal)
         self.dl_dialog.setAutoClose(False)
@@ -1024,8 +1026,46 @@ class Studio(QMainWindow):
             return
         self.dl_dialog.close()
         self._save_settings()
+        self._write_update_marker(self._pending_version)
         updater.run_installer(path)
         QApplication.quit()
+
+    # -------------------------------------------------- update recovery
+    def _marker_path(self):
+        return paths.user_dir() / 'update.json'
+
+    def _write_update_marker(self, to_version):
+        self._marker_path().write_text(json.dumps({'from': APP_VERSION, 'to': to_version}),
+                                       encoding='utf-8')
+
+    def _check_recovery(self):
+        """On startup, detect a half-finished update and offer to recover."""
+        marker = self._marker_path()
+        if not marker.exists():
+            return
+        try:
+            info = json.loads(marker.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            marker.unlink(missing_ok=True)
+            return
+        if info.get('to') == APP_VERSION:
+            marker.unlink(missing_ok=True)          # the update finished successfully
+            return
+        QTimer.singleShot(1500, lambda: self._offer_recovery(info))
+
+    def _offer_recovery(self, info):
+        box = QMessageBox(self)
+        box.setWindowTitle(APP_NAME)
+        box.setText(f'The update to version {info.get("to", "?")} did not finish.\n'
+                    f'You are still on version {APP_VERSION}.')
+        box.setInformativeText('You can try the update again, or keep this version.')
+        retry = box.addButton('Try again', QMessageBox.ButtonRole.AcceptRole)
+        keep = box.addButton('Keep this version', QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        if box.clickedButton() is retry:
+            self._check_updates(quiet=False)
+        else:
+            self._marker_path().unlink(missing_ok=True)
 
 
 def main():
