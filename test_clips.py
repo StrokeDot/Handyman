@@ -66,6 +66,34 @@ def test_timeline_is_sorted():
     assert [c.kind for c in tl.clips] == ['open', 'turn']
 
 
+def test_clip_timeline_matches_page_curl_timeline():
+    """The clip-based timeline is a drop-in for the old one: same frames and progress."""
+    from page_curl import Timeline as OldTimeline
+    from clips import ClipTimeline
+    for turns in (1, 2, 3):
+        for open_seconds in (0.0, 1.6):
+            ct = ClipTimeline(turns, 30, 0.8, 1.4, 0.8, 1.5, open_seconds)
+            ot = OldTimeline(turns, 30, 0.8, 1.4, 0.8, 1.5, open_seconds)
+            assert ct.frames == ot.frames, (turns, open_seconds)
+            for f in range(0, ot.frames, 5):
+                assert abs(ct.opening(f) - ot.opening(f)) < 1e-12
+                for k in range(turns):
+                    assert abs(ct.progress(f, k) - ot.progress(f, k)) < 1e-12
+                assert ct.active_turn(f) == ot.active_turn(f)
+
+
+def test_add_recorded_turn_clip():
+    from clips import Clip
+    from clips import ClipTimeline
+    ct = ClipTimeline(2, 30, 0.8, 1.4, 0.8, 1.5, 0.0)
+    before = ct.frames
+    c = Clip('turn', 0, 45, smoothness=0.5)
+    ct.add_turn_clip(c)
+    assert ct.turns == 3
+    assert c.start == ct.first_turn + 2 * (ct.turn + ct.pause)
+    assert ct.frames > before
+
+
 if __name__ == '__main__':
     for name, fn in list(globals().items()):
         if name.startswith('test_'):

@@ -10,7 +10,7 @@ the app is exactly what gets exported. This is step 1 of the rebuild: it reprodu
 build on the same Scene.
 """
 import book_model as bm
-from page_curl import Timeline
+from clips import ClipTimeline
 
 
 class Scene:
@@ -26,8 +26,8 @@ class Scene:
         self.turns = self.layout.turns   # follow any clamping the layout applied
         self.slide = bool(slide)
         self.smoothness = float(smoothness)
-        self.timeline = Timeline(self.turns, fps, start_hold, turn_seconds, pause, end_hold,
-                                 open_seconds)
+        self.timeline = ClipTimeline(self.turns, fps, start_hold, turn_seconds, pause, end_hold,
+                                     open_seconds, smoothness=self.smoothness)
 
     # The timing and page stack, exposed to the renderers and the tests.
     @property

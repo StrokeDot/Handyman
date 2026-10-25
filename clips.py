@@ -84,3 +84,66 @@ class Timeline:
     def progress(self, frame):
         c = self.at(frame)
         return c.progress(frame) if c else 0.0
+
+
+class ClipTimeline:
+    """Clip-based timeline with the same interface as page_curl.Timeline.
+
+    It is built from clips (an optional cover-opening clip, then one turn clip per sheet)
+    and reproduces the old timing exactly, so the renderers keep drawing the same animation.
+    Extra turn clips can be added later (record mode).
+    """
+
+    def __init__(self, turns, fps, start_hold=1.0, turn_seconds=1.6, pause=0.6, end_hold=1.0,
+                 open_seconds=0.0, smoothness=1.0):
+        self.fps = float(fps)
+        self.turns = int(turns)
+        self.start = round(start_hold * self.fps)
+        self.open = round(open_seconds * self.fps) if open_seconds > 0 else 0
+        self.turn = max(2, round(turn_seconds * self.fps))
+        self.pause = round(pause * self.fps)
+        self.end = round(end_hold * self.fps)
+        self.first_turn = self.start + (self.open + self.pause if self.open else 0)
+        self.smoothness = float(smoothness)
+        self.clips = []
+        if self.open:
+            self.clips.append(Clip('open', self.start, self.open, smoothness=self.smoothness))
+        self._rebuild()
+
+    def _rebuild(self):
+        """Recreate the turn clips from `first_turn` (also used after adding a clip)."""
+        self.clips = [c for c in self.clips if c.kind == 'open']
+        t = self.first_turn
+        for k in range(self.turns):
+            self.clips.append(Clip('turn', t, self.turn, smoothness=self.smoothness, sheet=k))
+            t += self.turn + self.pause
+        self._open = self.clips[0] if self.clips and self.clips[0].kind == 'open' else None
+        self._turns = [c for c in self.clips if c.kind == 'turn']
+        busy = self.turns * self.turn + max(0, self.turns - 1) * self.pause
+        self.frames = max(2, self.first_turn + busy + self.end)
+
+    def opening(self, frame):
+        return self._open.raw(frame) if self._open else 1.0
+
+    def turn_start(self, k):
+        return self._turns[k].start
+
+    def progress(self, frame, k):
+        return self._turns[k].raw(frame)
+
+    def active_turn(self, frame):
+        for k, c in enumerate(self._turns):
+            if 0.0 < c.raw(frame) < 1.0:
+                return k
+        return None
+
+    def add_turn_clip(self, clip, at_end=True):
+        """Add a recorded turn clip; when `at_end`, it is appended after the current turns."""
+        if at_end:
+            clip.start = self.first_turn + len(self._turns) * (self.turn + self.pause)
+        self.clips.append(clip)
+        self.turns += 1
+        self._turns.append(clip)
+        self._turns.sort(key=lambda c: c.start)
+        self.frames = max(self.frames, clip.end + 1)
+        return clip
