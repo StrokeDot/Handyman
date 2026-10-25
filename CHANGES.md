@@ -5,6 +5,9 @@
 - Move, rotate and scale the whole book as a 3D object (X/Y/Z each), with a reset. It is saved in projects and applied to Blender exports.
 - Visual timeline panel: click a clip to select it, drag to reorder, trim, duplicate, delete, undo/redo, and set each clip's Speed and Smoothness.
 - Shift+drag a page to turn it in the live view, so a plain drag still orbits the camera.
+- Redesigned cover: a thicker, rounded leather board with a generous margin, a raised rounded spine, and a debossed tooled border.
+- Pages now have real paper thickness and contact shadows (ambient occlusion) where they meet.
+- The page turn settles gently as it lands instead of snapping flat.
 
 ## 0.6.1
 - Drag pages in the live view to turn them like a real book ("Drag pages" toggle). A page follows the mouse and snaps forward or back when you let go.
