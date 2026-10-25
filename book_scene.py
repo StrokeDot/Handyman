@@ -591,12 +591,12 @@ def build_book(job):
     bpy.context.view_layer.update()
     cover_w, cover_h = PAGE_W + m, 2 * hy
     cx, z_top = cover_w / 2, 2 * hinge_z
-    border_mat = plain_material('TooledBorder', rgba(book['leather_color'], 0.5), roughness=0.62)
-    for i, ins in enumerate((0.085, 0.115)):
-        cover_border(f'CoverBorder{i}', cx, 0, z_top + 0.0006, cover_w, cover_h, ins,
-                     0.007, 0.0022, border_mat, pivot, outward=1)
+    border_mat = plain_material('TooledBorder', rgba(book['leather_color'], 0.35), roughness=0.7)
+    for i, ins in enumerate((0.028, 0.046)):
+        cover_border(f'CoverBorder{i}', cx, 0, z_top + 0.0002, cover_w, cover_h, ins,
+                     0.006, 0.0004, border_mat, pivot, outward=1)
         cover_border(f'BackBorder{i}', (PAGE_W + m) / 2, 0, 0.0, PAGE_W + m, 2 * hy, ins,
-                     0.007, 0.0022, border_mat, root, outward=-1)
+                     0.006, 0.0004, border_mat, root, outward=-1)
     if book['stitching']:
         thread = plain_material('Thread', book['thread_color'], roughness=0.7)
         stitches('Stitching', cx, 0, z_top, cover_w, cover_h, 0.035, thread, pivot)
@@ -708,6 +708,13 @@ def setup_render(job):
             except TypeError:
                 continue
         scene.eevee.taa_render_samples = 8 if job['quality'] == 'draft' else 48
+        # Contact shadows: soft occlusion where sheets and covers meet.
+        for attr, val in (('use_gtao', True), ('gtao_distance', 0.02), ('gtao_factor', 1.0),
+                          ('use_fast_gi', True)):
+            try:
+                setattr(scene.eevee, attr, val)
+            except AttributeError:
+                pass
         log(f'INFO {r.engine}')
     r.film_transparent = True
     r.resolution_x, r.resolution_y = job['width'], job['height']

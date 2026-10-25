@@ -9,8 +9,8 @@ import numpy as np
 from page_curl import GUTTER, gutter_rise, ease
 
 PAGE_W = 1.0
-COVER_MARGIN = 0.06
-COVER_T = 0.042           # a substantial leather cover, not a thin board
+COVER_MARGIN = 0.085      # generous leather margin around the pages, like the reference
+COVER_T = 0.045           # a substantial leather cover, not a thin board
 BLOCK_H = 0.11            # all the paper together
 SHEET_GAP = 0.0012
 MIN_STACK = 0.004
@@ -117,14 +117,14 @@ def spine_shapes(layout, bands=4, nu=9, nv=60):
     bump = np.zeros(nv)
     for i in range(bands):
         c = -hy * 0.7 + (1.4 * hy) * (i + 0.5) / max(1, bands)
-        bump += 0.007 * np.exp(-((yv - c) / 0.025) ** 2)
+        bump += 0.011 * np.exp(-((yv - c) / 0.024) ** 2)
     height = 2 * layout.hinge
     open_pts, closed_pts = [], []
     for j in range(nv):
         for i in range(nu):
             bulge = math.sin(math.pi * u[i])
-            open_pts.append(((u[i] - 0.5) * 0.12, yv[j], -0.004 - 0.01 * bulge - bump[j]))
-            closed_pts.append((-0.03 * bulge - bump[j], yv[j], u[i] * height))
+            open_pts.append(((u[i] - 0.5) * 0.14, yv[j], -0.004 - 0.016 * bulge - bump[j]))
+            closed_pts.append((-0.045 * bulge - bump[j], yv[j], u[i] * height))
     faces = [(j * nu + i, j * nu + i + 1, (j + 1) * nu + i + 1, (j + 1) * nu + i)
              for j in range(nv - 1) for i in range(nu - 1)]
     return np.array(open_pts), np.array(closed_pts), faces
