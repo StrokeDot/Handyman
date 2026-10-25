@@ -1,5 +1,12 @@
 # Changes
 
+## 0.6.1
+- Drag pages in the live view to turn them like a real book ("Drag pages" toggle). A page follows the mouse and snaps forward or back when you let go.
+- Smoothness control for every action (0 = linear, 100 = gentle), so the motion no longer has to be hand-keyframed.
+- Record mode: a finished page drag becomes a timeline clip ("Record" toggle).
+- The book now uses your leather and aged-paper photos for the cover and pages.
+- The scene plays from a clip-based timeline (same look as before).
+
 ## 0.6.0
 - Real pages: every page is now a real sheet with a front and a back, instead of one solid paper block.
 - Page count: set how many sheets the book has (2–2000).
