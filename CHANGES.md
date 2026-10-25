@@ -1,5 +1,12 @@
 # Changes
 
+## 0.6.0
+- Real pages: every page is now a real sheet with a front and a back, instead of one solid paper block.
+- Page count: set how many sheets the book has (2–2000).
+- Typed text on pages, alongside images and blank pages.
+- Swappable cover parts: the front cover, back cover, and inside cover (endpaper) each have their own colour.
+- Updates are verified against a SHA-256 checksum, and a failed update can be recovered.
+
 ## 0.5.0
 - Live 3D view: the book, your pages, the cover opening and the page turns play inside the app instantly, no rendering. Play / pause, speed (0.25× to 2×), loop, and a timeline you can drag.
 - Drag the live view with the mouse to move the camera; every setting change shows immediately. Blender is only needed for the final video.

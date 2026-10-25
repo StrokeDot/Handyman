@@ -66,6 +66,17 @@ def test_sha256_and_asset_digest():
         assert updater._asset_digest({}) == ''
 
 
+def test_0_6_0_release_is_detected():
+    """The installed 0.5.0 updater must see a 0.6.0 release as newer and pick its installer."""
+    import updater
+    assert updater.is_newer('0.6.0', '0.5.0')
+    assert updater.is_newer('v0.6.0', '0.5.0')
+    asset = {'name': 'Handyman-Setup-0.6.0.exe', 'browser_download_url': 'u',
+             'size': 123, 'digest': 'sha256:abc'}
+    release = {'tag_name': 'v0.6.0', 'assets': [{'name': 'notes.txt'}, asset]}
+    assert updater.pick_installer(release) is asset
+
+
 if __name__ == '__main__':
     for name, fn in list(globals().items()):
         if name.startswith('test_'):
