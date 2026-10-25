@@ -43,6 +43,17 @@ def test_hex_to_linear():
     assert templates.hex_to_linear('#000000') == (0.0, 0.0, 0.0)
 
 
+def test_cover_colors_fallback():
+    b = dict(templates.DEFAULTS)
+    s = templates.for_scene(b)
+    assert s['back_cover_color'] == s['leather_color']      # None -> same as front cover
+    assert s['inside_cover_color'] == s['paper_color']      # None -> paper endpaper
+    b2 = dict(b, back_cover_color='#000000', inside_cover_color='#ffffff')
+    s2 = templates.for_scene(b2)
+    assert s2['back_cover_color'] == (0.0, 0.0, 0.0)
+    assert s2['inside_cover_color'] == (1.0, 1.0, 1.0)
+
+
 if __name__ == '__main__':
     for name, fn in list(globals().items()):
         if name.startswith('test_'):

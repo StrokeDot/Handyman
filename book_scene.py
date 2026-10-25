@@ -500,7 +500,10 @@ def build_book(job):
     hy = L.cover_h / 2
     hinge_z = L.hinge
 
-    leather = leather_material(book['leather_color'])
+    leather = leather_material(book['leather_color'])                       # front cover
+    back_leather = leather_material(book.get('back_cover_color', book['leather_color']))
+    endpaper = plain_material('Endpaper', book.get('inside_cover_color', book['paper_color']),
+                              roughness=0.92)
     edges = page_edge_material(book)
 
     root = link_object(bpy.data.objects.new('Book', None))
@@ -509,10 +512,12 @@ def build_book(job):
     link_object(pivot, root)
 
     # Open-book layout. The left half (front cover side) hangs on the hinge.
-    box('CoverRight', 0, PAGE_W + m, -hy, hy, 0, COVER_T, leather, root, bevel=0.012)
+    box('CoverRight', 0, PAGE_W + m, -hy, hy, 0, COVER_T, back_leather, root, bevel=0.012)
+    quad('EndpaperRight', (PAGE_W + m) / 2, 0, COVER_T + 0.0006, PAGE_W + m, 2 * hy, endpaper, root)
     for j in range(L.right_rest_count):
         resting_sheet(f'PagesRight{j}', L, 1, j, L.right_rest_count, edges, root)
     box('CoverLeft', -PAGE_W - m, 0, -hy, hy, 0, COVER_T, leather, pivot, bevel=0.012)
+    quad('EndpaperLeft', -(PAGE_W + m) / 2, 0, COVER_T + 0.0006, PAGE_W + m, 2 * hy, endpaper, pivot)
     for j in range(L.left_rest_count):
         resting_sheet(f'PagesLeft{j}', L, -1, j, L.left_rest_count, edges, pivot)
     get = lambda i: images[i] if i is not None else None  # noqa: E731

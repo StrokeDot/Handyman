@@ -402,11 +402,14 @@ class LiveView(QOpenGLWidget):
         gl.glPushMatrix()
         gl.glTranslatef(slide, 0, 0)
         leather = _hex_rgb(self.book.get('leather_color'))
+        back_leather = _hex_rgb(self.book.get('back_cover_color') or self.book.get('leather_color'))
+        endpaper = _hex_rgb(self.book.get('inside_cover_color') or self.book.get('paper_color'))
         edge = np.array(_hex_rgb(self.book.get('paper_color'))) * 0.85
         m, hy = bm.COVER_MARGIN, L.cover_h / 2
 
         # Right half.
-        self._box(0, L.page_w + m, -hy, hy, 0, bm.COVER_T, leather)
+        self._box(0, L.page_w + m, -hy, hy, 0, bm.COVER_T, back_leather)
+        self._endpaper(0, L.page_w + m, -hy, hy, endpaper)
         for j in range(L.right_rest_count):
             self._prism(*bm.sheet_slice(L, 1, j, L.right_rest_count), edge)
         self._sheet(0.0, L.base_right + 0.0015, L.base_right + 0.0015, self._tex_pages['right'], self._tex_pages['blank'])
@@ -421,6 +424,7 @@ class LiveView(QOpenGLWidget):
         gl.glRotatef(math.degrees(angle), 0, 1, 0)
         gl.glTranslatef(0, 0, -L.hinge)
         self._box(-L.page_w - m, 0, -hy, hy, 0, bm.COVER_T, leather)
+        self._endpaper(-L.page_w - m, 0, -hy, hy, endpaper)
         for j in range(L.left_rest_count):
             self._prism(*bm.sheet_slice(L, -1, j, L.left_rest_count), edge)
         self._sheet(1.0, L.base_left + 0.0015, L.base_left + 0.0015, self._tex_pages['blank'], self._tex_pages['left'])
@@ -457,6 +461,16 @@ class LiveView(QOpenGLWidget):
             for q in p:
                 gl.glVertex3f(*q)
             gl.glEnd()
+
+    def _endpaper(self, x0, x1, y0, y1, colour):
+        """Flat inside-cover (endpaper) quad, just above the cover's top face."""
+        gl.glDisable(gl.GL_TEXTURE_2D)
+        gl.glColor3f(*colour)
+        gl.glNormal3f(0, 0, 1)
+        gl.glBegin(gl.GL_QUADS)
+        for x, y in ((x0, y0), (x1, y0), (x1, y1), (x0, y1)):
+            gl.glVertex3f(x, y, bm.COVER_T + 0.0006)
+        gl.glEnd()
 
     def _sheet(self, t, zr, zl, tex_front, tex_back, key=None):
         L = self.layout

@@ -13,6 +13,8 @@ import paths
 DEFAULTS = {
     'name': 'Leather journal',
     'leather_color': '#6b3a1e',
+    'back_cover_color': None,     # None = same as leather_color (swappable back cover)
+    'inside_cover_color': None,   # None = paper-coloured endpaper (swappable inside cover)
     'paper_color': '#e0c99a',
     'paper_age': 0.55,          # blotches and yellowing, 0..1
     'burn': 0.6,                # darkened page edges, 0..1
@@ -108,6 +110,8 @@ def for_scene(book):
         emblem = str(p) if p.exists() else None
     return dict(
         leather_color=hex_to_linear(book['leather_color']),
+        back_cover_color=hex_to_linear(book.get('back_cover_color') or book['leather_color']),
+        inside_cover_color=hex_to_linear(book.get('inside_cover_color') or book['paper_color']),
         paper_color=hex_to_linear(book['paper_color']),
         thread_color=hex_to_linear(book['thread_color']),
         paper_age=float(book['paper_age']), burn=float(book['burn']),
