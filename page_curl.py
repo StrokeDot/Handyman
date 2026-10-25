@@ -76,6 +76,10 @@ def sheet_vertices(p, width, height, nx, ny, z_right, z_left,
     # Each row runs on a slightly delayed clock: the bottom corner leads.
     tr = np.clip(t * (1.0 + lag) - lag * v, 0.0, 1.0)
     theta = math.pi * ease(tr, smoothness)
+    # Settle: as the page lands, a small damped spring softens the final approach instead of
+    # snapping flat. It only lags (never overshoots past the far page), so it cannot clip.
+    settle = np.clip((tr - 0.8) / 0.2, 0.0, 1.0)
+    theta = theta - 0.06 * np.sin(np.pi * settle) * np.exp(-2.0 * settle)
     bend = curl * np.sin(math.pi * tr) * (1.0 + corner * (1.0 - v))
     frac = (s / width) ** power
     angle = theta[:, None] + bend[:, None] * frac[None, :]
