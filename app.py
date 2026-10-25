@@ -385,6 +385,9 @@ class Studio(QMainWindow):
         self.curl = self._slider(0, 150, 90)
         self.curl.valueChanged.connect(self._schedule_live)
         f.addRow('Page curl', self.curl)
+        self.smooth = self._slider(0, 100, 100)
+        self.smooth.valueChanged.connect(self._schedule_live)
+        f.addRow('Smoothness (0 = linear, 100 = gentle)', self.smooth)
         rv.addWidget(timing)
 
         out = QGroupBox('Export')
@@ -622,7 +625,8 @@ class Studio(QMainWindow):
                     start_closed=self.start_closed.isChecked(), open_seconds=self.open_s.value(),
                     open_at=book_model.OPEN_AT[self.open_at.currentText()], open_at_label=self.open_at.currentText(),
                     curl=self.curl.value() / 100, cam=self._cam(), quality=self.quality.currentText(),
-                    blend=self.blend.currentText(), page_count=self.page_count.value())
+                    blend=self.blend.currentText(), page_count=self.page_count.value(),
+                    smoothness=self.smooth.value() / 100)
 
     def _state(self):
         v = self._values()

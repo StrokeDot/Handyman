@@ -211,7 +211,8 @@ class LiveView(QOpenGLWidget):
         self.scene = scene.Scene(turns, book.get('page_aspect', 1.4), values.get('open_at', 0.04),
                                  v['fps'], v['start_hold'], v['turn_seconds'], v['pause'], v['end_hold'],
                                  v['open_seconds'] if v.get('start_closed') else 0.0,
-                                 v.get('start_closed', True), page_count=values.get('page_count'))
+                                 v.get('start_closed', True), page_count=values.get('page_count'),
+                                 smoothness=values.get('smoothness', 1.0))
         self.layout = self.scene.layout
         self.timeline = self.scene.timeline
         self.frame = min(self.frame, self.timeline.frames - 1)
@@ -439,7 +440,8 @@ class LiveView(QOpenGLWidget):
         self._sheet(0.0, L.base_right + 0.0015, L.base_right + 0.0015, self._tex_pages['right'], self._tex_pages['blank'])
         for k in range(L.turns):
             zr, zl = L.turn_levels(k)
-            self._sheet(pose['sheet_progress'][k], zr, zl, self._tex_pages[('f', k)], self._tex_pages[('b', k)], k)
+            self._sheet(pose['sheet_progress'][k], zr, zl, self._tex_pages[('f', k)], self._tex_pages[('b', k)], k,
+                        smoothness=pose['smoothness'])
         self._spine(angle / math.pi, leather)
 
         # Left half, on the hinge.
@@ -496,12 +498,13 @@ class LiveView(QOpenGLWidget):
             gl.glVertex3f(x, y, bm.COVER_T + 0.0006)
         gl.glEnd()
 
-    def _sheet(self, t, zr, zl, tex_front, tex_back, key=None):
+    def _sheet(self, t, zr, zl, tex_front, tex_back, key=None, smoothness=1.0):
         L = self.layout
-        ck = (key, round(t, 4), zr, zl)
+        ck = (key, round(t, 4), zr, zl, round(smoothness, 4))
         if ck not in self._sheet_cache:
             v = sheet_vertices(t, L.page_w, L.page_h, NX, NY, zr, zl,
-                               curl=self.values.get('curl', 0.9), gutter=L.gutter).astype(np.float32)
+                               curl=self.values.get('curl', 0.9), gutter=L.gutter,
+                               smoothness=smoothness).astype(np.float32)
             self._sheet_cache[ck] = (v, grid_normals(v).astype(np.float32))
             if len(self._sheet_cache) > 400:
                 self._sheet_cache.clear()

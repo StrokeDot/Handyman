@@ -428,8 +428,9 @@ def make_sheet(name, mat, t, z_right, z_left, curl, parent):
     return link_object(bpy.data.objects.new(name, mesh), parent)
 
 
-def update_sheet(ob, t, z_right, z_left, curl):
-    verts = sheet_vertices(t, PAGE_W, PAGE_H, GRID_X, GRID_Y, z_right, z_left, curl=curl, gutter=LAYOUT.gutter)
+def update_sheet(ob, t, z_right, z_left, curl, smoothness=1.0):
+    verts = sheet_vertices(t, PAGE_W, PAGE_H, GRID_X, GRID_Y, z_right, z_left, curl=curl,
+                           gutter=LAYOUT.gutter, smoothness=smoothness)
     ob.data.vertices.foreach_set('co', verts.astype(np.float32).ravel())
     ob.data.update()
 
@@ -700,7 +701,7 @@ def main():
     sc = scene.Scene(turns, job['book']['page_aspect'], job.get('open_at', 0.04), job['fps'],
                      job['start_hold'], job['turn_seconds'], job['pause'], job['end_hold'],
                      job.get('open_seconds', 0.0), job.get('slide', True),
-                     page_count=job.get('page_count'))
+                     page_count=job.get('page_count'), smoothness=job.get('smoothness', 1.0))
     frames = job.get('frames') or list(range(sc.frames))
     out = job['out_dir']
     os.makedirs(out, exist_ok=True)
@@ -718,7 +719,7 @@ def main():
         for k, (ob, zr, zl) in enumerate(moving):
             t = pose['sheet_progress'][k]
             if t != last_t[k]:
-                update_sheet(ob, t, zr, zl, job['curl'])
+                update_sheet(ob, t, zr, zl, job['curl'], smoothness=pose['smoothness'])
                 last_t[k] = t
         bpy.context.scene.frame_current = f
         bpy.context.scene.render.filepath = os.path.join(out, f'frame_{i:06d}.png')

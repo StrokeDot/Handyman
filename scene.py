@@ -16,7 +16,7 @@ from page_curl import Timeline
 class Scene:
     def __init__(self, turns, page_aspect=1.4, open_at=0.04, fps=30, start_hold=0.8,
                  turn_seconds=1.4, pause=0.8, end_hold=1.5, open_seconds=0.0, slide=True,
-                 page_count=None):
+                 page_count=None, smoothness=1.0):
         self.turns = int(turns)
         if page_count:
             left_count = int(round(open_at * page_count))
@@ -25,6 +25,7 @@ class Scene:
             self.layout = bm.Layout(page_aspect, self.turns, open_at)
         self.turns = self.layout.turns   # follow any clamping the layout applied
         self.slide = bool(slide)
+        self.smoothness = float(smoothness)
         self.timeline = Timeline(self.turns, fps, start_hold, turn_seconds, pause, end_hold,
                                  open_seconds)
 
@@ -55,13 +56,14 @@ class Scene:
     def evaluate(self, frame):
         """Everything's pose at `frame`. Both renderers draw from this one answer."""
         o = self.opening(frame)
-        angle, slide = self.layout.opening(o, slide=self.slide)
+        angle, slide = self.layout.opening(o, slide=self.slide, smoothness=self.smoothness)
         sheet_progress = [self.progress(frame, k) for k in range(self.turns)]
         return dict(
             frame=int(frame),
             cover_progress=o,
             cover_angle=angle,
             cover_slide=slide,
+            smoothness=self.smoothness,
             sheet_progress=sheet_progress,
             active_turn=self.timeline.active_turn(frame),
             camera_frac=frame / max(1, self.frames - 1),

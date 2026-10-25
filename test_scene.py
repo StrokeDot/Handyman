@@ -81,6 +81,15 @@ def test_scene_with_page_count_uses_sheet_layout():
     assert len(pose['sheet_progress']) == s.turns
 
 
+def test_scene_smoothness_changes_cover():
+    a = scene.Scene(2, 1.4, 0.04, open_seconds=1.0, smoothness=0.0)
+    b = scene.Scene(2, 1.4, 0.04, open_seconds=1.0, smoothness=1.0)
+    f = a.timeline.start + max(1, a.timeline.open // 2)   # mid cover-opening
+    pa, pb = a.evaluate(f), b.evaluate(f)
+    assert pa['smoothness'] == 0.0 and pb['smoothness'] == 1.0
+    assert pa['cover_angle'] != pb['cover_angle']
+
+
 if __name__ == '__main__':
     for name, fn in list(globals().items()):
         if name.startswith('test_'):

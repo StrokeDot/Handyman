@@ -60,9 +60,9 @@ class Layout:
         return (self.base_right + (self.turns - k) * SHEET_GAP,
                 self.base_left + (k + 1) * SHEET_GAP)
 
-    def opening(self, o, slide=True):
+    def opening(self, o, slide=True, smoothness=1.0):
         """Front-cover angle (radians around +y at the hinge) and sideways slide for cover progress o."""
-        e = float(ease(o))
+        e = float(ease(o, smoothness))
         return math.pi * (1.0 - e), (-(self.cover_w / 2) * (1.0 - e) if slide else 0.0)
 
     def camera_top(self):

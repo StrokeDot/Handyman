@@ -94,6 +94,13 @@ def test_mesh_tables():
     assert grid_uvs(NX, NY).shape == (NX * NY, 2)
 
 
+def test_smoothness_changes_sheet():
+    linear = sheet_vertices(0.5, W, H, NX, NY, ZR, ZL, smoothness=0.0)
+    smooth = sheet_vertices(0.5, W, H, NX, NY, ZR, ZL, smoothness=1.0)
+    assert not np.allclose(linear, smooth)                       # Smoothness changes the curve
+    assert np.allclose(smooth, sheet_vertices(0.5, W, H, NX, NY, ZR, ZL))  # default is gentle
+
+
 if __name__ == '__main__':
     for name, fn in list(globals().items()):
         if name.startswith('test_'):

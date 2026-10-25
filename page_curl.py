@@ -40,14 +40,16 @@ def rest_profile(width, nx, gutter=GUTTER):
     return x, z
 
 
-def ease(t):
-    """Smooth start and stop (smoothstep)."""
+def ease(t, smoothness=1.0):
+    """Smooth start and stop (smoothstep); more linear as `smoothness` falls to 0."""
     t = np.clip(t, 0.0, 1.0)
-    return t * t * (3.0 - 2.0 * t)
+    smooth = t * t * (3.0 - 2.0 * t)
+    return t + (smooth - t) * float(smoothness)
 
 
 def sheet_vertices(p, width, height, nx, ny, z_right, z_left,
-                   curl=0.9, lag=0.10, corner=0.6, power=1.6, peel=1.1, peel_share=PEEL_SHARE, gutter=0.0):
+                   curl=0.9, lag=0.10, corner=0.6, power=1.6, peel=1.1, peel_share=PEEL_SHARE,
+                   gutter=0.0, smoothness=1.0):
     """Vertex positions of one sheet at turn progress p (0 = flat right, 1 = flat left).
 
     The first `peel_share` of the turn lifts the bottom outer corner (the hand grabbing it),
@@ -63,7 +65,7 @@ def sheet_vertices(p, width, height, nx, ny, z_right, z_left,
     """
     p = float(np.clip(p, 0.0, 1.0))
     if peel_share > 0:
-        lift = float(ease(p / peel_share))
+        lift = float(ease(p / peel_share, smoothness))
         t = max(0.0, (p - peel_share) / (1.0 - peel_share))
     else:
         lift, t = 0.0, p
@@ -73,19 +75,19 @@ def sheet_vertices(p, width, height, nx, ny, z_right, z_left,
 
     # Each row runs on a slightly delayed clock: the bottom corner leads.
     tr = np.clip(t * (1.0 + lag) - lag * v, 0.0, 1.0)
-    theta = math.pi * ease(tr)
+    theta = math.pi * ease(tr, smoothness)
     bend = curl * np.sin(math.pi * tr) * (1.0 + corner * (1.0 - v))
     frac = (s / width) ** power
     angle = theta[:, None] + bend[:, None] * frac[None, :]
     g_right, g_left = gutter if isinstance(gutter, (tuple, list)) else (gutter, gutter)
     if g_right or g_left:
         # Resting on the right the page rises out of the spine; resting on the left, mirrored.
-        e = ease(tr)[:, None]
+        e = ease(tr, smoothness)[:, None]
         angle = angle + gutter_angle(s, width, g_right)[None, :] * (1.0 - e) \
             - gutter_angle(s, width, g_left)[None, :] * e
 
     # Corner peel: only the outer part of the lower rows, fading out as the turn gets going.
-    hold = lift * (1.0 - float(ease(t / 0.45)))
+    hold = lift * (1.0 - float(ease(t / 0.45, smoothness)))
     if hold > 0:
         rows = (1.0 - v) ** 1.5
         cols = np.clip((s / width - 0.55) / 0.45, 0.0, 1.0) ** 2
@@ -98,7 +100,7 @@ def sheet_vertices(p, width, height, nx, ny, z_right, z_left,
     x[:, 1:] = np.cumsum((ca[:, 1:] + ca[:, :-1]) * 0.5 * ds, axis=1)
     z[:, 1:] = np.cumsum((sa[:, 1:] + sa[:, :-1]) * 0.5 * ds, axis=1)
 
-    hinge = z_right + (z_left - z_right) * float(ease(t))
+    hinge = z_right + (z_left - z_right) * float(ease(t, smoothness))
     y = (v - 0.5) * height
     out = np.empty((ny, nx, 3))
     out[..., 0] = x
