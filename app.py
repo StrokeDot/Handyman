@@ -198,8 +198,8 @@ class Studio(QMainWindow):
         self.pages.model().rowsMoved.connect(self._pages_changed)
         lv.addWidget(self.pages, 1)
         row = QHBoxLayout()
-        for text, fn in (('Add images…', self._add_images), ('Add blank page', self._add_blank),
-                         ('Remove', self._remove_page)):
+        for text, fn in (('Add images…', self._add_images), ('Add text page…', self._add_text),
+                         ('Add blank page', self._add_blank), ('Remove', self._remove_page)):
             b = QPushButton(text)
             b.clicked.connect(fn)
             row.addWidget(b)
@@ -506,16 +506,40 @@ class Studio(QMainWindow):
         self._open_output(paths.books_dir())
 
     # ---------------------------------------------------------------- pages
+    TEXT_ROLE = Qt.ItemDataRole.UserRole + 1
+
+    def _page_content(self):
+        """Content sides in reading order: None (blank), or a {'kind': 'image'|'text', ...} dict."""
+        out = []
+        for i in range(self.pages.count()):
+            item = self.pages.item(i)
+            path = item.data(Qt.ItemDataRole.UserRole) or None
+            text = item.data(self.TEXT_ROLE) or None
+            if text:
+                out.append({'kind': 'text', 'text': text})
+            elif path:
+                out.append({'kind': 'image', 'image': path})
+            else:
+                out.append(None)
+        return out
+
+    def _content_images(self):
+        """Rasterise text sides to PNGs and return plain image paths for the renderers."""
+        from page_text import sides_to_images
+        return sides_to_images(self._page_content(), paths.cache_dir('pages'),
+                               float(self._book().get('page_aspect', 1.4)))
+
     def _page_paths(self):
         return [self.pages.item(i).data(Qt.ItemDataRole.UserRole) or None for i in range(self.pages.count())]
 
-    def _add_page_item(self, path):
+    def _add_page_item(self, path, text=''):
         if path:
             item = QListWidgetItem(QIcon(QPixmap(path).scaled(64, 64, Qt.AspectRatioMode.KeepAspectRatio,
                                                               Qt.TransformationMode.SmoothTransformation)), '')
         else:
             item = QListWidgetItem('')
         item.setData(Qt.ItemDataRole.UserRole, path or '')
+        item.setData(self.TEXT_ROLE, text or '')
         self.pages.addItem(item)
 
     def _add_images(self):
@@ -530,6 +554,12 @@ class Studio(QMainWindow):
     def _add_blank(self):
         self._add_page_item(None)
         self._pages_changed()
+
+    def _add_text(self):
+        text, ok = QInputDialog.getMultiLineText(self, 'Add text page', 'Type the text for this page:')
+        if ok and text.strip():
+            self._add_page_item(None, text.strip())
+            self._pages_changed()
 
     def _remove_page(self):
         for item in self.pages.selectedItems():
@@ -551,7 +581,14 @@ class Studio(QMainWindow):
         for i in range(n):
             item = self.pages.item(i)
             path = item.data(Qt.ItemDataRole.UserRole)
-            name = Path(path).name if path else '(blank paper)'
+            text = item.data(self.TEXT_ROLE)
+            if text:
+                preview = ' '.join(text.split())
+                name = f'“{preview[:36]}{"…" if len(preview) > 36 else ""}”'
+            elif path:
+                name = Path(path).name
+            else:
+                name = '(blank paper)'
             side = 'left' if i % 2 == 0 else 'right'
             item.setText(f'{i + 1}. {name}  —  {side}')
         turns = layout_pages(n)[0]
@@ -564,7 +601,11 @@ class Studio(QMainWindow):
         self.pages.clear()
         missing = 0
         for p in pages:
-            if not p or Path(p).exists():
+            if p is None:
+                self._add_page_item(None)
+            elif isinstance(p, dict):
+                self._add_page_item(p.get('image'), p.get('text', ''))
+            elif not p or Path(p).exists():
                 self._add_page_item(p)
             else:
                 missing += 1
@@ -586,7 +627,7 @@ class Studio(QMainWindow):
         v = self._values()
         v.update(resolution=self.resolution.currentText(), mov=self.mov.isChecked(), webm=self.webm.isChecked(),
                  keep_png=self.keep_png.isChecked(), book=self._book().get('folder') or '',
-                 pages=self._page_paths())
+                 pages=self._page_content())
         return v
 
     def _apply_state(self, v):
@@ -724,7 +765,7 @@ class Studio(QMainWindow):
         if self.live is None or not self.books:
             return
         try:
-            self.live.set_content(self._book(), self._page_paths(), self._values())
+            self.live.set_content(self._book(), self._content_images(), self._values())
         except Exception as exc:
             self.status.setText(f'Live view could not update: {exc}')
 
@@ -853,7 +894,7 @@ class Studio(QMainWindow):
         return d
 
     def _job(self, v, out, **kw):
-        return bb.make_job(v, self._book(), self._page_paths(), out, **kw)
+        return bb.make_job(v, self._book(), self._content_images(), out, **kw)
 
     def _preview_still(self):
         v = self._values()
