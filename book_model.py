@@ -9,8 +9,8 @@ import numpy as np
 from page_curl import GUTTER, gutter_rise, ease
 
 PAGE_W = 1.0
-COVER_MARGIN = 0.05
-COVER_T = 0.03
+COVER_MARGIN = 0.06
+COVER_T = 0.042           # a substantial leather cover, not a thin board
 BLOCK_H = 0.11            # all the paper together
 SHEET_GAP = 0.0012
 MIN_STACK = 0.004

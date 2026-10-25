@@ -492,6 +492,23 @@ def stitches(name, cx, cy, z, w, h, inset, mat, parent):
     return link_object(bpy.data.objects.new(name, mesh), parent)
 
 
+def cover_border(name, cx, cy, z, w, h, inset, line, depth, mat, parent, outward=1):
+    """A raised decorative frame on a cover face (the tooled border)."""
+    bm_ = bmesh.new()
+    x0, x1 = cx - w / 2 + inset, cx + w / 2 - inset
+    y0, y1 = cy - h / 2 + inset, cy + h / 2 - inset
+    t = line
+    z0, z1 = (z, z + depth) if outward > 0 else (z - depth, z)
+    for a, b, c, d in ((x0, x1, y0, y0 + t), (x0, x1, y1 - t, y1),
+                       (x0, x0 + t, y0, y1), (x1 - t, x1, y0, y1)):
+        add_box(bm_, a, b, c, d, z0, z1)
+    mesh = bpy.data.meshes.new(name)
+    bm_.to_mesh(mesh)
+    bm_.free()
+    mesh.materials.append(mat)
+    return link_object(bpy.data.objects.new(name, mesh), parent)
+
+
 def title_text(book, cx, cy, z, cover_h, parent, leather):
     curve = bpy.data.curves.new('Title', 'FONT')
     curve.body = book['title']
@@ -541,11 +558,11 @@ def build_book(job):
     link_object(pivot, root)
 
     # Open-book layout. The left half (front cover side) hangs on the hinge.
-    box('CoverRight', 0, PAGE_W + m, -hy, hy, 0, COVER_T, back_leather, root, bevel=0.012)
+    box('CoverRight', 0, PAGE_W + m, -hy, hy, 0, COVER_T, back_leather, root, bevel=0.015)
     quad('EndpaperRight', (PAGE_W + m) / 2, 0, COVER_T + 0.0006, PAGE_W + m, 2 * hy, endpaper, root)
     for j in range(L.right_rest_count):
         resting_sheet(f'PagesRight{j}', L, 1, j, L.right_rest_count, edges, root)
-    box('CoverLeft', -PAGE_W - m, 0, -hy, hy, 0, COVER_T, leather, pivot, bevel=0.012)
+    box('CoverLeft', -PAGE_W - m, 0, -hy, hy, 0, COVER_T, leather, pivot, bevel=0.015)
     quad('EndpaperLeft', -(PAGE_W + m) / 2, 0, COVER_T + 0.0006, PAGE_W + m, 2 * hy, endpaper, pivot)
     for j in range(L.left_rest_count):
         resting_sheet(f'PagesLeft{j}', L, -1, j, L.left_rest_count, edges, pivot)
@@ -574,6 +591,12 @@ def build_book(job):
     bpy.context.view_layer.update()
     cover_w, cover_h = PAGE_W + m, 2 * hy
     cx, z_top = cover_w / 2, 2 * hinge_z
+    border_mat = plain_material('TooledBorder', rgba(book['leather_color'], 0.5), roughness=0.62)
+    for i, ins in enumerate((0.085, 0.115)):
+        cover_border(f'CoverBorder{i}', cx, 0, z_top + 0.0006, cover_w, cover_h, ins,
+                     0.007, 0.0022, border_mat, pivot, outward=1)
+        cover_border(f'BackBorder{i}', (PAGE_W + m) / 2, 0, 0.0, PAGE_W + m, 2 * hy, ins,
+                     0.007, 0.0022, border_mat, root, outward=-1)
     if book['stitching']:
         thread = plain_material('Thread', book['thread_color'], roughness=0.7)
         stitches('Stitching', cx, 0, z_top, cover_w, cover_h, 0.035, thread, pivot)
