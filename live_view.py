@@ -366,6 +366,12 @@ class LiveView(QOpenGLWidget):
             colour = (0.85, 0.62, 0.25) if book.get('title_style') == 'gold' else tuple(leather * 0.35)
             img = text_image(book['title'].strip(), colour)
             self._title = (self._upload('title', img), img.width() / img.height())
+        self._tex_leather = None
+        lp = _resolve_texture(book, 'leather_image')
+        if lp:
+            img = QImage(str(lp))
+            if not img.isNull():
+                self._tex_leather = self._upload('leather', img)
         self._dirty_textures = False
 
     # -------------------------------------------------------------------- GL
@@ -488,7 +494,8 @@ class LiveView(QOpenGLWidget):
         m, hy = bm.COVER_MARGIN, L.cover_h / 2
 
         # Right half.
-        self._box(0, L.page_w + m, -hy, hy, 0, bm.COVER_T, back_leather)
+        if not self._tex_box(0, L.page_w + m, -hy, hy, 0, bm.COVER_T, self._tex_leather):
+            self._box(0, L.page_w + m, -hy, hy, 0, bm.COVER_T, back_leather)
         self._endpaper(0, L.page_w + m, -hy, hy, endpaper)
         for j in range(L.right_rest_count):
             self._prism(*bm.sheet_slice(L, 1, j, L.right_rest_count), edge)
@@ -499,13 +506,23 @@ class LiveView(QOpenGLWidget):
             self._sheet(t, zr, zl, self._tex_pages[('f', k)], self._tex_pages[('b', k)], k,
                         smoothness=pose['smoothness'])
         self._spine(angle / math.pi, leather)
+        # Gutter fill: a strip at the spine so opening the cover never shows the background.
+        gl.glDisable(gl.GL_TEXTURE_2D)
+        gl.glColor3f(*(np.array(leather) * 0.7))
+        gl.glBegin(gl.GL_QUADS)
+        gl.glNormal3f(1, 0, 0)
+        for p in ((0.0, -hy, 0.0), (0.0, -hy, L.hinge), (0.0, hy, L.hinge), (0.0, hy, 0.0)):
+            gl.glVertex3f(*p)
+        gl.glEnd()
 
         # Left half, on the hinge.
         gl.glPushMatrix()
         gl.glTranslatef(0, 0, L.hinge)
         gl.glRotatef(math.degrees(angle), 0, 1, 0)
         gl.glTranslatef(0, 0, -L.hinge)
-        self._box(-L.page_w - m, 0, -hy, hy, 0, bm.COVER_T, leather)
+        self._endpaper(-L.page_w - m, 0, -hy, hy, endpaper)
+        if not self._tex_box(-L.page_w - m, 0, -hy, hy, 0, bm.COVER_T, self._tex_leather):
+            self._box(-L.page_w - m, 0, -hy, hy, 0, bm.COVER_T, leather)
         self._endpaper(-L.page_w - m, 0, -hy, hy, endpaper)
         for j in range(L.left_rest_count):
             self._prism(*bm.sheet_slice(L, -1, j, L.left_rest_count), edge)
@@ -529,6 +546,28 @@ class LiveView(QOpenGLWidget):
             for p in quad:
                 gl.glVertex3f(*p)
         gl.glEnd()
+
+    def _tex_box(self, x0, x1, y0, y1, z0, z1, tex):
+        """A leather-textured box (same shape as _box, grain on every face). False if no texture."""
+        if tex is None:
+            return False
+        gl.glEnable(gl.GL_TEXTURE_2D)
+        gl.glBindTexture(gl.GL_TEXTURE_2D, tex)
+        gl.glColor3f(1, 1, 1)
+        gl.glBegin(gl.GL_QUADS)
+        for n, quad in (((0, 0, 1), ((x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1))),
+                        ((0, 0, -1), ((x0, y0, z0), (x0, y1, z0), (x1, y1, z0), (x1, y0, z0))),
+                        ((0, -1, 0), ((x0, y0, z0), (x1, y0, z0), (x1, y0, z1), (x0, y0, z1))),
+                        ((0, 1, 0), ((x0, y1, z0), (x0, y1, z1), (x1, y1, z1), (x1, y1, z0))),
+                        ((1, 0, 0), ((x1, y0, z0), (x1, y1, z0), (x1, y1, z1), (x1, y0, z1))),
+                        ((-1, 0, 0), ((x0, y0, z0), (x0, y0, z1), (x0, y1, z1), (x0, y1, z0)))):
+            gl.glNormal3f(*n)
+            for (px, py, pz), (s, t) in zip(quad, ((0, 0), (1, 0), (1, 1), (0, 1))):
+                gl.glTexCoord2f(s, t)
+                gl.glVertex3f(px, py, pz)
+        gl.glEnd()
+        gl.glDisable(gl.GL_TEXTURE_2D)
+        return True
 
     def _prism(self, verts, faces, colour):
         gl.glDisable(gl.GL_TEXTURE_2D)
@@ -653,3 +692,17 @@ class LiveView(QOpenGLWidget):
                     gl.glVertex3f(*bm.closed_to_open(L, x, y, z_top + 0.001))
                     gl.glVertex3f(*bm.closed_to_open(L, x, y + dash, z_top + 0.001))
             gl.glEnd()
+
+        # Debossed tooled border: a dark inset frame on the cover face.
+        gl.glDisable(gl.GL_LIGHTING)
+        gl.glColor3f(*(np.array(_hex_rgb(b.get('leather_color'))) * 0.3))
+        gl.glNormal3f(0, 0, -1)
+        gl.glLineWidth(2.0)
+        for ins in (0.028, 0.046):
+            bx0, bx1 = cx - cw / 2 + ins, cx + cw / 2 - ins
+            by0, by1 = -ch / 2 + ins, ch / 2 - ins
+            gl.glBegin(gl.GL_LINE_LOOP)
+            for x, y in ((bx0, by0), (bx1, by0), (bx1, by1), (bx0, by1)):
+                gl.glVertex3f(*bm.closed_to_open(L, x, y, z_top + 0.0006))
+            gl.glEnd()
+        gl.glEnable(gl.GL_LIGHTING)
