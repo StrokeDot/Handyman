@@ -423,6 +423,16 @@ def page_block(name, side, mat, parent):
     return link_object(bpy.data.objects.new(name, mesh), parent)
 
 
+def resting_sheet(name, layout, side, j, count, mat, parent):
+    """One real resting sheet: a thin wedge slice of the stack (step 2 real pages)."""
+    verts, faces = bm.sheet_slice(layout, side, j, count)
+    mesh = bpy.data.meshes.new(name)
+    mesh.from_pydata(verts.tolist(), [], faces)
+    mesh.validate()
+    mesh.materials.append(mat)
+    return link_object(bpy.data.objects.new(name, mesh), parent)
+
+
 def spine_object(book, leather, parent):
     """Leather strip under the gutter when open, wrapping the book's side when closed."""
     open_pts, closed_pts, faces = bm.spine_shapes(LAYOUT, int(book['spine_bands']))
@@ -482,7 +492,9 @@ def build_book(job):
     book = job['book']
     images = job['images']
     turns, left_i, sheets, right_i = layout_pages(len(images))
-    LAYOUT = L = bm.Layout(book['page_aspect'], turns, job.get('open_at', 0.04))
+    page_count = int(job.get('page_count', 50))
+    left_count = int(round(job.get('open_at', 0.04) * page_count))
+    LAYOUT = L = bm.SheetLayout(book['page_aspect'], page_count, left_count, turns)
     PAGE_H = L.page_h
     m = COVER_MARGIN
     hy = L.cover_h / 2
@@ -498,17 +510,20 @@ def build_book(job):
 
     # Open-book layout. The left half (front cover side) hangs on the hinge.
     box('CoverRight', 0, PAGE_W + m, -hy, hy, 0, COVER_T, leather, root, bevel=0.012)
-    page_block('PagesRight', 1, edges, root)
+    for j in range(L.right_rest_count):
+        resting_sheet(f'PagesRight{j}', L, 1, j, L.right_rest_count, edges, root)
     box('CoverLeft', -PAGE_W - m, 0, -hy, hy, 0, COVER_T, leather, pivot, bevel=0.012)
-    page_block('PagesLeft', -1, edges, pivot)
+    for j in range(L.left_rest_count):
+        resting_sheet(f'PagesLeft{j}', L, -1, j, L.left_rest_count, edges, pivot)
     get = lambda i: images[i] if i is not None else None  # noqa: E731
     curl = job['curl']
-    make_sheet('LeftPage', sheet_material('Left', None, get(left_i), job), 1.0, L.base_left, L.base_left, curl, pivot)
+    make_sheet('LeftPage', sheet_material('Left', None, get(left_i), job), 1.0,
+               L.base_left + 0.0015, L.base_left + 0.0015, curl, pivot)
     make_sheet('LastRightPage', sheet_material('LastRight', get(right_i), None, job), 0.0,
-               L.base_right, L.base_right, curl, root)
+               L.base_right + 0.0015, L.base_right + 0.0015, curl, root)
     moving = []
     for k, (f, b) in enumerate(sheets):
-        zr, zl = L.sheet_levels(k)
+        zr, zl = L.turn_levels(k)
         ob = make_sheet(f'Sheet{k + 1}', sheet_material(f'Sheet{k + 1}', get(f), get(b), job), 0.0, zr, zl, curl, root)
         moving.append((ob, zr, zl))
 
@@ -657,7 +672,8 @@ def main():
 
     sc = scene.Scene(turns, job['book']['page_aspect'], job.get('open_at', 0.04), job['fps'],
                      job['start_hold'], job['turn_seconds'], job['pause'], job['end_hold'],
-                     job.get('open_seconds', 0.0), job.get('slide', True))
+                     job.get('open_seconds', 0.0), job.get('slide', True),
+                     page_count=job.get('page_count'))
     frames = job.get('frames') or list(range(sc.frames))
     out = job['out_dir']
     os.makedirs(out, exist_ok=True)

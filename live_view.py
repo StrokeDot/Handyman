@@ -187,7 +187,7 @@ class LiveView(QOpenGLWidget):
         self.scene = scene.Scene(turns, book.get('page_aspect', 1.4), values.get('open_at', 0.04),
                                  v['fps'], v['start_hold'], v['turn_seconds'], v['pause'], v['end_hold'],
                                  v['open_seconds'] if v.get('start_closed') else 0.0,
-                                 v.get('start_closed', True))
+                                 v.get('start_closed', True), page_count=values.get('page_count'))
         self.layout = self.scene.layout
         self.timeline = self.scene.timeline
         self.frame = min(self.frame, self.timeline.frames - 1)
@@ -407,11 +407,11 @@ class LiveView(QOpenGLWidget):
 
         # Right half.
         self._box(0, L.page_w + m, -hy, hy, 0, bm.COVER_T, leather)
-        self._prism(*bm.block_prism(L, 1), edge)
-        self._sheet(0.0, L.base_right, L.base_right, self._tex_pages['right'], self._tex_pages['blank'])
-        turns, *_ = layout_pages(len(self.images))
-        for k in range(turns):
-            zr, zl = L.sheet_levels(k)
+        for j in range(L.right_rest_count):
+            self._prism(*bm.sheet_slice(L, 1, j, L.right_rest_count), edge)
+        self._sheet(0.0, L.base_right + 0.0015, L.base_right + 0.0015, self._tex_pages['right'], self._tex_pages['blank'])
+        for k in range(L.turns):
+            zr, zl = L.turn_levels(k)
             self._sheet(pose['sheet_progress'][k], zr, zl, self._tex_pages[('f', k)], self._tex_pages[('b', k)], k)
         self._spine(angle / math.pi, leather)
 
@@ -421,8 +421,9 @@ class LiveView(QOpenGLWidget):
         gl.glRotatef(math.degrees(angle), 0, 1, 0)
         gl.glTranslatef(0, 0, -L.hinge)
         self._box(-L.page_w - m, 0, -hy, hy, 0, bm.COVER_T, leather)
-        self._prism(*bm.block_prism(L, -1), edge)
-        self._sheet(1.0, L.base_left, L.base_left, self._tex_pages['blank'], self._tex_pages['left'])
+        for j in range(L.left_rest_count):
+            self._prism(*bm.sheet_slice(L, -1, j, L.left_rest_count), edge)
+        self._sheet(1.0, L.base_left + 0.0015, L.base_left + 0.0015, self._tex_pages['blank'], self._tex_pages['left'])
         self._cover_art(L)
         gl.glPopMatrix()
         gl.glPopMatrix()

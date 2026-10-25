@@ -15,9 +15,15 @@ from page_curl import Timeline
 
 class Scene:
     def __init__(self, turns, page_aspect=1.4, open_at=0.04, fps=30, start_hold=0.8,
-                 turn_seconds=1.4, pause=0.8, end_hold=1.5, open_seconds=0.0, slide=True):
+                 turn_seconds=1.4, pause=0.8, end_hold=1.5, open_seconds=0.0, slide=True,
+                 page_count=None):
         self.turns = int(turns)
-        self.layout = bm.Layout(page_aspect, self.turns, open_at)
+        if page_count:
+            left_count = int(round(open_at * page_count))
+            self.layout = bm.SheetLayout(page_aspect, page_count, left_count, self.turns)
+        else:
+            self.layout = bm.Layout(page_aspect, self.turns, open_at)
+        self.turns = self.layout.turns   # follow any clamping the layout applied
         self.slide = bool(slide)
         self.timeline = Timeline(self.turns, fps, start_hold, turn_seconds, pause, end_hold,
                                  open_seconds)

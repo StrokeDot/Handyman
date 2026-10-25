@@ -86,26 +86,27 @@ class SheetLayout(Layout):
         self.left_count = int(min(max(left_count, 1), self.page_count - 1))
         self.right_count = self.page_count - self.left_count
         self.turns = int(min(max(turns, 0), self.right_count))
+        # Height of the resting stacks (sheets that never turn); the turning sheets ride on top.
         self.h_left = self.left_count * SHEET_GAP
-        self.h_right = self.right_count * SHEET_GAP
+        self.h_right = (self.right_count - self.turns) * SHEET_GAP
         self._finish()
 
     def _hinge(self):
         # Closed, all page_count sheets and both covers stack up; the hinge is at half the paper.
         return COVER_T + self.page_count * SHEET_GAP / 2 + 0.0008
 
+    @property
+    def left_rest_count(self):
+        return self.left_count
+
+    @property
+    def right_rest_count(self):
+        return self.right_count - self.turns
+
     def turn_levels(self, t):
-        """Spine heights (right, left) of the t-th turning sheet (0-based)."""
-        return (self.base_right + (self.right_count - 1 - t) * SHEET_GAP,
-                self.base_left + (self.left_count + t) * SHEET_GAP)
-
-    def left_levels(self):
-        """Spine heights of the resting left sheets, bottom to top."""
-        return [self.base_left + j * SHEET_GAP for j in range(self.left_count)]
-
-    def right_levels(self):
-        """Spine heights of the resting right sheets (those that never turn), bottom to top."""
-        return [self.base_right + j * SHEET_GAP for j in range(self.right_count - self.turns)]
+        """Spine heights (right, left) of the t-th turning sheet (0-based), above the resting stacks."""
+        return (self.base_right + (self.turns - t) * SHEET_GAP,
+                self.base_left + (t + 1) * SHEET_GAP)
 
 
 def spine_shapes(layout, bands=4, nu=9, nv=60):
@@ -148,6 +149,41 @@ def block_prism(layout, side, nx=24):
     faces = [(i, i + 1, m + i + 1, m + i) for i in range(n - 1)]
     faces += [(n - 1, n, m + n, m + n - 1), (n, n + 1, m + n + 1, m + n), (n + 1, 0, m, m + n + 1),
               tuple(range(m - 1, -1, -1)), tuple(range(m, 2 * m))]
+    if side < 0:
+        faces = [tuple(reversed(f)) for f in faces]
+    return np.array(verts), faces
+
+
+def sheet_slice(layout, side, j, count, nx=24):
+    """One real resting sheet: the j-th (0 = top) of `count` sheets on one half.
+
+    A wedge slice of the stack: its top and bottom are scaled versions of the resting-page
+    curve, nested between the cover and the visible top page. side = +1 right, -1 left.
+    Returns (vertices, faces) with outward faces, like block_prism.
+    """
+    from page_curl import rest_profile
+    gutter = layout.gutter_right if side > 0 else layout.gutter_left
+    base = layout.base_right if side > 0 else layout.base_left
+    px, pz = rest_profile(layout.page_w - 0.004, nx, gutter)
+    px = side * (px + 0.002)
+    pz = np.asarray(pz, dtype=float)
+    f_top = (count - j) / count
+    f_bot = (count - j - 1) / count
+    z_top = COVER_T + f_top * (base + pz - COVER_T)
+    z_bot = COVER_T + f_bot * (base + pz - COVER_T)
+    y0, y1 = -layout.page_h / 2 + 0.004, layout.page_h / 2 - 0.004
+    n = len(px)
+    verts = []
+    for y in (y0, y1):
+        verts += [(px[i], y, z_top[i]) for i in range(n)]
+        verts += [(px[i], y, z_bot[i]) for i in range(n)]
+    # Index layout: y0 top 0..n-1, y0 bottom n..2n-1, y1 top 2n..3n-1, y1 bottom 3n..4n-1.
+    faces = []
+    faces += [(i, i + 1, 2 * n + i + 1, 2 * n + i) for i in range(n - 1)]          # top surface
+    faces += [(n + i, 3 * n + i, 3 * n + i + 1, n + i + 1) for i in range(n - 1)]  # bottom surface
+    faces += [(n - 1, 2 * n - 1, 4 * n - 1, 3 * n - 1)]                            # fore edge
+    faces += [(n, 0, 2 * n, 3 * n)]                                                # spine edge
+    faces += [tuple(range(2 * n - 1, -1, -1)), tuple(range(2 * n, 4 * n))]         # y0 and y1 ends
     if side < 0:
         faces = [tuple(reversed(f)) for f in faces]
     return np.array(verts), faces

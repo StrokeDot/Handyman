@@ -67,6 +67,7 @@ def make_job(settings, book, images, out_dir, frames=None, width=None, height=No
         open_seconds=float(settings['open_seconds']) if settings['start_closed'] else 0.0,
         slide=bool(settings['start_closed']),
         open_at=float(settings.get('open_at', 0.04)),
+        page_count=int(settings.get('page_count', 50)),
         book=templates.for_scene(book),
         image_strength=0.92,
         margin=0.08,

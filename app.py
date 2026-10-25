@@ -16,7 +16,7 @@ from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QFormLayout,
     QGroupBox, QHBoxLayout, QInputDialog, QLabel, QListWidget, QListWidgetItem, QMainWindow,
-    QMessageBox, QProgressBar, QProgressDialog, QPushButton, QScrollArea, QSlider, QSplitter,
+    QMessageBox, QProgressBar, QProgressDialog, QPushButton, QScrollArea, QSlider, QSpinBox, QSplitter,
     QStackedWidget, QVBoxLayout, QWidget,
 )
 
@@ -314,6 +314,11 @@ class Studio(QMainWindow):
         self.book_combo.currentIndexChanged.connect(self._update_summary)
         self.book_combo.currentIndexChanged.connect(self._camera_changed)
         f.addRow('Template', self.book_combo)
+        self.page_count = QSpinBox()
+        self.page_count.setRange(2, 2000)
+        self.page_count.setValue(50)
+        self.page_count.valueChanged.connect(self._update_summary)
+        f.addRow('Page count (sheets)', self.page_count)
         row = QHBoxLayout()
         for text, fn in (('Edit…', self._edit_book), ('Make a copy…', self._copy_book),
                          ('Open folder', self._open_books_folder)):
@@ -575,7 +580,7 @@ class Studio(QMainWindow):
                     start_closed=self.start_closed.isChecked(), open_seconds=self.open_s.value(),
                     open_at=book_model.OPEN_AT[self.open_at.currentText()], open_at_label=self.open_at.currentText(),
                     curl=self.curl.value() / 100, cam=self._cam(), quality=self.quality.currentText(),
-                    blend=self.blend.currentText())
+                    blend=self.blend.currentText(), page_count=self.page_count.value())
 
     def _state(self):
         v = self._values()
@@ -597,6 +602,8 @@ class Studio(QMainWindow):
                 spin.setValue(float(v[key]))
         if 'curl' in v:
             self.curl.setValue(round(float(v['curl']) * 100))
+        if 'page_count' in v:
+            self.page_count.setValue(int(v['page_count']))
         if isinstance(v.get('cam'), dict):
             self._set_cam(v['cam'])
         for key, box in (('mov', self.mov), ('webm', self.webm), ('keep_png', self.keep_png),

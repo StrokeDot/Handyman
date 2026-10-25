@@ -72,6 +72,15 @@ def test_open_start_has_no_cover_motion():
         assert pose['cover_slide'] == 0.0
 
 
+def test_scene_with_page_count_uses_sheet_layout():
+    s = scene.Scene(3, page_aspect=1.4, open_at=0.04, page_count=20)
+    assert isinstance(s.layout, bm.SheetLayout)
+    assert s.layout.page_count == 20
+    assert s.turns == s.layout.turns
+    pose = s.evaluate(0)
+    assert len(pose['sheet_progress']) == s.turns
+
+
 if __name__ == '__main__':
     for name, fn in list(globals().items()):
         if name.startswith('test_'):
