@@ -90,6 +90,15 @@ def test_scene_smoothness_changes_cover():
     assert pa['cover_angle'] != pb['cover_angle']
 
 
+def test_scene_with_recorded_clips_extends_timeline():
+    base = scene.Scene(2, 1.4, 0.04, page_count=20)
+    rec = scene.Scene(2, 1.4, 0.04, page_count=20,
+                      recorded_clips=[{'duration': 20, 'smoothness': 0.5}])
+    assert rec.turns == base.turns + 1
+    assert rec.timeline.frames > base.timeline.frames
+    assert len(rec.evaluate(0)['sheet_progress']) == rec.turns
+
+
 if __name__ == '__main__':
     for name, fn in list(globals().items()):
         if name.startswith('test_'):

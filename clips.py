@@ -140,10 +140,11 @@ class ClipTimeline:
     def add_turn_clip(self, clip, at_end=True):
         """Add a recorded turn clip; when `at_end`, it is appended after the current turns."""
         if at_end:
-            clip.start = self.first_turn + len(self._turns) * (self.turn + self.pause)
+            last_end = self._turns[-1].end if self._turns else self.first_turn - 1
+            clip.start = last_end + 1 + self.pause
         self.clips.append(clip)
         self.turns += 1
         self._turns.append(clip)
         self._turns.sort(key=lambda c: c.start)
-        self.frames = max(self.frames, clip.end + 1)
+        self.frames = max(self.frames, clip.end + 1 + self.end)
         return clip

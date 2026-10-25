@@ -173,6 +173,7 @@ class Studio(QMainWindow):
         self.play_timer.timeout.connect(self._next_preview_frame)
         self.blender = bb.find_blender(self.settings.value('blender'))
         self.books = []
+        self.recorded_clips = []
         self._build()
         self._reload_books(self.settings.value('book', ''))
         self._load_settings()
@@ -268,13 +269,16 @@ class Studio(QMainWindow):
         self.drag_pages = QCheckBox('Drag pages')
         self.drag_pages.setToolTip('Left-drag a page in the live view to turn it')
         self.drag_pages.toggled.connect(lambda on: setattr(self.live, 'drag_pages', on) if self.live else None)
+        self.record = QCheckBox('Record')
+        self.record.setToolTip('While on, each finished page drag is added to the timeline')
         for wdg in (self.play_btn, self.scrub, self.time_label, QLabel('Speed'), self.speed, self.loop,
-                    self.drag_pages):
+                    self.drag_pages, self.record):
             pb.addWidget(wdg, 1 if wdg is self.scrub else 0)
         mv.addWidget(self.playbar)
         self.playbar.setVisible(self.live is not None)
         if self.live is not None:
             self.live.frameChanged.connect(self._live_frame)
+            self.live.pageTurned.connect(self._on_page_turned)
             self.live.failed.connect(self._live_failed)
         self._live_timer = QTimer(self)
         self._live_timer.setSingleShot(True)
@@ -630,7 +634,7 @@ class Studio(QMainWindow):
                     open_at=book_model.OPEN_AT[self.open_at.currentText()], open_at_label=self.open_at.currentText(),
                     curl=self.curl.value() / 100, cam=self._cam(), quality=self.quality.currentText(),
                     blend=self.blend.currentText(), page_count=self.page_count.value(),
-                    smoothness=self.smooth.value() / 100)
+                    smoothness=self.smooth.value() / 100, recorded_clips=self.recorded_clips)
 
     def _state(self):
         v = self._values()
@@ -777,6 +781,15 @@ class Studio(QMainWindow):
             self.live.set_content(self._book(), self._content_images(), self._values())
         except Exception as exc:
             self.status.setText(f'Live view could not update: {exc}')
+
+    def _on_page_turned(self, start, duration, smoothness):
+        """Record mode: a finished drag becomes a turn clip on the timeline."""
+        if not self.record.isChecked():
+            return
+        self.recorded_clips.append({'start': int(start), 'duration': int(duration),
+                                    'smoothness': float(smoothness)})
+        self._refresh_live()
+        self.status.setText(f'Recorded a page turn ({len(self.recorded_clips)} clip(s)).')
 
     def _toggle_play(self):
         if self.live is None:

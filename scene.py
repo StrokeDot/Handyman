@@ -10,14 +10,15 @@ the app is exactly what gets exported. This is step 1 of the rebuild: it reprodu
 build on the same Scene.
 """
 import book_model as bm
-from clips import ClipTimeline
+from clips import Clip, ClipTimeline
 
 
 class Scene:
     def __init__(self, turns, page_aspect=1.4, open_at=0.04, fps=30, start_hold=0.8,
                  turn_seconds=1.4, pause=0.8, end_hold=1.5, open_seconds=0.0, slide=True,
-                 page_count=None, smoothness=1.0):
-        self.turns = int(turns)
+                 page_count=None, smoothness=1.0, recorded_clips=None):
+        extra = list(recorded_clips or [])
+        self.turns = int(turns) + len(extra)
         if page_count:
             left_count = int(round(open_at * page_count))
             self.layout = bm.SheetLayout(page_aspect, page_count, left_count, self.turns)
@@ -26,8 +27,12 @@ class Scene:
         self.turns = self.layout.turns   # follow any clamping the layout applied
         self.slide = bool(slide)
         self.smoothness = float(smoothness)
-        self.timeline = ClipTimeline(self.turns, fps, start_hold, turn_seconds, pause, end_hold,
-                                     open_seconds, smoothness=self.smoothness)
+        self.timeline = ClipTimeline(self.turns - len(extra), fps, start_hold, turn_seconds, pause,
+                                     end_hold, open_seconds, smoothness=self.smoothness)
+        for rc in extra:
+            self.timeline.add_turn_clip(Clip(
+                'turn', 0, int(rc.get('duration', self.timeline.turn)),
+                smoothness=float(rc.get('smoothness', self.smoothness))))
 
     # The timing and page stack, exposed to the renderers and the tests.
     @property

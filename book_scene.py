@@ -514,9 +514,10 @@ def build_book(job):
     book = job['book']
     images = job['images']
     turns, left_i, sheets, right_i = layout_pages(len(images))
+    recorded = job.get('recorded_clips') or []
     page_count = int(job.get('page_count', 50))
     left_count = int(round(job.get('open_at', 0.04) * page_count))
-    LAYOUT = L = bm.SheetLayout(book['page_aspect'], page_count, left_count, turns)
+    LAYOUT = L = bm.SheetLayout(book['page_aspect'], page_count, left_count, turns + len(recorded))
     PAGE_H = L.page_h
     m = COVER_MARGIN
     hy = L.cover_h / 2
@@ -553,6 +554,12 @@ def build_book(job):
     for k, (f, b) in enumerate(sheets):
         zr, zl = L.turn_levels(k)
         ob = make_sheet(f'Sheet{k + 1}', sheet_material(f'Sheet{k + 1}', get(f), get(b), job), 0.0, zr, zl, curl, root)
+        moving.append((ob, zr, zl))
+    for j in range(len(recorded)):
+        k = turns + j
+        zr, zl = L.turn_levels(k)
+        ob = make_sheet(f'RecSheet{j + 1}', sheet_material(f'RecSheet{j + 1}', None, None, job),
+                        0.0, zr, zl, curl, root)
         moving.append((ob, zr, zl))
 
     spine_key = spine_object(book, leather, root)
@@ -701,7 +708,8 @@ def main():
     sc = scene.Scene(turns, job['book']['page_aspect'], job.get('open_at', 0.04), job['fps'],
                      job['start_hold'], job['turn_seconds'], job['pause'], job['end_hold'],
                      job.get('open_seconds', 0.0), job.get('slide', True),
-                     page_count=job.get('page_count'), smoothness=job.get('smoothness', 1.0))
+                     page_count=job.get('page_count'), smoothness=job.get('smoothness', 1.0),
+                     recorded_clips=job.get('recorded_clips'))
     frames = job.get('frames') or list(range(sc.frames))
     out = job['out_dir']
     os.makedirs(out, exist_ok=True)
@@ -717,7 +725,7 @@ def main():
         spine_key.value = angle / math.pi
         root.location = (slide, 0, 0)
         for k, (ob, zr, zl) in enumerate(moving):
-            t = pose['sheet_progress'][k]
+            t = pose['sheet_progress'][k] if k < len(pose['sheet_progress']) else 1.0
             if t != last_t[k]:
                 update_sheet(ob, t, zr, zl, job['curl'], smoothness=pose['smoothness'])
                 last_t[k] = t

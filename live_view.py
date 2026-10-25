@@ -154,6 +154,7 @@ class LiveView(QOpenGLWidget):
     reset = Signal()
     frameChanged = Signal(int, int)       # frame, total
     failed = Signal(str)
+    pageTurned = Signal(int, int, float)  # start frame, duration, smoothness (record mode)
 
     def __init__(self):
         super().__init__()
@@ -217,7 +218,8 @@ class LiveView(QOpenGLWidget):
                                  v['fps'], v['start_hold'], v['turn_seconds'], v['pause'], v['end_hold'],
                                  v['open_seconds'] if v.get('start_closed') else 0.0,
                                  v.get('start_closed', True), page_count=values.get('page_count'),
-                                 smoothness=values.get('smoothness', 1.0))
+                                 smoothness=values.get('smoothness', 1.0),
+                                 recorded_clips=values.get('recorded_clips'))
         self.layout = self.scene.layout
         self.timeline = self.scene.timeline
         self.frame = min(self.frame, self.timeline.frames - 1)
@@ -300,6 +302,8 @@ class LiveView(QOpenGLWidget):
             self.drag_progress = 0.0
             if done >= 1.0:
                 tl = self.timeline
+                start = int(self.frame)
+                self.pageTurned.emit(start, int(tl.turn), float(self.values.get('smoothness', 1.0)))
                 self.seek(min(tl.frames - 1, tl.turn_start(k) + tl.turn))
             self.update()
             self.setCursor(Qt.CursorShape.OpenHandCursor)
@@ -342,7 +346,9 @@ class LiveView(QOpenGLWidget):
         self._tex_pages = {'blank': self._upload('blank', page_image(book, aspect, None, blend, seed=1)),
                            'left': self._upload('left', page_image(book, aspect, get(left_i), blend, seed=2)),
                            'right': self._upload('right', page_image(book, aspect, get(right_i), blend, seed=3))}
-        for k, (f, b) in enumerate(sheets):
+        n_turns = self.scene.turns if getattr(self, 'scene', None) else len(sheets)
+        for k in range(n_turns):
+            f, b = sheets[k] if k < len(sheets) else (None, None)
             self._tex_pages[('f', k)] = self._upload(('f', k), page_image(book, aspect, get(f), blend, seed=10 + k))
             self._tex_pages[('b', k)] = self._upload(('b', k), page_image(book, aspect, get(b), blend, seed=50 + k))
         self._emblem = None
