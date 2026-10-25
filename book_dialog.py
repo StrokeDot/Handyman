@@ -52,6 +52,24 @@ class BookDialog(QDialog):
         f.addRow('Template name', self.name)
         self.leather = ColorButton(book['leather_color'])
         f.addRow('Leather colour', self.leather)
+        self.back_own = QCheckBox('Back cover has its own colour')
+        self.back_cover = ColorButton(book.get('back_cover_color') or book['leather_color'])
+        self.back_own.setChecked(bool(book.get('back_cover_color')))
+        self.back_own.toggled.connect(self.back_cover.setEnabled)
+        self.back_cover.setEnabled(self.back_own.isChecked())
+        row = QHBoxLayout()
+        row.addWidget(self.back_own)
+        row.addWidget(self.back_cover)
+        f.addRow(row)
+        self.inside_own = QCheckBox('Inside cover has its own colour')
+        self.inside_cover = ColorButton(book.get('inside_cover_color') or book['paper_color'])
+        self.inside_own.setChecked(bool(book.get('inside_cover_color')))
+        self.inside_own.toggled.connect(self.inside_cover.setEnabled)
+        self.inside_cover.setEnabled(self.inside_own.isChecked())
+        row = QHBoxLayout()
+        row.addWidget(self.inside_own)
+        row.addWidget(self.inside_cover)
+        f.addRow(row)
         self.stitching = QCheckBox('Stitching around the cover')
         self.stitching.setChecked(bool(book['stitching']))
         self.thread = ColorButton(book['thread_color'])
@@ -156,6 +174,8 @@ class BookDialog(QDialog):
     def result_book(self):
         b = dict(self.book)
         b.update(name=self.name.text().strip() or 'Book', leather_color=self.leather.value,
+                 back_cover_color=self.back_cover.value if self.back_own.isChecked() else None,
+                 inside_cover_color=self.inside_cover.value if self.inside_own.isChecked() else None,
                  stitching=self.stitching.isChecked(), thread_color=self.thread.value,
                  spine_bands=self.bands.value(), page_aspect=round(self.aspect.value(), 2),
                  paper_color=self.paper.value, paper_age=self.age.value() / 100, burn=self.burn.value() / 100,
