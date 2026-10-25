@@ -15,6 +15,8 @@ DEFAULTS = {
     'leather_color': '#6b3a1e',
     'back_cover_color': None,     # None = same as leather_color (swappable back cover)
     'inside_cover_color': None,   # None = paper-coloured endpaper (swappable inside cover)
+    'leather_image': 'resources/templates/leather.png',   # bundled photo texture (relative to resources/)
+    'paper_image': 'resources/templates/paper.png',       # bundled aged-paper texture
     'paper_color': '#e0c99a',
     'paper_age': 0.55,          # blotches and yellowing, 0..1
     'burn': 0.6,                # darkened page edges, 0..1
@@ -102,6 +104,21 @@ def duplicate(book, new_name):
     return save(copy)
 
 
+def _texture_path(book, name):
+    """Resolve a texture: a file in the book folder first, else bundled in the resources dir."""
+    if not name:
+        return None
+    name = str(name)
+    candidates = []
+    if book.get('folder'):
+        candidates.append(Path(book['folder']) / name)
+    candidates.append(paths.resource_dir() / name)
+    for p in candidates:
+        if p.exists():
+            return str(p)
+    return None
+
+
 def for_scene(book):
     """The template in the form the Blender scene reads (absolute paths, linear colours)."""
     emblem = None
@@ -113,6 +130,8 @@ def for_scene(book):
         back_cover_color=hex_to_linear(book.get('back_cover_color') or book['leather_color']),
         inside_cover_color=hex_to_linear(book.get('inside_cover_color') or book['paper_color']),
         paper_color=hex_to_linear(book['paper_color']),
+        leather_image=_texture_path(book, book.get('leather_image')),
+        paper_image=_texture_path(book, book.get('paper_image')),
         thread_color=hex_to_linear(book['thread_color']),
         paper_age=float(book['paper_age']), burn=float(book['burn']),
         page_aspect=float(book['page_aspect']), stitching=bool(book['stitching']),

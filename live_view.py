@@ -13,6 +13,7 @@ from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
 import book_model as bm
 import camera_fit as cf
+import paths
 import scene
 from page_curl import grid_faces, grid_uvs, layout_pages, sheet_vertices
 
@@ -76,8 +77,31 @@ def paper_image(book, aspect, seed):
     return img.copy()
 
 
+def _resolve_texture(book, key):
+    """Find a bundled/relative texture, matching templates.for_scene."""
+    name = book.get(key)
+    if not name:
+        return None
+    from pathlib import Path
+    cands = []
+    if book.get('folder'):
+        cands.append(Path(book['folder']) / name)
+    cands.append(paths.resource_dir() / name)
+    for p in cands:
+        if p.exists():
+            return str(p)
+    return None
+
+
 def page_image(book, aspect, path, blend, margin=0.08, seed=0):
-    img = paper_image(book, aspect, seed)
+    paper_path = _resolve_texture(book, 'paper_image')
+    base = QImage(paper_path) if paper_path else QImage()
+    if paper_path and not base.isNull():
+        img = base.scaled(TEX_W, int(TEX_W * aspect), Qt.AspectRatioMode.IgnoreAspectRatio,
+                          Qt.TransformationMode.SmoothTransformation)
+        img = img.convertToFormat(QImage.Format.Format_RGBA8888)
+    else:
+        img = paper_image(book, aspect, seed)
     if path:
         src = QImage(path)
         if not src.isNull():

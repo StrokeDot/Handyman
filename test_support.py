@@ -77,6 +77,13 @@ def test_0_6_0_release_is_detected():
     assert updater.pick_installer(release) is asset
 
 
+def test_textures_resolve():
+    """The bundled leather and paper photos are found and passed to the scene."""
+    s = templates.for_scene(dict(templates.DEFAULTS))
+    assert s['leather_image'] and s['leather_image'].endswith('leather.png')
+    assert s['paper_image'] and s['paper_image'].endswith('paper.png')
+
+
 if __name__ == '__main__':
     for name, fn in list(globals().items()):
         if name.startswith('test_'):

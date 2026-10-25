@@ -142,9 +142,23 @@ def load_image(path):
 
 # ------------------------------------------------------------------ materials
 
-def leather_material(color, name='Leather', k=1.0):
-    """Fine pebbled grain with gentle colour variation (no big cloudy blotches)."""
+def leather_material(color, name='Leather', k=1.0, image=None):
+    """Leather: the bundled photo texture when given, else the procedural pebbled grain."""
     mat, nt, bsdf, _ = new_material(name)
+    if image:
+        tex = nt.nodes.new('ShaderNodeTexImage')
+        tex.image = bpy.data.images.load(str(image), check_existing=True)
+        tex.interpolation = 'Cubic'
+        gen = nt.nodes.new('ShaderNodeTexCoord').outputs['Generated']
+        nt.links.new(gen, tex.inputs['Vector'])
+        nt.links.new(tex.outputs['Color'], bsdf.inputs['Base Color'])
+        lum = nt.nodes.new('ShaderNodeRGBToBW')
+        nt.links.new(tex.outputs['Color'], lum.inputs[0])
+        nt.links.new(bump(nt, lum.outputs[0], 0.18, 0.003), bsdf.inputs['Normal'])
+        set_input(bsdf, 'Roughness', 0.62)
+        set_input(bsdf, 'Coat Weight', 0.1)
+        set_input(bsdf, 'Coat Roughness', 0.4)
+        return mat
     coord = nt.nodes.new('ShaderNodeTexCoord').outputs['Object']
     tone = nt.nodes.new('ShaderNodeTexNoise')
     set_input(tone, 'Scale', 9.0)
@@ -288,6 +302,13 @@ def sheet_material(name, front, back, job):
     set_input(vign, 'To Min', 0.9 * book['burn'])
     set_input(vign, 'To Max', 0.0)
     paper = mix_rgb(nt, 'MULTIPLY', vign.outputs['Result'], paper, (0.30, 0.16, 0.07, 1))
+
+    if book.get('paper_image'):
+        paper_tex = nt.nodes.new('ShaderNodeTexImage')
+        paper_tex.image = bpy.data.images.load(str(book['paper_image']), check_existing=True)
+        paper_tex.interpolation = 'Cubic'
+        nt.links.new(uv, paper_tex.inputs['Vector'])
+        paper = paper_tex.outputs['Color']
 
     blend = 'MULTIPLY' if job['blend'] == 'ink' else 'MIX'
     sides = []
@@ -500,8 +521,9 @@ def build_book(job):
     hy = L.cover_h / 2
     hinge_z = L.hinge
 
-    leather = leather_material(book['leather_color'])                       # front cover
-    back_leather = leather_material(book.get('back_cover_color', book['leather_color']))
+    leather = leather_material(book['leather_color'], image=book.get('leather_image'))  # front cover
+    back_leather = leather_material(book.get('back_cover_color', book['leather_color']),
+                                    name='BackLeather', image=book.get('leather_image'))
     endpaper = plain_material('Endpaper', book.get('inside_cover_color', book['paper_color']),
                               roughness=0.92)
     edges = page_edge_material(book)
