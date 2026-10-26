@@ -669,16 +669,24 @@ class LiveView(QOpenGLWidget):
             self._spine_data = (self.layout, o, c, faces)
         _, o, c, faces = self._spine_data
         v = o + (c - o) * closed
-        gl.glDisable(gl.GL_TEXTURE_2D)
-        gl.glColor3f(*(np.array(colour) * 0.9))
+        tex = self._tex_surface.get('spine_exterior_image') or self._tex_leather
+        if tex is not None:
+            gl.glEnable(gl.GL_TEXTURE_2D)
+            gl.glBindTexture(gl.GL_TEXTURE_2D, tex)
+            gl.glColor3f(1, 1, 1)
+        else:
+            gl.glDisable(gl.GL_TEXTURE_2D)
+            gl.glColor3f(*(np.array(colour) * 0.9))
         gl.glBegin(gl.GL_QUADS)
         for face in faces:
             p = v[list(face)]
             nrm = np.cross(p[1] - p[0], p[3] - p[0])
             gl.glNormal3f(*(-nrm / (np.linalg.norm(nrm) + 1e-12)))
-            for q in p:
+            for idx, q in zip(face, p):
+                gl.glTexCoord2f((idx % 9) / 8.0, (idx // 9) / 59.0)
                 gl.glVertex3f(*q)
         gl.glEnd()
+        gl.glDisable(gl.GL_TEXTURE_2D)
 
     def _hinge(self, angle, colour):
         """The deformable joint skin joining the boards (bends through every opening angle)."""
