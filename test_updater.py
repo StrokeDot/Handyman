@@ -111,6 +111,17 @@ def test_meta_avoids_the_api(real):
     assert result['info'] and result['info']['version'] == '9.9.9'
 
 
+def test_version_compare_handles_two_digits():
+    assert updater.is_newer('0.6.10', '0.6.9')
+    assert not updater.is_newer('0.6.10', '0.6.10')
+
+
+def test_stale_cache_is_never_offered():
+    # After updating, a cached older release must not be offered again.
+    assert updater._usable({'version': '0.0.1'}) is None
+    assert updater._usable(None) is None
+
+
 if __name__ == '__main__':
     for name, fn in list(globals().items()):
         if name.startswith('test_'):

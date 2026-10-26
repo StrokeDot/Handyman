@@ -173,6 +173,11 @@ def check(manual=False, timeout=8):
         _lock.release()
 
 
+def _usable(info):
+    """Only ever offer a cached release that is still newer than what is running."""
+    return info if info and is_newer(info.get('version')) else None
+
+
 def _check_locked(manual, timeout):
     now = time.time()
     cache = _load_cache()
@@ -180,11 +185,11 @@ def _check_locked(manual, timeout):
     blocked = float(cache.get('blocked_until') or 0)
 
     if blocked > now:
-        return {'info': cache.get('info'),
+        return {'info': _usable(cache.get('info')),
                 'message': f'GitHub is limiting how often we can check. Next try {_clock(blocked - now)}.',
                 'next': blocked}
     if not manual and checked and now - checked < CHECK_INTERVAL:
-        return {'info': cache.get('info'),
+        return {'info': _usable(cache.get('info')),
                 'message': f'Already checked {_clock(now - checked).replace("in ", "")} ago; next check {_clock(checked + CHECK_INTERVAL - now)}.',
                 'next': checked + CHECK_INTERVAL}
 
@@ -196,7 +201,7 @@ def _check_locked(manual, timeout):
             cache['blocked_until'] = blocked
             cache['checked_at'] = now
             _save_cache(cache)
-            return {'info': cache.get('info'),
+            return {'info': _usable(cache.get('info')),
                     'message': f'GitHub is limiting how often we can check. Next try {_clock(blocked - now)}.',
                     'next': blocked}
     if answered:
@@ -209,8 +214,9 @@ def _check_locked(manual, timeout):
                 'next': now + CHECK_INTERVAL}
 
     # Offline: keep the app usable and repeat what we knew.
-    if cache.get('info'):
-        return {'info': cache.get('info'),
+    leftover = _usable(cache.get('info'))
+    if leftover:
+        return {'info': leftover,
                 'message': 'GitHub could not be reached; offering the last known update.',
                 'next': 0}
     return {'info': None, 'message': 'GitHub could not be reached. The app still works normally.',

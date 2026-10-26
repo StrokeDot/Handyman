@@ -1,5 +1,8 @@
 # Changes
 
+## 0.6.12
+- Fixed the update prompt offering a version you already have: a cached release is now only offered when it is newer than the running app.
+
 ## 0.6.11
 - Turned the glTF viewport back off: showing Qt WebEngine next to the OpenGL view kept making the app close. The Live 3D view and the Blender previews are the reliable views.
 
