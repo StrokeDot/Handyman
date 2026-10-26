@@ -1,11 +1,10 @@
 """Interactive glTF viewport: Three.js inside Qt WebEngine, fed by the Blender-authored .glb.
 
-The geometry is *never* rebuilt here — the viewport loads the exported glTF, so the book it
-shows is the same asset Blender renders. The OpenGL viewport in live_view.py stays as a
-fallback while this pipeline is being proven.
+The geometry is never rebuilt here — the viewport loads the exported glTF, so the book it
+shows is the same asset Blender renders. The assets are served over localhost because
+Chromium refuses to fetch `file://` URLs. The OpenGL viewport stays as the fallback.
 """
 import json
-from pathlib import Path
 
 from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
@@ -18,6 +17,8 @@ except Exception:                       # WebEngine is an optional install
     QWebEngineView = None
     HAVE_WEBENGINE = False
 
+from viewer_server import ViewerServer
+
 
 class GltfView(QWidget):
     """A viewport that plays the exported book .glb, with a graceful fallback message."""
@@ -25,7 +26,8 @@ class GltfView(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.view = None
-        self.book_loaded = False
+        self.server = ViewerServer()
+        self._loaded = False
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         if not HAVE_WEBENGINE:
@@ -36,8 +38,6 @@ class GltfView(QWidget):
         settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True)
         settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
         lay.addWidget(self.view)
-        page = Path(__file__).parent / 'resources' / 'viewer' / 'viewer.html'
-        self.view.load(QUrl.fromLocalFile(str(page)))
 
     # ---------------------------------------------------------------- control
     def _js(self, code):
@@ -45,13 +45,19 @@ class GltfView(QWidget):
             self.view.page().runJavaScript(code)
 
     def load_book(self, glb_path):
-        """Point the viewer at an exported .glb (absolute path)."""
-        url = QUrl.fromLocalFile(str(glb_path)).toString()
-        self._js(f'loadBook({json.dumps(url)})')
-        self.book_loaded = True
+        """Serve the exported .glb and open the viewer on it."""
+        if self.view is None:
+            return
+        url = self.server.publish(glb_path)
+        if not self._loaded:
+            self.view.load(QUrl(url))
+            self.view.loadFinished.connect(
+                lambda ok: self._js("loadBook('book.glb')") if ok else None)
+            self._loaded = True
+        else:
+            self._js("loadBook('book.glb')")
 
     def set_time(self, seconds):
-        """Scrub: pin every animation to one moment."""
         self._js(f'setTime({float(seconds):.4f})')
 
     def play(self):
@@ -65,3 +71,7 @@ class GltfView(QWidget):
 
     def reset_view(self):
         self._js('resetView()')
+
+    def closeEvent(self, event):
+        self.server.stop()
+        super().closeEvent(event)

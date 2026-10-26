@@ -87,7 +87,7 @@ window.loadBook = function (url) {
     camera.updateProjectionMatrix();
     window.__ready = true;
     hud.textContent = `${gltf.animations.length} clip(s), ${duration.toFixed(2)} s`;
-  }, undefined, (err) => { window.__error = String(err); hud.textContent = 'load failed'; });
+  }, undefined, (err) => { window.__error = String(err); hud.textContent = 'load failed: ' + String(err); });
 };
 
 // The app owns playback: setTime(t) pins the whole scene to one moment.

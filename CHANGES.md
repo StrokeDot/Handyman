@@ -1,5 +1,9 @@
 # Changes
 
+## 0.6.6
+- Fixed the glTF viewport showing "load failed": the viewer and the book are now served from a tiny localhost server, because Chromium refuses to read the `.glb` from a `file://` URL.
+- The viewport reports the real load error instead of a bare message.
+
 ## 0.6.5
 - New **glTF Viewport (Beta)** toggle: an interactive Three.js viewport that plays the book exported from the Blender master template — orbit, pan, zoom and frame scrubbing. The OpenGL viewport stays the default and the fallback.
 - The app can export the current book to glTF: the cover, hinge, page and spine animation are baked to morph targets so they survive the export.
