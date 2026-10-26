@@ -1,5 +1,9 @@
 # Changes
 
+## 0.6.10
+- Fixed the black 3D view: Qt WebEngine is now loaded only when you open the glTF viewport, and the OpenGL context is shared up front, so it can no longer break the Live 3D view.
+- Also makes switching between the 3D view and the glTF viewport safe.
+
 ## 0.6.9
 - The update check no longer fails with "rate limit exceeded": a successful check is cached for six hours, manual checks still go out, the request is conditional (ETag), and a 403/429 is remembered until GitHub's reset time instead of being retried.
 - The app stays usable when GitHub is unreachable, showing the last known result.

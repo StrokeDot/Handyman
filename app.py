@@ -29,7 +29,14 @@ import paths
 import templates
 import updater
 from book_dialog import BookDialog
-from gltf_view import GltfView, HAVE_WEBENGINE
+
+# Check for Qt WebEngine WITHOUT importing it: importing it early reconfigures Qt's OpenGL
+# setup and can leave the Live 3D view (a QOpenGLWidget) black.
+try:
+    import importlib.util as _ilu
+    HAVE_WEBENGINE = _ilu.find_spec('PySide6.QtWebEngineWidgets') is not None
+except Exception:
+    HAVE_WEBENGINE = False
 from framing_view import FramingView
 try:
     from live_view import LiveView, GL_IMPORT_ERROR
@@ -317,7 +324,8 @@ class Studio(QMainWindow):
         self.framing = self.live or FramingView()
         self.views.addWidget(self.framing)
         self.views.addWidget(self.preview)
-        self.gltf = GltfView() if HAVE_WEBENGINE else None
+        # Created on first use: loading Qt WebEngine at startup disturbs the OpenGL view.
+        self.gltf = None
         if self.gltf is not None:
             self.views.addWidget(self.gltf)
         row = QHBoxLayout()
@@ -329,8 +337,8 @@ class Studio(QMainWindow):
             row.addWidget(b)
         self.view_gltf = QPushButton('glTF Viewport (Beta)')
         self.view_gltf.setCheckable(True)
-        self.view_gltf.setEnabled(self.gltf is not None)
-        if self.gltf is None:
+        self.view_gltf.setEnabled(HAVE_WEBENGINE)
+        if not HAVE_WEBENGINE:
             self.view_gltf.setToolTip('Needs Qt WebEngine, which is not installed.')
         self.view_gltf.clicked.connect(self._show_gltf)
         row.addWidget(self.view_gltf)
@@ -1145,7 +1153,16 @@ class Studio(QMainWindow):
     def _show_gltf(self):
         """Export the current book to .glb, then show it in the beta viewport."""
         if self.gltf is None:
-            return
+            if not HAVE_WEBENGINE:
+                self.status.setText('The glTF viewport needs Qt WebEngine, which is not installed.')
+                return
+            try:
+                from gltf_view import GltfView
+                self.gltf = GltfView()
+                self.views.addWidget(self.gltf)
+            except Exception as exc:
+                self.status.setText(f'The glTF viewport is unavailable ({exc}).')
+                return
         blender = bb.find_blender(self.settings.value('blender'))
         if not blender:
             self.status.setText('Blender was not found — the glTF viewport needs it to export.')
@@ -1327,8 +1344,10 @@ class Studio(QMainWindow):
 
 
 def main():
-    # WebEngine shares this window with the OpenGL viewport. On some GPUs their render
-    # processes fight and switching views can close the app, so use software rendering.
+    # WebEngine and the OpenGL viewport can only coexist when they share GL contexts,
+    # and this attribute must be set before the QApplication exists.
+    QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
+    # Software rendering keeps Chromium's GPU process from fighting the OpenGL viewport.
     os.environ.setdefault('QTWEBENGINE_CHROMIUM_FLAGS', '--disable-gpu')
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
