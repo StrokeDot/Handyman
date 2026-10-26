@@ -506,14 +506,18 @@ class LiveView(QOpenGLWidget):
             self._sheet(t, zr, zl, self._tex_pages[('f', k)], self._tex_pages[('b', k)], k,
                         smoothness=pose['smoothness'])
         self._spine(angle / math.pi, leather)
-        # Gutter fill: a strip at the spine so opening the cover never shows the background.
+        # Spine lining: covers the gutter side of the page block (the bright paper edge) and
+        # any hole beneath the opening cover. Drawn on both faces so it reads from either side.
         gl.glDisable(gl.GL_TEXTURE_2D)
-        gl.glColor3f(*(np.array(leather) * 0.7))
-        gl.glBegin(gl.GL_QUADS)
-        gl.glNormal3f(1, 0, 0)
-        for p in ((0.0, -hy, 0.0), (0.0, -hy, L.hinge), (0.0, hy, L.hinge), (0.0, hy, 0.0)):
-            gl.glVertex3f(*p)
-        gl.glEnd()
+        gl.glColor3f(*(np.array(leather) * 0.6))
+        z_top = float(L.base_right)
+        for nx in (1.0, -1.0):
+            gl.glNormal3f(nx, 0, 0)
+            gl.glBegin(gl.GL_QUADS)
+            for p in ((-0.0012 * nx, -hy, 0.0), (-0.0012 * nx, -hy, z_top),
+                      (-0.0012 * nx, hy, z_top), (-0.0012 * nx, hy, 0.0)):
+                gl.glVertex3f(*p)
+            gl.glEnd()
 
         # Left half, on the hinge.
         gl.glPushMatrix()
