@@ -1,5 +1,13 @@
 # Changes
 
+## 0.6.4
+- Flexible hinge: the cover board is joined to the spine by a deformable joint that stays glued to both, so the binding no longer gaps at any opening angle.
+- Brown leather interior covers (pastedowns) with tooled borders, in the app and in the render.
+- Replaceable artwork for the front/back exterior, front/back interior and the spine, from Book design.
+- Fit / Fill / Stretch with scale and position for every cover surface and every page image, without changing the book's geometry.
+- Per-page image framing: select a page and choose its Fit / Fill / scale / position.
+- The live viewport and the Blender export share the same joint, framing and layout code.
+
 ## 0.6.3
 - The live viewport now uses the real leather texture and a debossed tooled border, so the cover in the app matches the render.
 - Fixed the visible gap at the spine while the cover is opening.
