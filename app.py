@@ -153,16 +153,21 @@ class UpdateCheck(QThread):
     found = Signal(dict)
     none = Signal(str)
 
+    def __init__(self, manual=False):
+        super().__init__()
+        self.manual = manual
+
     def run(self):
         try:
-            info = updater.check()
+            result = updater.check(manual=self.manual)
         except Exception as exc:
             self.none.emit(f'Could not check for updates ({exc}).')
             return
+        info = result.get('info')
         if info:
             self.found.emit(info)
         else:
-            self.none.emit(f'You have the latest version ({APP_VERSION}).')
+            self.none.emit(result.get('message') or f'You have the latest version ({APP_VERSION}).')
 
 
 class UpdateDownload(QThread):
@@ -1238,7 +1243,7 @@ class Studio(QMainWindow):
     def _check_updates(self, quiet):
         if self.update_thread and self.update_thread.isRunning():
             return
-        self.update_thread = UpdateCheck()
+        self.update_thread = UpdateCheck(manual=not quiet)
         self.update_thread.found.connect(self._offer_update)
         if not quiet:
             self.update_thread.none.connect(lambda msg: QMessageBox.information(self, APP_NAME, msg))

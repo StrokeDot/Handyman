@@ -34,6 +34,7 @@ jobs:
           python test_camera.py
           python test_model.py
           python test_scene_mock.py > scene_mock.log
+          python test_updater.py
           python test_app_smoke.py
 
       - name: Check the update address answers (uses the permanent repository ID)

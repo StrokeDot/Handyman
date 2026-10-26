@@ -1,5 +1,11 @@
 # Changes
 
+## 0.6.9
+- The update check no longer fails with "rate limit exceeded": a successful check is cached for six hours, manual checks still go out, the request is conditional (ETag), and a 403/429 is remembered until GitHub's reset time instead of being retried.
+- The app stays usable when GitHub is unreachable, showing the last known result.
+- The status message says when the next check is possible.
+- Added an optional static update-metadata path that needs no GitHub API call.
+
 ## 0.6.8
 - Fixed the glTF viewport showing a broken book: the app now uses your calibrated cover, pastedown and spine artwork by default, and the page block is solid.
 - Fixed the app closing when switching from the glTF viewport back to Live 3D view (WebEngine uses software rendering, and the viewer pauses while hidden).
