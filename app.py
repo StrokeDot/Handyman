@@ -335,13 +335,13 @@ class Studio(QMainWindow):
             b.setCheckable(True)
             b.clicked.connect(lambda _=False, i=i: self._show_view(i))
             row.addWidget(b)
+        # Hidden for now: Qt WebEngine repeatedly crashed the app when shown next to the
+        # OpenGL viewport, even with a shared GL context. The export code stays for a future
+        # standalone window, but the button is not offered until that is proven stable.
         self.view_gltf = QPushButton('glTF Viewport (Beta)')
         self.view_gltf.setCheckable(True)
-        self.view_gltf.setEnabled(HAVE_WEBENGINE)
-        if not HAVE_WEBENGINE:
-            self.view_gltf.setToolTip('Needs Qt WebEngine, which is not installed.')
+        self.view_gltf.setVisible(False)
         self.view_gltf.clicked.connect(self._show_gltf)
-        row.addWidget(self.view_gltf)
         mv.addLayout(row)
         mv.addWidget(self.views, 1)
         # Playback for the live view: no rendering needed.

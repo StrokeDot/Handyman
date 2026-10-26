@@ -1,5 +1,8 @@
 # Changes
 
+## 0.6.11
+- Turned the glTF viewport back off: showing Qt WebEngine next to the OpenGL view kept making the app close. The Live 3D view and the Blender previews are the reliable views.
+
 ## 0.6.10
 - Fixed the black 3D view: Qt WebEngine is now loaded only when you open the glTF viewport, and the OpenGL context is shared up front, so it can no longer break the Live 3D view.
 - Also makes switching between the 3D view and the glTF viewport safe.
