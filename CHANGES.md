@@ -1,5 +1,8 @@
 # Changes
 
+## 0.6.14
+- Fixed the cover fighting your artwork: the procedural tooled border, stitching and lettering are now only added to bare leather, never painted on top of a cover image you supplied. Your cover now renders exactly as designed.
+
 ## 0.6.13
 - Better lighting in the render: a warm key, a soft cool fill and a warm rim, so the leather keeps its detail instead of going flat and the book lifts off the background.
 - The default journal now has gold-tooled "JOURNAL" lettering (change it under Edit…), tuned so it reads as gold foil rather than grey metal.

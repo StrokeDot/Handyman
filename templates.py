@@ -35,8 +35,8 @@ DEFAULTS = {
     'emblem_style': 'medallion',  # 'medallion' (the image as-is) or 'deboss' (pressed into leather)
     'emblem_size': 0.42,        # fraction of the cover width
     'emblem_y': 0.18,           # up from the cover centre, fraction of cover height
-    'title': 'JOURNAL',
-    'title_style': 'gold',      # 'deboss' or 'gold'
+    'title': '',
+    'title_style': 'deboss',    # 'deboss' or 'gold'
     'title_size': 0.07,         # letter height, fraction of cover height
     'title_y': -0.08,
 }

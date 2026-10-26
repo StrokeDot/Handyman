@@ -667,15 +667,19 @@ def build_book(job):
     bpy.context.view_layer.update()
     cover_w, cover_h = PAGE_W + m, 2 * hy
     cx, z_top = cover_w / 2, 2 * hinge_z
-    border_mat = plain_material('TooledBorder', rgba(book['leather_color'], 0.35), roughness=0.7)
-    for i, ins in enumerate((0.028, 0.046)):
-        cover_border(f'CoverBorder{i}', cx, 0, z_top + 0.0002, cover_w, cover_h, ins,
-                     0.006, 0.0004, border_mat, pivot, outward=1)
-        cover_border(f'BackBorder{i}', (PAGE_W + m) / 2, 0, 0.0, PAGE_W + m, 2 * hy, ins,
-                     0.006, 0.0004, border_mat, root, outward=-1)
-    if book['stitching']:
-        thread = plain_material('Thread', book['thread_color'], roughness=0.7)
-        stitches('Stitching', cx, 0, z_top, cover_w, cover_h, 0.035, thread, pivot)
+    # When real cover artwork is supplied it already carries its own tooling and stitching,
+    # so the procedural decorations would just fight the design. Only add them to bare leather.
+    using_art = bool(book.get('front_exterior_image'))
+    if not using_art:
+        border_mat = plain_material('TooledBorder', rgba(book['leather_color'], 0.35), roughness=0.7)
+        for i, ins in enumerate((0.028, 0.046)):
+            cover_border(f'CoverBorder{i}', cx, 0, z_top + 0.0002, cover_w, cover_h, ins,
+                         0.006, 0.0004, border_mat, pivot, outward=1)
+            cover_border(f'BackBorder{i}', (PAGE_W + m) / 2, 0, 0.0, PAGE_W + m, 2 * hy, ins,
+                         0.006, 0.0004, border_mat, root, outward=-1)
+        if book['stitching']:
+            thread = plain_material('Thread', book['thread_color'], roughness=0.7)
+            stitches('Stitching', cx, 0, z_top, cover_w, cover_h, 0.035, thread, pivot)
     if book['emblem']:
         img = load_image(book['emblem'])
         if img is not None:
