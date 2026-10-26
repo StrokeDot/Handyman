@@ -94,7 +94,7 @@ def _resolve_texture(book, key):
     return None
 
 
-def page_image(book, aspect, path, blend, margin=0.08, seed=0):
+def page_image(book, aspect, path, blend, margin=0.08, seed=0, fit=None):
     paper_path = _resolve_texture(book, 'paper_image')
     base = QImage(paper_path) if paper_path else QImage()
     if paper_path and not base.isNull():
@@ -107,15 +107,30 @@ def page_image(book, aspect, path, blend, margin=0.08, seed=0):
         src = QImage(path)
         if not src.isNull():
             w, h = img.width(), img.height()
-            mw = margin * w
-            k = min((w - 2 * mw) / src.width(), (h - 2 * mw) / src.height())
-            dw, dh = src.width() * k, src.height() * k
+            f = fit or {}
+            mode = f.get('mode', 'fit')
+            scale = max(0.05, float(f.get('scale', 1.0)))
+            ox = float(f.get('x', 0.0))
+            oy = float(f.get('y', 0.0))
+            mw = margin * w if mode == 'fit' else 0.0
+            avw, avh = w - 2 * mw, h - 2 * mw
+            if mode == 'stretch':
+                dw, dh = avw, avh
+            elif mode == 'fill':
+                k = max(avw / src.width(), avh / src.height())
+                dw, dh = src.width() * k, src.height() * k
+            else:                                # 'fit'
+                k = min(avw / src.width(), avh / src.height())
+                dw, dh = src.width() * k, src.height() * k
+            dw *= scale
+            dh *= scale
+            cx, cy = w / 2 + ox * w, h / 2 + oy * h
             p = QPainter(img)
             p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
             if blend == 'ink':
                 p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Multiply)
             p.setOpacity(0.92)
-            p.drawImage(QRectF((w - dw) / 2, (h - dh) / 2, dw, dh), src)
+            p.drawImage(QRectF(cx - dw / 2, cy - dh / 2, dw, dh), src)
             p.end()
     return img
 
@@ -344,15 +359,17 @@ class LiveView(QOpenGLWidget):
         aspect = float(book.get('page_aspect', 1.4))
         blend = self.values.get('blend', 'ink')
         get = lambda i: images[i] if i is not None and i < len(images) else None  # noqa: E731
+        fits = self.values.get('page_fits') or []
+        fit_of = lambda i: fits[i] if i is not None and i < len(fits) else None  # noqa: E731
         turns, left_i, sheets, right_i = layout_pages(len(images))
         self._tex_pages = {'blank': self._upload('blank', page_image(book, aspect, None, blend, seed=1)),
-                           'left': self._upload('left', page_image(book, aspect, get(left_i), blend, seed=2)),
-                           'right': self._upload('right', page_image(book, aspect, get(right_i), blend, seed=3))}
+                           'left': self._upload('left', page_image(book, aspect, get(left_i), blend, seed=2, fit=fit_of(left_i))),
+                           'right': self._upload('right', page_image(book, aspect, get(right_i), blend, seed=3, fit=fit_of(right_i)))}
         n_turns = self.scene.turns if getattr(self, 'scene', None) else len(sheets)
         for k in range(n_turns):
             f, b = sheets[k] if k < len(sheets) else (None, None)
-            self._tex_pages[('f', k)] = self._upload(('f', k), page_image(book, aspect, get(f), blend, seed=10 + k))
-            self._tex_pages[('b', k)] = self._upload(('b', k), page_image(book, aspect, get(b), blend, seed=50 + k))
+            self._tex_pages[('f', k)] = self._upload(('f', k), page_image(book, aspect, get(f), blend, seed=10 + k, fit=fit_of(f)))
+            self._tex_pages[('b', k)] = self._upload(('b', k), page_image(book, aspect, get(b), blend, seed=50 + k, fit=fit_of(b)))
         self._emblem = None
         if book.get('emblem') and book.get('folder'):
             from pathlib import Path

@@ -252,25 +252,40 @@ def page_edge_material(book):
     return mat
 
 
-def image_layer(nt, uv, path, back, margin):
+def image_layer(nt, uv, path, back, margin, fit=None):
     """Returns (colour, alpha) sockets of an image fitted inside the page, or None."""
     img = load_image(path) if path else None
     if img is None:
         return None
     iw, ih = img.size
-    mw = margin * PAGE_W
-    k = min((PAGE_W - 2 * mw) / iw, (PAGE_H - 2 * mw) / ih)
-    bw, bh = iw * k / PAGE_W, ih * k / PAGE_H
-    u0, v0 = (1 - bw) / 2, (1 - bh) / 2
+    f = fit or {}
+    mode = f.get('mode', 'fit')
+    scale = max(0.05, float(f.get('scale', 1.0)))
+    ox = float(f.get('x', 0.0))
+    oy = float(f.get('y', 0.0))
+    mw = margin * PAGE_W if mode == 'fit' else 0.0
+    if mode == 'stretch':
+        bw, bh = 1.0, 1.0
+    elif mode == 'fill':
+        k = max(PAGE_W / iw, PAGE_H / ih)
+        bw, bh = iw * k / PAGE_W, ih * k / PAGE_H
+    else:                                        # 'fit'
+        k = min((PAGE_W - 2 * mw) / iw, (PAGE_H - 2 * mw) / ih)
+        bw, bh = iw * k / PAGE_W, ih * k / PAGE_H
+    bw *= scale
+    bh *= scale
+    u0, v0 = (1 - bw) / 2 + ox, (1 - bh) / 2 + oy
 
     vec = uv
     if back:  # the back of a sheet is seen mirrored across the spine
+        ox = -ox
         sep = nt.nodes.new('ShaderNodeSeparateXYZ')
         nt.links.new(uv, sep.inputs[0])
         comb = nt.nodes.new('ShaderNodeCombineXYZ')
         nt.links.new(math_node(nt, 'SUBTRACT', 1.0, sep.outputs['X']), comb.inputs['X'])
         nt.links.new(sep.outputs['Y'], comb.inputs['Y'])
         vec = comb.outputs[0]
+    u0 = (1 - bw) / 2 + ox
     mp = nt.nodes.new('ShaderNodeMapping')
     nt.links.new(vec, mp.inputs['Vector'])
     mp.inputs['Scale'].default_value = (1 / bw, 1 / bh, 1)
@@ -283,7 +298,7 @@ def image_layer(nt, uv, path, back, margin):
     return tex.outputs['Color'], tex.outputs['Alpha']
 
 
-def sheet_material(name, front, back, job):
+def sheet_material(name, front, back, job, front_fit=None, back_fit=None):
     """Parchment with an image on each side (either may be None)."""
     book = job['book']
     mat, nt, bsdf, out = new_material(name)
@@ -326,7 +341,8 @@ def sheet_material(name, front, back, job):
     blend = 'MULTIPLY' if job['blend'] == 'ink' else 'MIX'
     sides = []
     for side_path, is_back in ((front, False), (back, True)):
-        layer = image_layer(nt, uv, side_path, is_back, job['margin'])
+        layer = image_layer(nt, uv, side_path, is_back, job['margin'],
+                            back_fit if is_back else front_fit)
         if layer:
             col, alpha = layer
             fac = math_node(nt, 'MULTIPLY', alpha, job['image_strength'])
@@ -620,17 +636,20 @@ def build_book(job):
         if not hide_pages:
             resting_sheet(f'PagesLeft{j}', L, -1, j, L.left_rest_count, edges, pivot)
     get = lambda i: images[i] if i is not None else None  # noqa: E731
+    page_fits = job.get('page_fits') or []
+    fit_of = lambda i: page_fits[i] if i is not None and i < len(page_fits) else None  # noqa: E731
     curl = job['curl']
     if not hide_pages:
-        make_sheet('LeftPage', sheet_material('Left', None, get(left_i), job), 1.0,
+        make_sheet('LeftPage', sheet_material('Left', None, get(left_i), job, None, fit_of(left_i)), 1.0,
                    L.base_left + 0.0015, L.base_left + 0.0015, curl, pivot)
-        make_sheet('LastRightPage', sheet_material('LastRight', get(right_i), None, job), 0.0,
+        make_sheet('LastRightPage', sheet_material('LastRight', get(right_i), None, job, fit_of(right_i), None), 0.0,
                    L.base_right + 0.0015, L.base_right + 0.0015, curl, root)
     moving = []
     if not hide_pages:
         for k, (f, b) in enumerate(sheets):
             zr, zl = L.turn_levels(k)
-            ob = make_sheet(f'Sheet{k + 1}', sheet_material(f'Sheet{k + 1}', get(f), get(b), job), 0.0, zr, zl, curl, root)
+            ob = make_sheet(f'Sheet{k + 1}', sheet_material(f'Sheet{k + 1}', get(f), get(b), job,
+                                                            fit_of(f), fit_of(b)), 0.0, zr, zl, curl, root)
             moving.append((ob, zr, zl))
         for j in range(len(recorded)):
             k = turns + j

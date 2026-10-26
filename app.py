@@ -219,6 +219,37 @@ class Studio(QMainWindow):
         self.layout_hint = QLabel()
         self.layout_hint.setWordWrap(True)
         lv.addWidget(self.layout_hint)
+        pgroup = QGroupBox('Page image framing (the selected page)')
+        pf = QFormLayout(pgroup)
+        row = QHBoxLayout()
+        self.p_fit = QComboBox()
+        self.p_fit.addItems(['Fit', 'Fill', 'Stretch'])
+        row.addWidget(self.p_fit)
+        self.p_scale = QDoubleSpinBox()
+        self.p_scale.setRange(0.25, 4.0)
+        self.p_scale.setSingleStep(0.1)
+        self.p_scale.setValue(1.0)
+        row.addWidget(self.p_scale)
+        pf.addRow('Fit / scale', row)
+        row = QHBoxLayout()
+        self.p_x = QDoubleSpinBox()
+        self.p_x.setRange(-1.0, 1.0)
+        self.p_x.setSingleStep(0.05)
+        self.p_y = QDoubleSpinBox()
+        self.p_y.setRange(-1.0, 1.0)
+        self.p_y.setSingleStep(0.05)
+        row.addWidget(QLabel('X'))
+        row.addWidget(self.p_x)
+        row.addWidget(QLabel('Y'))
+        row.addWidget(self.p_y)
+        pf.addRow('Position', row)
+        lv.addWidget(pgroup)
+        self._fit_loading = False
+        self.pages.currentRowChanged.connect(self._load_page_fit)
+        self.p_fit.currentTextChanged.connect(self._apply_page_fit)
+        self.p_scale.valueChanged.connect(self._apply_page_fit)
+        self.p_x.valueChanged.connect(self._apply_page_fit)
+        self.p_y.valueChanged.connect(self._apply_page_fit)
         row = QHBoxLayout()
         b = QPushButton('Open project…')
         b.clicked.connect(self._open_project)
@@ -561,6 +592,7 @@ class Studio(QMainWindow):
 
     # ---------------------------------------------------------------- pages
     TEXT_ROLE = Qt.ItemDataRole.UserRole + 1
+    FIT_ROLE = Qt.ItemDataRole.UserRole + 2
 
     def _page_content(self):
         """Content sides in reading order: None (blank), or a {'kind': 'image'|'text', ...} dict."""
@@ -583,6 +615,34 @@ class Studio(QMainWindow):
         return sides_to_images(self._page_content(), paths.cache_dir('pages'),
                                float(self._book().get('page_aspect', 1.4)))
 
+    def _page_fits(self):
+        """Per-side artwork framing: a dict per page side, or None for the default fit."""
+        return [self.pages.item(i).data(self.FIT_ROLE) or None for i in range(self.pages.count())]
+
+    def _load_page_fit(self, row):
+        if row is None or row < 0 or row >= self.pages.count():
+            return
+        f = self.pages.item(row).data(self.FIT_ROLE) or {}
+        self._fit_loading = True
+        self.p_fit.setCurrentText({'fit': 'Fit', 'fill': 'Fill', 'stretch': 'Stretch'}.get(f.get('mode', 'fit'), 'Fit'))
+        self.p_scale.setValue(float(f.get('scale', 1.0)))
+        self.p_x.setValue(float(f.get('x', 0.0)))
+        self.p_y.setValue(float(f.get('y', 0.0)))
+        self._fit_loading = False
+
+    def _apply_page_fit(self, *_):
+        if getattr(self, '_fit_loading', False):
+            return
+        row = self.pages.currentRow()
+        if row < 0:
+            return
+        self.pages.item(row).setData(self.FIT_ROLE, {
+            'mode': {'Fit': 'fit', 'Fill': 'fill', 'Stretch': 'stretch'}[self.p_fit.currentText()],
+            'scale': round(self.p_scale.value(), 3),
+            'x': round(self.p_x.value(), 3),
+            'y': round(self.p_y.value(), 3)})
+        self._refresh_live()
+
     def _page_paths(self):
         return [self.pages.item(i).data(Qt.ItemDataRole.UserRole) or None for i in range(self.pages.count())]
 
@@ -594,6 +654,7 @@ class Studio(QMainWindow):
             item = QListWidgetItem('')
         item.setData(Qt.ItemDataRole.UserRole, path or '')
         item.setData(self.TEXT_ROLE, text or '')
+        item.setData(self.FIT_ROLE, {'mode': 'fit', 'scale': 1.0, 'x': 0.0, 'y': 0.0})
         self.pages.addItem(item)
 
     def _add_images(self):
@@ -677,7 +738,8 @@ class Studio(QMainWindow):
                     curl=self.curl.value() / 100, cam=self._cam(), quality=self.quality.currentText(),
                     blend=self.blend.currentText(), page_count=self.page_count.value(),
                     smoothness=self.smooth.value() / 100, recorded_clips=self.recorded_clips,
-                    clip_list=self.edited_clips, transform=self._transform())
+                    clip_list=self.edited_clips, transform=self._transform(),
+                    page_fits=self._page_fits())
 
     def _state(self):
         v = self._values()
