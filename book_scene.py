@@ -564,7 +564,8 @@ def title_text(book, cx, cy, z, cover_h, parent, leather):
     curve.size = book['title_size'] * cover_h
     curve.extrude = 0.0015
     if book['title_style'] == 'gold':
-        mat = plain_material('TitleGold', (0.78, 0.52, 0.18), roughness=0.3, metallic=1.0)
+        # Less than fully metallic, or the dim world makes the foil read as grey metal.
+        mat = plain_material('TitleGold', (0.95, 0.68, 0.22), roughness=0.32, metallic=0.55)
     else:
         mat = plain_material('TitlePressed', rgba(leather, 0.3), roughness=0.55)
     curve.materials.append(mat)
@@ -731,6 +732,7 @@ class Camera:
 
 
 def setup_lights(job):
+    # Key: the warm sun that gives the leather its form.
     sun_data = bpy.data.lights.new('Sun', 'SUN')
     sun_data.energy = 3.2
     sun_data.color = (1.0, 0.9, 0.78)
@@ -738,11 +740,33 @@ def setup_lights(job):
     sun = bpy.data.objects.new('Sun', sun_data)
     sun.rotation_euler = (math.radians(38), math.radians(-28), math.radians(20))
     bpy.context.scene.collection.objects.link(sun)
+
+    # Fill: a big soft cool card so the shadow side keeps detail instead of going black.
+    fill_data = bpy.data.lights.new('Fill', 'AREA')
+    fill_data.energy = 45.0
+    fill_data.size = 3.2
+    fill_data.color = (0.80, 0.87, 1.0)
+    fill = bpy.data.objects.new('Fill', fill_data)
+    fill.location = (-2.4, -2.0, 1.9)
+    fill.rotation_euler = (math.radians(52), 0, math.radians(-52))
+    bpy.context.scene.collection.objects.link(fill)
+
+    # Kicker: a warm rim from behind so the book lifts off the dark background.
+    rim_data = bpy.data.lights.new('Rim', 'AREA')
+    rim_data.energy = 70.0
+    rim_data.size = 2.2
+    rim_data.color = (1.0, 0.86, 0.66)
+    rim = bpy.data.objects.new('Rim', rim_data)
+    rim.location = (1.6, 2.5, 2.1)
+    rim.rotation_euler = (math.radians(118), 0, math.radians(32))
+    bpy.context.scene.collection.objects.link(rim)
+
+    # A dim ambient keeps the leather from reading as flat.
     world = bpy.data.worlds.new('World')
     world.use_nodes = True
     bg = world.node_tree.nodes.get('Background')
-    bg.inputs['Color'].default_value = (0.32, 0.30, 0.28, 1)
-    bg.inputs['Strength'].default_value = 0.55
+    bg.inputs['Color'].default_value = (0.24, 0.23, 0.22, 1)
+    bg.inputs['Strength'].default_value = 0.6
     bpy.context.scene.world = world
 
 
