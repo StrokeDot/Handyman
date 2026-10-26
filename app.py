@@ -6,6 +6,7 @@ Blender does the 3D work in the background; you never need to open it.
 import json
 import shutil
 import subprocess
+import os
 import sys
 import time
 from datetime import datetime
@@ -1126,6 +1127,11 @@ class Studio(QMainWindow):
         self._start(job, self._show_still)
 
     def _show_view(self, i):
+        if self.gltf is not None and i != 2:
+            try:
+                self.gltf.pause()
+            except Exception:
+                pass
         self.views.setCurrentIndex(i)
         self.view_shot.setChecked(i == 0)
         self.view_render.setChecked(i == 1)
@@ -1316,6 +1322,9 @@ class Studio(QMainWindow):
 
 
 def main():
+    # WebEngine shares this window with the OpenGL viewport. On some GPUs their render
+    # processes fight and switching views can close the app, so use software rendering.
+    os.environ.setdefault('QTWEBENGINE_CHROMIUM_FLAGS', '--disable-gpu')
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setStyle('Fusion')

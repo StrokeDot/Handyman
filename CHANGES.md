@@ -1,5 +1,9 @@
 # Changes
 
+## 0.6.8
+- Fixed the glTF viewport showing a broken book: the app now uses your calibrated cover, pastedown and spine artwork by default, and the page block is solid.
+- Fixed the app closing when switching from the glTF viewport back to Live 3D view (WebEngine uses software rendering, and the viewer pauses while hidden).
+
 ## 0.6.7
 - The glTF viewport now shows the image-first book: your cover and spine artwork on simple boards with a real page stack and a deforming hinge, instead of the procedural leather.
 - The cover, hinge and page animations are baked into the exported glTF (morph targets for the hinge and page).

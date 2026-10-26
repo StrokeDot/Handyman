@@ -110,26 +110,24 @@ def hinge_strip(parent, mat):
 
 
 def page_stack(parent, paper, edge):
+    top = T + 0.0006 + SHEETS * GAP
     for side, x0, x1 in ((1, GUT, W), (-1, -W, -GUT)):
-        for i in range(SHEETS):
-            z0 = T + 0.0006 + i * (GAP + 0.0006)
-            z1 = z0 + GAP
-            verts = [(x0, -H / 2, z0), (x1, -H / 2, z0), (x1, H / 2, z0), (x0, H / 2, z0),
-                     (x0, -H / 2, z1), (x1, -H / 2, z1), (x1, H / 2, z1), (x0, H / 2, z1)]
-            faces = [(0, 1, 2, 3), (4, 5, 6, 7), (0, 1, 5, 4), (1, 2, 6, 5),
-                     (2, 3, 7, 6), (3, 0, 4, 7)]
-            mesh = bpy.data.meshes.new(f'Sheet{side}_{i}')
-            mesh.from_pydata(verts, [], faces)
-            uv_quad(mesh)
-            mesh.materials.append(paper)
-            mesh.materials.append(edge)
-            for p in mesh.polygons[2:]:
-                p.material_index = 1
-            ob = bpy.data.objects.new(f'Sheet{side}_{i}', mesh)
-            bpy.context.scene.collection.objects.link(ob)
-            if parent:
-                ob.parent = parent
-    return T + 0.0006 + SHEETS * (GAP + 0.0006)
+        verts = [(x0, -H / 2, T), (x1, -H / 2, T), (x1, H / 2, T), (x0, H / 2, T),
+                 (x1, -H / 2, top), (x1, H / 2, top), (x0, H / 2, top), (x0, -H / 2, top)]
+        faces = [(0, 1, 2, 3), (4, 5, 6, 7), (0, 1, 5, 4), (1, 2, 6, 5),
+                 (2, 3, 7, 6), (3, 0, 4, 7)]
+        mesh = bpy.data.meshes.new(f'Block{side}')
+        mesh.from_pydata(verts, [], faces)
+        uv_quad(mesh)
+        mesh.materials.append(paper)
+        mesh.materials.append(edge)
+        for p in mesh.polygons[2:]:
+            p.material_index = 1
+        ob = bpy.data.objects.new(f'Block{side}', mesh)
+        bpy.context.scene.collection.objects.link(ob)
+        if parent:
+            ob.parent = parent
+    return top
 
 
 def main():

@@ -17,12 +17,12 @@ DEFAULTS = {
     'inside_cover_color': None,   # None = paper-coloured endpaper (swappable inside cover)
     'leather_image': 'resources/templates/leather.png',   # bundled photo texture (relative to resources/)
     'paper_image': 'resources/templates/paper.png',       # bundled aged-paper texture
-    # One replaceable image per cover surface (None = use the leather texture).
-    'front_exterior_image': None,
-    'front_interior_image': None,
-    'back_exterior_image': None,
-    'back_interior_image': None,
-    'spine_exterior_image': None,
+    # One replaceable image per cover surface (bundled, calibrated artwork by default).
+    'front_exterior_image': 'resources/templates/panels/front_ext.png',
+    'front_interior_image': 'resources/templates/panels/front_in.png',
+    'back_exterior_image': 'resources/templates/panels/back_ext.png',
+    'back_interior_image': 'resources/templates/panels/back_in.png',
+    'spine_exterior_image': 'resources/templates/panels/spine_ext.png',
     'inside_leather_image': None,
     'paper_color': '#e0c99a',
     'paper_age': 0.55,          # blotches and yellowing, 0..1
