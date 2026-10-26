@@ -17,6 +17,13 @@ DEFAULTS = {
     'inside_cover_color': None,   # None = paper-coloured endpaper (swappable inside cover)
     'leather_image': 'resources/templates/leather.png',   # bundled photo texture (relative to resources/)
     'paper_image': 'resources/templates/paper.png',       # bundled aged-paper texture
+    # One replaceable image per cover surface (None = use the leather texture).
+    'front_exterior_image': None,
+    'front_interior_image': None,
+    'back_exterior_image': None,
+    'back_interior_image': None,
+    'spine_exterior_image': None,
+    'inside_leather_image': None,
     'paper_color': '#e0c99a',
     'paper_age': 0.55,          # blotches and yellowing, 0..1
     'burn': 0.6,                # darkened page edges, 0..1
@@ -78,8 +85,12 @@ def list_books():
     return books or [dict(DEFAULTS, folder=None)]
 
 
-def save(book, new_image=None):
-    """Write a template. new_image: path of a freshly chosen emblem to copy in."""
+def save(book, new_image=None, art_images=None):
+    """Write a template. new_image: path of a freshly chosen emblem to copy in.
+
+    art_images: {field: source path or None} for the replaceable cover surfaces; each chosen
+    file is copied into the template folder so the book stays portable.
+    """
     folder = Path(book.get('folder') or paths.books_dir() / slug(book['name']))
     folder.mkdir(parents=True, exist_ok=True)
     data = {k: book.get(k, v) for k, v in DEFAULTS.items()}
@@ -88,6 +99,14 @@ def save(book, new_image=None):
         if Path(new_image).resolve() != target.resolve():
             shutil.copyfile(new_image, target)
         data['emblem'] = target.name
+    for field, path in (art_images or {}).items():
+        if path:
+            target = folder / (field + Path(path).suffix.lower())
+            if Path(path).resolve() != target.resolve():
+                shutil.copyfile(path, target)
+            data[field] = target.name
+        else:
+            data[field] = None
     (folder / 'book.json').write_text(json.dumps(data, indent=2), encoding='utf-8')
     return load(folder)
 
@@ -132,6 +151,13 @@ def for_scene(book):
         paper_color=hex_to_linear(book['paper_color']),
         leather_image=_texture_path(book, book.get('leather_image')),
         paper_image=_texture_path(book, book.get('paper_image')),
+        front_exterior_image=_texture_path(book, book.get('front_exterior_image')),
+        front_interior_image=_texture_path(book, book.get('front_interior_image')),
+        back_exterior_image=_texture_path(book, book.get('back_exterior_image')),
+        back_interior_image=_texture_path(book, book.get('back_interior_image')),
+        spine_exterior_image=_texture_path(book, book.get('spine_exterior_image')),
+        inside_leather_image=_texture_path(book, book.get('inside_leather_image')
+                                           or book.get('leather_image')),
         thread_color=hex_to_linear(book['thread_color']),
         paper_age=float(book['paper_age']), burn=float(book['burn']),
         page_aspect=float(book['page_aspect']), stitching=bool(book['stitching']),

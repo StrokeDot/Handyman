@@ -372,6 +372,14 @@ class LiveView(QOpenGLWidget):
             img = QImage(str(lp))
             if not img.isNull():
                 self._tex_leather = self._upload('leather', img)
+        self._tex_surface = {}
+        for field in ('front_exterior_image', 'front_interior_image', 'back_exterior_image',
+                      'back_interior_image', 'spine_exterior_image'):
+            p = _resolve_texture(book, field)
+            if p:
+                img = QImage(str(p))
+                if not img.isNull():
+                    self._tex_surface[field] = self._upload(field, img)
         self._dirty_textures = False
 
     # -------------------------------------------------------------------- GL
@@ -494,9 +502,9 @@ class LiveView(QOpenGLWidget):
         m, hy = bm.COVER_MARGIN, L.cover_h / 2
 
         # Right half.
-        if not self._tex_box(0, L.page_w + m, -hy, hy, 0, bm.COVER_T, self._tex_leather):
+        if not self._tex_box(0, L.page_w + m, -hy, hy, 0, bm.COVER_T, self._tex_surface.get('back_exterior_image') or self._tex_leather):
             self._box(0, L.page_w + m, -hy, hy, 0, bm.COVER_T, back_leather)
-        self._endpaper(0, L.page_w + m, -hy, hy, endpaper)
+        self._endpaper(0, L.page_w + m, -hy, hy, endpaper, self._tex_surface.get('back_interior_image') or self._tex_leather)
         for j in range(L.right_rest_count):
             self._prism(*bm.sheet_slice(L, 1, j, L.right_rest_count), edge)
         self._sheet(0.0, L.base_right + 0.0015, L.base_right + 0.0015, self._tex_pages['right'], self._tex_pages['blank'])
@@ -525,9 +533,9 @@ class LiveView(QOpenGLWidget):
         gl.glTranslatef(0, 0, L.hinge)
         gl.glRotatef(math.degrees(angle), 0, 1, 0)
         gl.glTranslatef(0, 0, -L.hinge)
-        if not self._tex_box(-L.page_w - m, 0, -hy, hy, 0, bm.COVER_T, self._tex_leather):
+        if not self._tex_box(-L.page_w - m, 0, -hy, hy, 0, bm.COVER_T, self._tex_surface.get('front_exterior_image') or self._tex_leather):
             self._box(-L.page_w - m, 0, -hy, hy, 0, bm.COVER_T, leather)
-        self._endpaper(-L.page_w - m, 0, -hy, hy, endpaper)
+        self._endpaper(-L.page_w - m, 0, -hy, hy, endpaper, self._tex_surface.get('front_interior_image') or self._tex_leather)
         for j in range(L.left_rest_count):
             self._prism(*bm.sheet_slice(L, -1, j, L.left_rest_count), edge)
         self._sheet(1.0, L.base_left + 0.0015, L.base_left + 0.0015, self._tex_pages['blank'], self._tex_pages['left'])
@@ -587,11 +595,12 @@ class LiveView(QOpenGLWidget):
                 gl.glVertex3f(*q)
             gl.glEnd()
 
-    def _endpaper(self, x0, x1, y0, y1, colour):
+    def _endpaper(self, x0, x1, y0, y1, colour, tex=None):
         """Inside-cover (pastedown): leather grain when a texture is loaded, else a flat colour."""
-        if self._tex_leather is not None:
+        tex = tex if tex is not None else self._tex_leather
+        if tex is not None:
             gl.glEnable(gl.GL_TEXTURE_2D)
-            gl.glBindTexture(gl.GL_TEXTURE_2D, self._tex_leather)
+            gl.glBindTexture(gl.GL_TEXTURE_2D, tex)
             gl.glColor3f(1, 1, 1)
         else:
             gl.glDisable(gl.GL_TEXTURE_2D)

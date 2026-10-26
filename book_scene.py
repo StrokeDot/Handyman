@@ -560,12 +560,18 @@ def build_book(job):
     hy = L.cover_h / 2
     hinge_z = L.hinge
 
-    leather = leather_material(book['leather_color'], image=book.get('leather_image'))  # front cover
+    leather = leather_material(book['leather_color'], name='FrontLeather',
+                               image=book.get('front_exterior_image') or book.get('leather_image'))
     back_leather = leather_material(book.get('back_cover_color', book['leather_color']),
-                                    name='BackLeather', image=book.get('leather_image'))
-    endpaper = leather_material(book.get('inside_cover_color', book['leather_color']),
-                                name='InsideLeather',
-                                image=book.get('inside_leather_image') or book.get('leather_image'))
+                                    name='BackLeather',
+                                    image=book.get('back_exterior_image') or book.get('leather_image'))
+    inside_col = book.get('inside_cover_color', book['leather_color'])
+    spine_mat = leather_material(book['leather_color'], name='SpineLeather',
+                                 image=book.get('spine_exterior_image') or book.get('leather_image'))
+    endpaper = leather_material(inside_col, name='FrontInside',
+                                image=book.get('front_interior_image') or book.get('inside_leather_image'))
+    back_endpaper = leather_material(inside_col, name='BackInside',
+                                     image=book.get('back_interior_image') or book.get('inside_leather_image'))
     edges = page_edge_material(book)
 
     root = link_object(bpy.data.objects.new('Book', None))
@@ -580,7 +586,7 @@ def build_book(job):
     # Open-book layout. The left half (front cover side) hangs on the hinge.
     hide_pages = bool(job.get('hide_pages'))
     box('CoverRight', 0, PAGE_W + m, -hy, hy, 0, COVER_T, back_leather, root, bevel=0.015)
-    quad('EndpaperRight', (PAGE_W + m) / 2, 0, COVER_T + 0.0006, PAGE_W + m, 2 * hy, endpaper, root)
+    quad('EndpaperRight', (PAGE_W + m) / 2, 0, COVER_T + 0.0006, PAGE_W + m, 2 * hy, back_endpaper, root)
     if not hide_pages:
         for j in range(L.right_rest_count):
             resting_sheet(f'PagesRight{j}', L, 1, j, L.right_rest_count, edges, root)
@@ -615,8 +621,8 @@ def build_book(job):
                             0.0, zr, zl, curl, root)
             moving.append((ob, zr, zl))
 
-    spine_key = spine_object(book, leather, root)
-    hinge_ob = hinge_object(book, leather, root)
+    spine_key = spine_object(book, spine_mat, root)
+    hinge_ob = hinge_object(book, spine_mat, root)
 
     # Front-cover decorations are placed with the book closed, so they read correctly on top.
     pivot.rotation_euler = (0, math.pi, 0)

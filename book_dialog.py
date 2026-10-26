@@ -44,6 +44,8 @@ class BookDialog(QDialog):
         self.setWindowTitle('Book design')
         self.book = dict(book)
         self.new_image = None
+        self.art_images = {}     # field -> source path (or None for leather)
+        self._art_labels = {}
         lay = QVBoxLayout(self)
 
         g = QGroupBox('Book')
@@ -138,6 +140,29 @@ class BookDialog(QDialog):
         f.addRow('Up / down', self.t_y)
         lay.addWidget(g)
 
+        g = QGroupBox('Cover artwork (each surface is replaceable)')
+        form = QFormLayout(g)
+        surfaces = [
+            ('front_exterior_image', 'Front cover · outside'),
+            ('front_interior_image', 'Front cover · inside'),
+            ('back_exterior_image', 'Back cover · outside'),
+            ('back_interior_image', 'Back cover · inside'),
+            ('spine_exterior_image', 'Spine · outside'),
+        ]
+        for field, caption in surfaces:
+            row = QHBoxLayout()
+            label = QLabel(self._art_status(field))
+            self._art_labels[field] = label
+            choose = QPushButton('Choose…')
+            choose.clicked.connect(lambda _=False, fl=field, cp=caption: self._choose_art(fl, cp))
+            reset = QPushButton('Leather')
+            reset.clicked.connect(lambda _=False, fl=field: self._reset_art(fl))
+            row.addWidget(label, 1)
+            row.addWidget(choose)
+            row.addWidget(reset)
+            form.addRow(caption, row)
+        lay.addWidget(g)
+
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
@@ -170,6 +195,23 @@ class BookDialog(QDialog):
         self.new_image = None
         self.book['emblem'] = None
         self._show_emblem(None)
+
+    def _art_status(self, field):
+        if field in self.art_images:
+            p = self.art_images[field]
+            return Path(p).name if p else '(leather)'
+        return self.book.get(field) or '(leather)'
+
+    def _choose_art(self, field, caption):
+        path, _ = QFileDialog.getOpenFileName(self, f'{caption} image', '',
+                                              'Images (*.png *.jpg *.jpeg *.webp)')
+        if path:
+            self.art_images[field] = path
+            self._art_labels[field].setText(Path(path).name)
+
+    def _reset_art(self, field):
+        self.art_images[field] = None
+        self._art_labels[field].setText('(leather)')
 
     def result_book(self):
         b = dict(self.book)

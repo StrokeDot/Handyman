@@ -544,7 +544,7 @@ class Studio(QMainWindow):
     def _edit_book(self):
         dlg = BookDialog(self._book(), self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
-            saved = templates.save(dlg.result_book(), dlg.new_image)
+            saved = templates.save(dlg.result_book(), dlg.new_image, dlg.art_images)
             self._reload_books(saved['folder'])
             self.status.setText(f'Saved book "{saved["name"]}". Press "Preview still" to see it.')
 
