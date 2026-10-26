@@ -519,12 +519,12 @@ class LiveView(QOpenGLWidget):
                 gl.glVertex3f(*p)
             gl.glEnd()
 
+        self._hinge(angle, leather)
         # Left half, on the hinge.
         gl.glPushMatrix()
         gl.glTranslatef(0, 0, L.hinge)
         gl.glRotatef(math.degrees(angle), 0, 1, 0)
         gl.glTranslatef(0, 0, -L.hinge)
-        self._endpaper(-L.page_w - m, 0, -hy, hy, endpaper)
         if not self._tex_box(-L.page_w - m, 0, -hy, hy, 0, bm.COVER_T, self._tex_leather):
             self._box(-L.page_w - m, 0, -hy, hy, 0, bm.COVER_T, leather)
         self._endpaper(-L.page_w - m, 0, -hy, hy, endpaper)
@@ -650,6 +650,20 @@ class LiveView(QOpenGLWidget):
             for q in p:
                 gl.glVertex3f(*q)
         gl.glEnd()
+
+    def _hinge(self, angle, colour):
+        """The deformable joint skin joining the boards (bends through every opening angle)."""
+        verts, faces = bm.hinge_ribbon(self.layout, angle)
+        gl.glDisable(gl.GL_TEXTURE_2D)
+        gl.glColor3f(*(np.array(colour) * 0.75))
+        for face in faces:
+            p = verts[list(face)]
+            n = np.cross(p[1] - p[0], p[-1] - p[0])
+            gl.glBegin(gl.GL_POLYGON)
+            gl.glNormal3f(*(n / (np.linalg.norm(n) + 1e-12)))
+            for q in p:
+                gl.glVertex3f(*q)
+            gl.glEnd()
 
     def _cover_art(self, L):
         """Emblem, title and stitching on the front cover (placed as on the closed book)."""

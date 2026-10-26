@@ -130,6 +130,32 @@ def spine_shapes(layout, bands=4, nu=9, nv=60):
     return np.array(open_pts), np.array(closed_pts), faces
 
 
+def hinge_ribbon(layout, angle, nu=7, nv=32):
+    """The flexible joint skin at the gutter, from the back board's edge to the front board's.
+
+    Both edges stay glued to their boards as the cover swings, and the skin bulges outward, so
+    the joint deforms continuously instead of two rigid boards parting at a seam. `angle` is
+    the front-cover angle (0 = open, pi = closed).
+    """
+    hy = layout.cover_h / 2
+    yv = np.linspace(-hy, hy, nv)
+    u = np.linspace(0, 1, nu)
+    z_back = COVER_T
+    z_front = layout.hinge + (COVER_T - layout.hinge) * math.cos(angle)
+    bulge = -0.035 * math.sin(angle)
+    verts = []
+    for j in range(nv):
+        mid_z = 0.5 * (z_back + z_front)
+        for i in range(nu):
+            t = u[i]
+            x = 2.0 * (1.0 - t) * t * bulge
+            z = (1.0 - t) ** 2 * z_back + 2.0 * (1.0 - t) * t * mid_z + t ** 2 * z_front
+            verts.append((x, yv[j], z))
+    faces = [(k * nu + i, k * nu + i + 1, (k + 1) * nu + i + 1, (k + 1) * nu + i)
+             for k in range(nv - 1) for i in range(nu - 1)]
+    return np.array(verts), faces
+
+
 def block_prism(layout, side, nx=24):
     """Paper block of one half: vertices and faces (outward). side = +1 right, -1 left."""
     from page_curl import rest_profile

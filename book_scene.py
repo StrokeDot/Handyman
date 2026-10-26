@@ -478,6 +478,21 @@ def spine_object(book, leather, parent):
     return key
 
 
+def hinge_object(book, mat, parent):
+    """The deformable joint skin that joins the back board to the front board."""
+    verts, faces = bm.hinge_ribbon(LAYOUT, math.pi)
+    mesh = bpy.data.meshes.new('Hinge')
+    mesh.from_pydata(verts.tolist(), [], faces)
+    if hasattr(mesh, 'shade_smooth'):
+        mesh.shade_smooth()
+    mesh.materials.append(mat)
+    ob = bpy.data.objects.new('Hinge', mesh)
+    sol = ob.modifiers.new('Thickness', 'SOLIDIFY')
+    sol.thickness = 0.005
+    link_object(ob, parent)
+    return ob
+
+
 def stitches(name, cx, cy, z, w, h, inset, mat, parent):
     """A row of short thread stitches around a rectangle (the cover's edge)."""
     bm = bmesh.new()
@@ -601,6 +616,7 @@ def build_book(job):
             moving.append((ob, zr, zl))
 
     spine_key = spine_object(book, leather, root)
+    hinge_ob = hinge_object(book, leather, root)
 
     # Front-cover decorations are placed with the book closed, so they read correctly on top.
     pivot.rotation_euler = (0, math.pi, 0)
@@ -630,7 +646,7 @@ def build_book(job):
     if book['title'].strip():
         title_text(book, cx, book['title_y'] * cover_h, z_top + 0.0008, cover_h, pivot, book['leather_color'])
 
-    return turns, moving, root, pivot, spine_key, cover_w
+    return turns, moving, root, pivot, spine_key, hinge_ob, cover_w
 
 
 # ------------------------------------------------------------- camera, lights
@@ -752,7 +768,7 @@ def main():
         job = json.load(fh)
     bpy.ops.wm.read_factory_settings(use_empty=True)
     setup_render(job)
-    turns, moving, root, pivot, spine_key, cover_w = build_book(job)
+    turns, moving, root, pivot, spine_key, hinge_ob, cover_w = build_book(job)
     camera = Camera(job)
     setup_lights(job)
 
@@ -774,6 +790,9 @@ def main():
         angle, slide = pose['cover_angle'], pose['cover_slide']
         pivot.rotation_euler = (0, angle, 0)
         spine_key.value = angle / math.pi
+        hinge_v, _ = bm.hinge_ribbon(LAYOUT, angle)
+        hinge_ob.data.vertices.foreach_set('co', hinge_v.astype(np.float32).ravel())
+        hinge_ob.data.update()
         root.location = (slide + BOOK_POS[0], BOOK_POS[1], BOOK_POS[2])
         for k, (ob, zr, zl) in enumerate(moving):
             t = pose['sheet_progress'][k] if k < len(pose['sheet_progress']) else 1.0

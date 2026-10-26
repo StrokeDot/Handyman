@@ -57,6 +57,18 @@ def test_spine_shapes():
     assert np.isclose(c[:, 2].max(), 2 * bm.Layout().hinge)
 
 
+def test_hinge_ribbon_stays_glued_to_the_boards():
+    L = bm.Layout(1.4, 4, 0.04)
+    for angle in (0.0, np.pi / 4, np.pi / 2, np.pi):
+        verts, faces = bm.hinge_ribbon(L, angle, nu=7)
+        assert len(faces) > 0
+        back, front = verts[0], verts[6]               # first row: t=0 .. t=1
+        assert np.isclose(back[2], bm.COVER_T, atol=1e-9)   # glued to the back board
+        expected = L.hinge + (bm.COVER_T - L.hinge) * np.cos(angle)
+        assert np.isclose(front[2], expected, atol=1e-9)    # glued to the front board
+        assert abs(back[0]) < 1e-9 and abs(front[0]) < 1e-9  # both edges lie on the hinge line
+
+
 if __name__ == '__main__':
     for name, fn in list(globals().items()):
         if name.startswith('test_'):
