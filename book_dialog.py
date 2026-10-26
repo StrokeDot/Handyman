@@ -142,6 +142,7 @@ class BookDialog(QDialog):
 
         g = QGroupBox('Cover artwork (each surface is replaceable)')
         form = QFormLayout(g)
+        self._art_fit, self._art_scale, self._art_x, self._art_y = {}, {}, {}, {}
         surfaces = [
             ('front_exterior_image', 'Front cover · outside'),
             ('front_interior_image', 'Front cover · inside'),
@@ -149,7 +150,9 @@ class BookDialog(QDialog):
             ('back_interior_image', 'Back cover · inside'),
             ('spine_exterior_image', 'Spine · outside'),
         ]
+        fit_names = {'fit': 'Fit', 'fill': 'Fill', 'stretch': 'Stretch'}
         for field, caption in surfaces:
+            slot = field[:-6]                     # strip '_image'
             row = QHBoxLayout()
             label = QLabel(self._art_status(field))
             self._art_labels[field] = label
@@ -161,6 +164,36 @@ class BookDialog(QDialog):
             row.addWidget(choose)
             row.addWidget(reset)
             form.addRow(caption, row)
+
+            sub = QHBoxLayout()
+            fcombo = QComboBox()
+            fcombo.addItems(list(fit_names.values()))
+            fcombo.setCurrentText(fit_names.get(self.book.get(f'{slot}_fit', 'fit'), 'Fit'))
+            self._art_fit[slot] = fcombo
+            scale = QDoubleSpinBox()
+            scale.setRange(0.25, 4.0)
+            scale.setSingleStep(0.1)
+            scale.setValue(float(self.book.get(f'{slot}_scale', 1.0)))
+            self._art_scale[slot] = scale
+            ox = QDoubleSpinBox()
+            ox.setRange(-1.0, 1.0)
+            ox.setSingleStep(0.05)
+            ox.setValue(float(self.book.get(f'{slot}_x', 0.0)))
+            self._art_x[slot] = ox
+            oy = QDoubleSpinBox()
+            oy.setRange(-1.0, 1.0)
+            oy.setSingleStep(0.05)
+            oy.setValue(float(self.book.get(f'{slot}_y', 0.0)))
+            self._art_y[slot] = oy
+            sub.addWidget(QLabel('Fit'))
+            sub.addWidget(fcombo)
+            sub.addWidget(QLabel('Scale'))
+            sub.addWidget(scale)
+            sub.addWidget(QLabel('X'))
+            sub.addWidget(ox)
+            sub.addWidget(QLabel('Y'))
+            sub.addWidget(oy)
+            form.addRow('', sub)
         lay.addWidget(g)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
@@ -225,6 +258,12 @@ class BookDialog(QDialog):
                  emblem_size=self.em_size.value() / 100, emblem_y=self.em_y.value() / 100,
                  title=self.title.text(), title_style=templates.TITLE_STYLES[self.t_style.currentText()],
                  title_size=self.t_size.value() / 100, title_y=self.t_y.value() / 100)
+        fit_names = {'Fit': 'fit', 'Fill': 'fill', 'Stretch': 'stretch'}
+        for slot in templates.SLOTS:
+            b[f'{slot}_fit'] = fit_names[self._art_fit[slot].currentText()]
+            b[f'{slot}_scale'] = round(self._art_scale[slot].value(), 3)
+            b[f'{slot}_x'] = round(self._art_x[slot].value(), 3)
+            b[f'{slot}_y'] = round(self._art_y[slot].value(), 3)
         return b
 
 

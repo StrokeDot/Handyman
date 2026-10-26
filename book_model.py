@@ -156,6 +156,29 @@ def hinge_ribbon(layout, angle, nu=7, nv=32):
     return np.array(verts), faces
 
 
+def fit_uv(image_aspect, surface_aspect, mode='fit', scale=1.0, x=0.0, y=0.0):
+    """UV scale/offset that frames an image on a surface without changing its geometry.
+
+    aspect = height / width. mode: 'fit' (whole image, letterboxed), 'fill' (covers the
+    surface, cropped), 'stretch' (fills, distorted). Returns (sx, sy, ox, oy).
+    """
+    if mode == 'stretch':
+        sx = sy = 1.0
+    elif mode == 'fill':
+        if image_aspect > surface_aspect:
+            sx, sy = 1.0, image_aspect / surface_aspect
+        else:
+            sx, sy = surface_aspect / image_aspect, 1.0
+    else:                                        # 'fit'
+        if image_aspect > surface_aspect:
+            sx, sy = surface_aspect / image_aspect, 1.0
+        else:
+            sx, sy = 1.0, image_aspect / surface_aspect
+    sx *= scale
+    sy *= scale
+    return sx, sy, (1.0 - sx) / 2.0 + x, (1.0 - sy) / 2.0 + y
+
+
 def block_prism(layout, side, nx=24):
     """Paper block of one half: vertices and faces (outward). side = +1 right, -1 left."""
     from page_curl import rest_profile

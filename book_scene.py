@@ -143,7 +143,7 @@ def load_image(path):
 
 # ------------------------------------------------------------------ materials
 
-def leather_material(color, name='Leather', k=1.0, image=None):
+def leather_material(color, name='Leather', k=1.0, image=None, surface_aspect=None, fit=None):
     """Leather: the bundled photo texture when given, else the procedural pebbled grain."""
     mat, nt, bsdf, _ = new_material(name)
     if image:
@@ -151,7 +151,19 @@ def leather_material(color, name='Leather', k=1.0, image=None):
         tex.image = bpy.data.images.load(str(image), check_existing=True)
         tex.interpolation = 'Cubic'
         gen = nt.nodes.new('ShaderNodeTexCoord').outputs['Generated']
-        nt.links.new(gen, tex.inputs['Vector'])
+        if surface_aspect and fit:
+            size = tex.image.size
+            img_aspect = size[1] / max(1, size[0])
+            sx, sy, ox, oy = bm.fit_uv(img_aspect, surface_aspect,
+                                       fit.get('mode', 'fit'), float(fit.get('scale', 1.0)),
+                                       float(fit.get('x', 0.0)), float(fit.get('y', 0.0)))
+            mp = nt.nodes.new('ShaderNodeMapping')
+            mp.inputs['Scale'].default_value = (sx, sy, 1.0)
+            mp.inputs['Location'].default_value = (ox, oy, 0.0)
+            nt.links.new(gen, mp.inputs['Vector'])
+            nt.links.new(mp.outputs['Vector'], tex.inputs['Vector'])
+        else:
+            nt.links.new(gen, tex.inputs['Vector'])
         nt.links.new(tex.outputs['Color'], bsdf.inputs['Base Color'])
         lum = nt.nodes.new('ShaderNodeRGBToBW')
         nt.links.new(tex.outputs['Color'], lum.inputs[0])
@@ -559,19 +571,25 @@ def build_book(job):
     m = COVER_MARGIN
     hy = L.cover_h / 2
     hinge_z = L.hinge
+    cover_aspect = (2 * hy) / (PAGE_W + m)
 
     leather = leather_material(book['leather_color'], name='FrontLeather',
-                               image=book.get('front_exterior_image') or book.get('leather_image'))
+                               image=book.get('front_exterior_image') or book.get('leather_image'),
+                               surface_aspect=cover_aspect, fit=book.get('front_exterior_fit'))
     back_leather = leather_material(book.get('back_cover_color', book['leather_color']),
                                     name='BackLeather',
-                                    image=book.get('back_exterior_image') or book.get('leather_image'))
+                                    image=book.get('back_exterior_image') or book.get('leather_image'),
+                                    surface_aspect=cover_aspect, fit=book.get('back_exterior_fit'))
     inside_col = book.get('inside_cover_color', book['leather_color'])
     spine_mat = leather_material(book['leather_color'], name='SpineLeather',
-                                 image=book.get('spine_exterior_image') or book.get('leather_image'))
+                                 image=book.get('spine_exterior_image') or book.get('leather_image'),
+                                 surface_aspect=cover_aspect, fit=book.get('spine_exterior_fit'))
     endpaper = leather_material(inside_col, name='FrontInside',
-                                image=book.get('front_interior_image') or book.get('inside_leather_image'))
+                                image=book.get('front_interior_image') or book.get('inside_leather_image'),
+                                surface_aspect=cover_aspect, fit=book.get('front_interior_fit'))
     back_endpaper = leather_material(inside_col, name='BackInside',
-                                     image=book.get('back_interior_image') or book.get('inside_leather_image'))
+                                     image=book.get('back_interior_image') or book.get('inside_leather_image'),
+                                     surface_aspect=cover_aspect, fit=book.get('back_interior_fit'))
     edges = page_edge_material(book)
 
     root = link_object(bpy.data.objects.new('Book', None))

@@ -40,6 +40,12 @@ DEFAULTS = {
     'title_size': 0.07,         # letter height, fraction of cover height
     'title_y': -0.08,
 }
+SLOTS = ('front_exterior', 'front_interior', 'back_exterior', 'back_interior', 'spine_exterior')
+for _slot in SLOTS:
+    DEFAULTS[f'{_slot}_fit'] = 'fit'
+    DEFAULTS[f'{_slot}_scale'] = 1.0
+    DEFAULTS[f'{_slot}_x'] = 0.0
+    DEFAULTS[f'{_slot}_y'] = 0.0
 EMBLEM_STYLES = {'Medallion (image as it is)': 'medallion', 'Pressed into leather': 'deboss'}
 TITLE_STYLES = {'Pressed into leather': 'deboss', 'Gold foil': 'gold'}
 
@@ -138,6 +144,13 @@ def _texture_path(book, name):
     return None
 
 
+def _fit(book, slot):
+    return {'mode': book.get(f'{slot}_fit', 'fit'),
+            'scale': float(book.get(f'{slot}_scale', 1.0)),
+            'x': float(book.get(f'{slot}_x', 0.0)),
+            'y': float(book.get(f'{slot}_y', 0.0))}
+
+
 def for_scene(book):
     """The template in the form the Blender scene reads (absolute paths, linear colours)."""
     emblem = None
@@ -156,6 +169,11 @@ def for_scene(book):
         back_exterior_image=_texture_path(book, book.get('back_exterior_image')),
         back_interior_image=_texture_path(book, book.get('back_interior_image')),
         spine_exterior_image=_texture_path(book, book.get('spine_exterior_image')),
+        front_exterior_fit=_fit(book, 'front_exterior'),
+        front_interior_fit=_fit(book, 'front_interior'),
+        back_exterior_fit=_fit(book, 'back_exterior'),
+        back_interior_fit=_fit(book, 'back_interior'),
+        spine_exterior_fit=_fit(book, 'spine_exterior'),
         inside_leather_image=_texture_path(book, book.get('inside_leather_image')
                                            or book.get('leather_image')),
         thread_color=hex_to_linear(book['thread_color']),

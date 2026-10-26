@@ -69,6 +69,18 @@ def test_hinge_ribbon_stays_glued_to_the_boards():
         assert abs(back[0]) < 1e-9 and abs(front[0]) < 1e-9  # both edges lie on the hinge line
 
 
+def test_fit_uv_frames_without_touching_geometry():
+    # A tall image on a wide surface: 'fit' shrinks it in x, 'fill' overflows, 'stretch' is 1:1.
+    sx, sy, ox, oy = bm.fit_uv(2.0, 1.4, 'fit')
+    assert sx < 1.0 and sy == 1.0
+    assert np.isclose(ox, (1 - sx) / 2) and oy == 0.0
+    fx, fy, _, _ = bm.fit_uv(2.0, 1.4, 'fill')
+    assert fx >= 1.0 and fy >= 1.0
+    assert bm.fit_uv(2.0, 1.4, 'stretch')[:2] == (1.0, 1.0)
+    zx, _, zox, _ = bm.fit_uv(2.0, 1.4, 'fit', scale=2.0, x=0.1)
+    assert np.isclose(zx, sx * 2.0) and np.isclose(zox, (1 - zx) / 2 + 0.1)
+
+
 if __name__ == '__main__':
     for name, fn in list(globals().items()):
         if name.startswith('test_'):
