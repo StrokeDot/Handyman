@@ -10,7 +10,7 @@ import paths
 import templates
 
 SCENE_SCRIPT = paths.resource_dir() / 'book_scene.py'
-GLTF_SCRIPT = paths.resource_dir() / 'gltf_export.py'
+GLTF_SCRIPT = paths.resource_dir() / 'image_book_export.py'
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 
 QUALITY = {'Draft (fastest)': 'draft', 'Final (recommended)': 'final', 'Photoreal (Cycles, slow)': 'cycles'}

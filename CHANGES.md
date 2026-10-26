@@ -1,5 +1,10 @@
 # Changes
 
+## 0.6.7
+- The glTF viewport now shows the image-first book: your cover and spine artwork on simple boards with a real page stack and a deforming hinge, instead of the procedural leather.
+- The cover, hinge and page animations are baked into the exported glTF (morph targets for the hinge and page).
+- Repeated artwork swapping leaves the animation untouched (verified: identical silhouettes).
+
 ## 0.6.6
 - Fixed the glTF viewport showing "load failed": the viewer and the book are now served from a tiny localhost server, because Chromium refuses to read the `.glb` from a `file://` URL.
 - The viewport reports the real load error instead of a bare message.
