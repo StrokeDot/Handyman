@@ -489,7 +489,7 @@ class LiveView(QOpenGLWidget):
         gl.glTranslatef(slide, 0, 0)
         leather = _hex_rgb(self.book.get('leather_color'))
         back_leather = _hex_rgb(self.book.get('back_cover_color') or self.book.get('leather_color'))
-        endpaper = _hex_rgb(self.book.get('inside_cover_color') or self.book.get('paper_color'))
+        endpaper = _hex_rgb(self.book.get('inside_cover_color') or self.book.get('leather_color'))
         edge = np.array(_hex_rgb(self.book.get('paper_color'))) * 0.85
         m, hy = bm.COVER_MARGIN, L.cover_h / 2
 
@@ -588,14 +588,21 @@ class LiveView(QOpenGLWidget):
             gl.glEnd()
 
     def _endpaper(self, x0, x1, y0, y1, colour):
-        """Flat inside-cover (endpaper) quad, just above the cover's top face."""
-        gl.glDisable(gl.GL_TEXTURE_2D)
-        gl.glColor3f(*colour)
+        """Inside-cover (pastedown): leather grain when a texture is loaded, else a flat colour."""
+        if self._tex_leather is not None:
+            gl.glEnable(gl.GL_TEXTURE_2D)
+            gl.glBindTexture(gl.GL_TEXTURE_2D, self._tex_leather)
+            gl.glColor3f(1, 1, 1)
+        else:
+            gl.glDisable(gl.GL_TEXTURE_2D)
+            gl.glColor3f(*colour)
         gl.glNormal3f(0, 0, 1)
         gl.glBegin(gl.GL_QUADS)
-        for x, y in ((x0, y0), (x1, y0), (x1, y1), (x0, y1)):
+        for x, y, s, t in ((x0, y0, 0, 0), (x1, y0, 1, 0), (x1, y1, 1, 1), (x0, y1, 0, 1)):
+            gl.glTexCoord2f(s, t)
             gl.glVertex3f(x, y, bm.COVER_T + 0.0006)
         gl.glEnd()
+        gl.glDisable(gl.GL_TEXTURE_2D)
 
     def _sheet(self, t, zr, zl, tex_front, tex_back, key=None, smoothness=1.0):
         L = self.layout

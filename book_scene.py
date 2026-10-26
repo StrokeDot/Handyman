@@ -548,8 +548,9 @@ def build_book(job):
     leather = leather_material(book['leather_color'], image=book.get('leather_image'))  # front cover
     back_leather = leather_material(book.get('back_cover_color', book['leather_color']),
                                     name='BackLeather', image=book.get('leather_image'))
-    endpaper = plain_material('Endpaper', book.get('inside_cover_color', book['paper_color']),
-                              roughness=0.92)
+    endpaper = leather_material(book.get('inside_cover_color', book['leather_color']),
+                                name='InsideLeather',
+                                image=book.get('inside_leather_image') or book.get('leather_image'))
     edges = page_edge_material(book)
 
     root = link_object(bpy.data.objects.new('Book', None))
@@ -562,31 +563,42 @@ def build_book(job):
     link_object(pivot, root)
 
     # Open-book layout. The left half (front cover side) hangs on the hinge.
+    hide_pages = bool(job.get('hide_pages'))
     box('CoverRight', 0, PAGE_W + m, -hy, hy, 0, COVER_T, back_leather, root, bevel=0.015)
     quad('EndpaperRight', (PAGE_W + m) / 2, 0, COVER_T + 0.0006, PAGE_W + m, 2 * hy, endpaper, root)
-    for j in range(L.right_rest_count):
-        resting_sheet(f'PagesRight{j}', L, 1, j, L.right_rest_count, edges, root)
+    if not hide_pages:
+        for j in range(L.right_rest_count):
+            resting_sheet(f'PagesRight{j}', L, 1, j, L.right_rest_count, edges, root)
     box('CoverLeft', -PAGE_W - m, 0, -hy, hy, 0, COVER_T, leather, pivot, bevel=0.015)
     quad('EndpaperLeft', -(PAGE_W + m) / 2, 0, COVER_T + 0.0006, PAGE_W + m, 2 * hy, endpaper, pivot)
+    inside_border = plain_material('InsideBorder', rgba(book['leather_color'], 0.35), roughness=0.7)
+    for i2, ins in enumerate((0.028, 0.046)):
+        cover_border(f'InsideBorderR{i2}', (PAGE_W + m) / 2, 0, COVER_T + 0.0008,
+                     PAGE_W + m, 2 * hy, ins, 0.006, 0.0004, inside_border, root, outward=1)
+        cover_border(f'InsideBorderL{i2}', -(PAGE_W + m) / 2, 0, COVER_T + 0.0008,
+                     PAGE_W + m, 2 * hy, ins, 0.006, 0.0004, inside_border, pivot, outward=1)
     for j in range(L.left_rest_count):
-        resting_sheet(f'PagesLeft{j}', L, -1, j, L.left_rest_count, edges, pivot)
+        if not hide_pages:
+            resting_sheet(f'PagesLeft{j}', L, -1, j, L.left_rest_count, edges, pivot)
     get = lambda i: images[i] if i is not None else None  # noqa: E731
     curl = job['curl']
-    make_sheet('LeftPage', sheet_material('Left', None, get(left_i), job), 1.0,
-               L.base_left + 0.0015, L.base_left + 0.0015, curl, pivot)
-    make_sheet('LastRightPage', sheet_material('LastRight', get(right_i), None, job), 0.0,
-               L.base_right + 0.0015, L.base_right + 0.0015, curl, root)
+    if not hide_pages:
+        make_sheet('LeftPage', sheet_material('Left', None, get(left_i), job), 1.0,
+                   L.base_left + 0.0015, L.base_left + 0.0015, curl, pivot)
+        make_sheet('LastRightPage', sheet_material('LastRight', get(right_i), None, job), 0.0,
+                   L.base_right + 0.0015, L.base_right + 0.0015, curl, root)
     moving = []
-    for k, (f, b) in enumerate(sheets):
-        zr, zl = L.turn_levels(k)
-        ob = make_sheet(f'Sheet{k + 1}', sheet_material(f'Sheet{k + 1}', get(f), get(b), job), 0.0, zr, zl, curl, root)
-        moving.append((ob, zr, zl))
-    for j in range(len(recorded)):
-        k = turns + j
-        zr, zl = L.turn_levels(k)
-        ob = make_sheet(f'RecSheet{j + 1}', sheet_material(f'RecSheet{j + 1}', None, None, job),
-                        0.0, zr, zl, curl, root)
-        moving.append((ob, zr, zl))
+    if not hide_pages:
+        for k, (f, b) in enumerate(sheets):
+            zr, zl = L.turn_levels(k)
+            ob = make_sheet(f'Sheet{k + 1}', sheet_material(f'Sheet{k + 1}', get(f), get(b), job), 0.0, zr, zl, curl, root)
+            moving.append((ob, zr, zl))
+        for j in range(len(recorded)):
+            k = turns + j
+            zr, zl = L.turn_levels(k)
+            ob = make_sheet(f'RecSheet{j + 1}', sheet_material(f'RecSheet{j + 1}', None, None, job),
+                            0.0, zr, zl, curl, root)
+            moving.append((ob, zr, zl))
 
     spine_key = spine_object(book, leather, root)
 
