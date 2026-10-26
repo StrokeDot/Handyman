@@ -28,6 +28,7 @@ import paths
 import templates
 import updater
 from book_dialog import BookDialog
+from gltf_view import GltfView, HAVE_WEBENGINE
 from framing_view import FramingView
 try:
     from live_view import LiveView, GL_IMPORT_ERROR
@@ -41,6 +42,40 @@ from version import APP_NAME, APP_VERSION
 RESOLUTIONS = {'1920 × 1080 (Full HD)': (1920, 1080), '2560 × 1440 (2K)': (2560, 1440),
                '3840 × 2160 (4K)': (3840, 2160)}
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+
+
+class GltfWorker(QThread):
+    """Exports the current book to .glb for the interactive viewport."""
+    finished_ok = Signal(str)
+    failed = Signal(str)
+
+    def __init__(self, blender, job):
+        super().__init__()
+        self.blender, self.job = blender, job
+        self.proc = None
+
+    def run(self):
+        out = Path(self.job['out_dir'])
+        out.mkdir(parents=True, exist_ok=True)
+        job_path = out / 'job.json'
+        job_path.write_text(json.dumps(self.job, indent=2), encoding='utf-8')
+        tail = []
+        try:
+            self.proc = subprocess.Popen(bb.command_gltf(self.blender, job_path),
+                                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                         text=True, encoding='utf-8', errors='replace',
+                                         creationflags=NO_WINDOW)
+            for line in self.proc.stdout:
+                if line.strip():
+                    tail = (tail + [line.rstrip()])[-30:]
+            self.proc.wait()
+        except OSError as exc:
+            self.failed.emit(f'Could not start Blender: {exc}')
+            return
+        if self.proc.returncode:
+            self.failed.emit('glTF export failed.\n\n' + '\n'.join(tail))
+            return
+        self.finished_ok.emit(self.job['glb_path'])
 
 
 class RenderWorker(QThread):
@@ -276,6 +311,9 @@ class Studio(QMainWindow):
         self.framing = self.live or FramingView()
         self.views.addWidget(self.framing)
         self.views.addWidget(self.preview)
+        self.gltf = GltfView() if HAVE_WEBENGINE else None
+        if self.gltf is not None:
+            self.views.addWidget(self.gltf)
         row = QHBoxLayout()
         self.view_shot = QPushButton('Live 3D view (drag to move the camera)')
         self.view_render = QPushButton('Rendered preview')
@@ -283,6 +321,13 @@ class Studio(QMainWindow):
             b.setCheckable(True)
             b.clicked.connect(lambda _=False, i=i: self._show_view(i))
             row.addWidget(b)
+        self.view_gltf = QPushButton('glTF Viewport (Beta)')
+        self.view_gltf.setCheckable(True)
+        self.view_gltf.setEnabled(self.gltf is not None)
+        if self.gltf is None:
+            self.view_gltf.setToolTip('Needs Qt WebEngine, which is not installed.')
+        self.view_gltf.clicked.connect(self._show_gltf)
+        row.addWidget(self.view_gltf)
         mv.addLayout(row)
         mv.addWidget(self.views, 1)
         # Playback for the live view: no rendering needed.
@@ -938,6 +983,11 @@ class Studio(QMainWindow):
         self._refresh_live()
 
     def _toggle_play(self):
+        if self.gltf is not None and self.views.currentIndex() == 2:
+            self._gltf_playing = not getattr(self, '_gltf_playing', False)
+            self.gltf.play() if self._gltf_playing else self.gltf.pause()
+            self.play_btn.setText('❚❚ Pause' if self._gltf_playing else '▶ Play')
+            return
         if self.live is None:
             return
         self._show_view(0)
@@ -945,6 +995,10 @@ class Studio(QMainWindow):
         self.play_btn.setText('❚❚ Pause' if self.live.playing else '▶ Play')
 
     def _scrubbed(self, value):
+        if self.gltf is not None and self.views.currentIndex() == 2:
+            fps = max(1, int(self._values()['fps']))
+            self.gltf.set_time(value / fps)
+            return
         if self.live is not None and int(self.live.frame) != value:
             self.live.seek(value)
 
@@ -1075,6 +1129,32 @@ class Studio(QMainWindow):
         self.views.setCurrentIndex(i)
         self.view_shot.setChecked(i == 0)
         self.view_render.setChecked(i == 1)
+        self.view_gltf.setChecked(bool(self.gltf) and i == 2)
+
+    def _show_gltf(self):
+        """Export the current book to .glb, then show it in the beta viewport."""
+        if self.gltf is None:
+            return
+        blender = bb.find_blender(self.settings.value('blender'))
+        if not blender:
+            self.status.setText('Blender was not found — the glTF viewport needs it to export.')
+            return
+        job = self._job(self._values(), self._scratch('gltf'), quality='draft')
+        job['glb_path'] = str(paths.cache_dir('gltf') / 'book.glb')
+        self._gltf_worker = GltfWorker(blender, job)
+        self._gltf_worker.finished_ok.connect(self._gltf_ready)
+        self._gltf_worker.failed.connect(lambda m: self.status.setText(m))
+        self._gltf_worker.start()
+        self.status.setText('Exporting the glTF preview…')
+
+    def _gltf_ready(self, glb):
+        try:
+            self.gltf.load_book(glb)
+            self._show_view(2)
+            self.status.setText('glTF viewport (beta) — orbit, zoom and scrub. The OpenGL view is still available.')
+        except Exception as exc:
+            self.status.setText(f'glTF viewport failed ({exc}); the OpenGL view is still available.')
+            self._show_view(0)
 
     def _show_still(self, folder):
         self._busy(False)

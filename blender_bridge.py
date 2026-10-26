@@ -10,6 +10,7 @@ import paths
 import templates
 
 SCENE_SCRIPT = paths.resource_dir() / 'book_scene.py'
+GLTF_SCRIPT = paths.resource_dir() / 'gltf_export.py'
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 
 QUALITY = {'Draft (fastest)': 'draft', 'Final (recommended)': 'final', 'Photoreal (Cycles, slow)': 'cycles'}
@@ -90,6 +91,10 @@ def make_job(settings, book, images, out_dir, frames=None, width=None, height=No
 
 def command(blender, job_path):
     return [blender, '-b', '--factory-startup', '-noaudio', '-P', str(SCENE_SCRIPT), '--', str(job_path)]
+
+
+def command_gltf(blender, job_path):
+    return [blender, '-b', '--factory-startup', '-noaudio', '-P', str(GLTF_SCRIPT), '--', str(job_path)]
 
 
 def parse_line(line):

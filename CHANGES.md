@@ -1,5 +1,10 @@
 # Changes
 
+## 0.6.5
+- New **glTF Viewport (Beta)** toggle: an interactive Three.js viewport that plays the book exported from the Blender master template — orbit, pan, zoom and frame scrubbing. The OpenGL viewport stays the default and the fallback.
+- The app can export the current book to glTF: the cover, hinge, page and spine animation are baked to morph targets so they survive the export.
+- Qt WebEngine is bundled for the new viewport; if it is unavailable, the old viewport keeps working.
+
 ## 0.6.4
 - Flexible hinge: the cover board is joined to the spine by a deformable joint that stays glued to both, so the binding no longer gaps at any opening angle.
 - Brown leather interior covers (pastedowns) with tooled borders, in the app and in the render.

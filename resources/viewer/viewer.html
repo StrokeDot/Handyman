@@ -1,0 +1,124 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Handyman glTF viewer</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #17171b; }
+  canvas { display: block; }
+  #hud { position: fixed; left: 8px; bottom: 8px; color: #cfcfd8; font: 12px system-ui; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "./three.module.js",
+    "three/addons/": "./jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="hud"></div>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const hud = document.getElementById('hud');
+window.__ready = false;
+window.__error = null;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, 1, 0.01, 100);
+camera.position.set(1.5, 1.3, 2.3);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.target.set(0, 0.1, 0);
+controls.minDistance = 0.2;
+controls.maxDistance = 20;
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x3a3a44, 2.0));
+const sun = new THREE.DirectionalLight(0xfff1dd, 2.6);
+sun.position.set(1.2, 2.2, 2.0);
+scene.add(sun);
+const fill = new THREE.DirectionalLight(0xaecbff, 0.8);
+fill.position.set(-2.0, 0.6, 1.0);
+scene.add(fill);
+
+let mixer = null, actions = [], model = null, duration = 1;
+const clock = new THREE.Clock();
+const loader = new GLTFLoader();
+
+function resize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+
+window.loadBook = function (url) {
+  loader.load(url, (gltf) => {
+    if (model) scene.remove(model);
+    model = gltf.scene;
+    scene.add(model);
+    mixer = new THREE.AnimationMixer(model);
+    actions = gltf.animations.map((clip) => {
+      const a = mixer.clipAction(clip);
+      a.play();
+      return a;
+    });
+    duration = gltf.animations.reduce((m, c) => Math.max(m, c.duration), 0) || 1;
+    // Frame the model once.
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
+    const centre = box.getCenter(new THREE.Vector3());
+    controls.target.copy(centre);
+    camera.position.set(centre.x + size.x * 1.4, centre.y + size.y * 1.1, centre.z + size.z * 1.5);
+    camera.near = Math.max(0.01, size.length() * 0.01);
+    camera.far = size.length() * 20;
+    camera.updateProjectionMatrix();
+    window.__ready = true;
+    hud.textContent = `${gltf.animations.length} clip(s), ${duration.toFixed(2)} s`;
+  }, undefined, (err) => { window.__error = String(err); hud.textContent = 'load failed'; });
+};
+
+// The app owns playback: setTime(t) pins the whole scene to one moment.
+window.setTime = function (t) {
+  if (!mixer) return;
+  mixer.setTime(Math.max(0, t));
+};
+window.setTransform = function (pos, rot, scale) {
+  if (!model) return;
+  model.position.set(pos[0], pos[1], pos[2]);
+  model.rotation.set(rot[0], rot[1], rot[2]);
+  model.scale.set(scale[0], scale[1], scale[2]);
+};
+window.getDuration = () => duration;
+window.resetView = function () {
+  if (!model) return;
+  const box = new THREE.Box3().setFromObject(model);
+  const size = box.getSize(new THREE.Vector3());
+  const centre = box.getCenter(new THREE.Vector3());
+  controls.target.copy(centre);
+  camera.position.set(centre.x + size.x * 1.4, centre.y + size.y * 1.1, centre.z + size.z * 1.5);
+};
+
+resize();
+(function loop() {
+  requestAnimationFrame(loop);
+  if (mixer && window.__playing) mixer.update(clock.getDelta());
+  else clock.getDelta();
+  controls.update();
+  renderer.render(scene, camera);
+})();
+</script>
+</body>
+</html>

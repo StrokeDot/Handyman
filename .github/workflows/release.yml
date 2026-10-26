@@ -55,9 +55,12 @@ jobs:
           --add-data "camera_fit.py;."
           --add-data "book_model.py;."
           --add-data "scene.py;."
+          --add-data "gltf_export.py;."
           --add-data "resources;resources"
           --add-data "assets;assets"
           --hidden-import OpenGL.GL
+          --hidden-import PySide6.QtWebEngineWidgets
+          --hidden-import PySide6.QtWebEngineCore
           --collect-submodules OpenGL.platform
           --collect-submodules OpenGL.arrays
           app.py
@@ -73,6 +76,9 @@ jobs:
           test -f dist/Handyman/_internal/camera_fit.py
           test -f dist/Handyman/_internal/book_model.py
           test -f dist/Handyman/_internal/scene.py
+          test -f dist/Handyman/_internal/gltf_export.py
+          test -f dist/Handyman/_internal/resources/viewer/viewer.html
+          test -f dist/Handyman/_internal/resources/viewer/three.module.js
           test -f dist/Handyman/_internal/resources/books/leather-journal/book.json
 
       - name: Build installer
