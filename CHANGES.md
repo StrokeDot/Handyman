@@ -1,5 +1,8 @@
 # Changes
 
+## 0.6.17
+- Fixed the page shape: `page_aspect` is page height divided by width, and 0.6.15 set it to 0.702, which made the page landscape. Portrait page art (2264x3225) needs 1.424, so the journal is portrait again.
+
 ## 0.6.16
 - Fixed a page turn landing on the wrong page. The first left page and the last right page (the ones a turn uncovers) were stacked *above* the turning sheets instead of below them, so a finished turn showed the wrong image — most visibly on the first turn.
 
