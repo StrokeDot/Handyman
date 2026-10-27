@@ -1,5 +1,8 @@
 # Changes
 
+## 0.6.16
+- Fixed a page turn landing on the wrong page. The first left page and the last right page (the ones a turn uncovers) were stacked *above* the turning sheets instead of below them, so a finished turn showed the wrong image — most visibly on the first turn.
+
 ## 0.6.14
 - Fixed the cover fighting your artwork: the procedural tooled border, stitching and lettering are now only added to bare leather, never painted on top of a cover image you supplied. Your cover now renders exactly as designed.
 

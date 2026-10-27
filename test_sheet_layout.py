@@ -4,6 +4,18 @@ import numpy as np
 import book_model as bm
 
 
+def test_resting_pages_sit_below_every_turning_sheet():
+    """The uncovered pages must be under the sheets, or a finished turn shows the wrong page."""
+    for turns in (1, 2, 5, 9, 20):
+        L = bm.SheetLayout(0.702, 1 + 2 * turns + 2, left_count=1, turns=turns)
+        base_z = 0.0005                      # what book_scene uses for LeftPage / LastRightPage
+        left_z, right_z = L.base_left + base_z, L.base_right + base_z
+        for t in range(L.turns):
+            zr, zl = L.turn_levels(t)
+            assert left_z < zl, 'left resting page would cover a landed sheet'
+            assert right_z < zr, 'final right page would cover a sheet still to turn'
+
+
 def test_counts_and_heights():
     L = bm.SheetLayout(1.4, 50, left_count=1, turns=2)
     assert L.page_count == 50

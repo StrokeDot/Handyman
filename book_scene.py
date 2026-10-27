@@ -641,10 +641,15 @@ def build_book(job):
     fit_of = lambda i: page_fits[i] if i is not None and i < len(page_fits) else None  # noqa: E731
     curl = job['curl']
     if not hide_pages:
+        # These two are the "resting" pages that a turn uncovers, so they must sit just above
+        # the paper block and BELOW every turning sheet - otherwise they cover it and the wrong
+        # page shows when a turn finishes.
+        base_z = L.base_left + 0.0005
         make_sheet('LeftPage', sheet_material('Left', None, get(left_i), job, None, fit_of(left_i)), 1.0,
-                   L.base_left + 0.0015, L.base_left + 0.0015, curl, pivot)
+                   base_z, base_z, curl, pivot)
+        base_z = L.base_right + 0.0005
         make_sheet('LastRightPage', sheet_material('LastRight', get(right_i), None, job, fit_of(right_i), None), 0.0,
-                   L.base_right + 0.0015, L.base_right + 0.0015, curl, root)
+                   base_z, base_z, curl, root)
     moving = []
     if not hide_pages:
         for k, (f, b) in enumerate(sheets):
