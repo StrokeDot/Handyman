@@ -333,7 +333,13 @@ def sheet_material(name, front, back, job, front_fit=None, back_fit=None):
     set_input(vign, 'To Max', 0.0)
     paper = mix_rgb(nt, 'MULTIPLY', vign.outputs['Result'], paper, (0.30, 0.16, 0.07, 1))
 
-    if book.get('paper_image'):
+    if job['blend'] == 'photo':
+        # A supplied full-page image carries its own parchment AND its own alpha (typically a
+        # rounded-corner page with transparent surround). Anything procedural underneath - the
+        # bundled paper photo and the burnt-edge vignette - would show through those transparent
+        # pixels as leftovers of the old page. Use a plain page tone instead.
+        paper = paper_tone(book, 0.0)
+    elif book.get('paper_image'):
         paper_tex = nt.nodes.new('ShaderNodeTexImage')
         paper_tex.image = bpy.data.images.load(str(book['paper_image']), check_existing=True)
         paper_tex.interpolation = 'Cubic'

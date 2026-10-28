@@ -82,8 +82,10 @@ def make_job(settings, book, images, out_dir, frames=None, width=None, height=No
         clip_list=list(settings['clip_list']) if settings.get('clip_list') else None,
         transform=dict(settings.get('transform') or {}),
         book=templates.for_scene(book),
-        image_strength=0.92,
-        margin=0.08,
+        # A full-bleed page image (parchment included) must REPLACE the procedural paper: no inset,
+        # no partial blend. The margin/strength only make sense for ink artwork printed onto paper.
+        image_strength=0.92 if settings.get('blend') == 'Ink on paper (blends in)' else 1.0,
+        margin=0.08 if settings.get('blend') == 'Ink on paper (blends in)' else 0.0,
         png_compression=15,
         frames=frames,
     )
