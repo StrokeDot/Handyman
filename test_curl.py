@@ -83,10 +83,11 @@ def test_timeline_with_cover_opening():
 
 
 def test_layout():
-    assert layout_pages(4) == (1, 0, [(1, 2)], 3)
-    assert layout_pages(6) == (2, 0, [(1, 2), (3, 4)], 5)
-    assert layout_pages(5) == (2, 0, [(1, 2), (3, 4)], None)
-    assert layout_pages(1) == (1, 0, [(None, None)], None)
+    # The first spread shows the front pastedown on the left (None) and image 0 as page 1.
+    assert layout_pages(4) == (2, None, [(0, 1), (2, 3)], None)
+    assert layout_pages(6) == (3, None, [(0, 1), (2, 3), (4, 5)], None)
+    assert layout_pages(5) == (3, None, [(0, 1), (2, 3), (4, None)], None)
+    assert layout_pages(1) == (1, None, [(0, None)], None)
 
 
 def test_mesh_tables():

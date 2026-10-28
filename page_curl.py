@@ -174,14 +174,16 @@ class Timeline:
 def layout_pages(n_images):
     """Map images in reading order onto the open book.
 
-    Image 0 is the left page of the first spread, image 1 the right page.
-    Turning sheet k shows image 1 + 2k on its front (right side) and 2 + 2k on its back.
+    The FIRST spread shows the front pastedown on the left (no paper page - nothing may cover
+    the cover's interior) and image 0 as page 1 on the right.
+    Turning sheet k shows image 1+2k on its front and image 2+2k on its back, so after that turn
+    the left holds image 2+2k and the right holds 1+2(k+1).
     Returns (turns, left_index, sheets[(front, back)], final_right_index); indexes may be
     None for blank paper.
     """
     def pick(i):
-        return i if i < n_images else None
+        return i if 0 <= i < n_images else None
 
-    turns = max(1, math.ceil(max(0, n_images - 2) / 2))
-    sheets = [(pick(1 + 2 * k), pick(2 + 2 * k)) for k in range(turns)]
-    return turns, pick(0), sheets, pick(1 + 2 * turns)
+    turns = max(1, math.ceil(max(0, n_images) / 2))
+    sheets = [(pick(2 * k), pick(2 * k + 1)) for k in range(turns)]
+    return turns, None, sheets, pick(2 * turns)

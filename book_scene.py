@@ -732,12 +732,13 @@ def build_book(job):
     fit_of = lambda i: page_fits[i] if i is not None and i < len(page_fits) else None  # noqa: E731
     curl = job['curl']
     if not hide_pages:
-        # These two are the "resting" pages that a turn uncovers, so they must sit just above
-        # the paper block and BELOW every turning sheet - otherwise they cover it and the wrong
-        # page shows when a turn finishes.
-        base_z = L.base_left + 0.0005
-        make_sheet('LeftPage', sheet_material('Left', None, get(left_i), job, None, fit_of(left_i)), 1.0,
-                   base_z, base_z, curl, pivot, edge=edges)
+        # The bottom sheet of each stack. The LEFT one is skipped when there is no left-hand page
+        # yet: the first spread shows the front pastedown, and a blank paper sheet there would
+        # cover the cover's interior - the duplicate surface seen during the opening.
+        if left_i is not None:
+            base_z = L.base_left + 0.0005
+            make_sheet('LeftPage', sheet_material('Left', None, get(left_i), job, None, fit_of(left_i)), 1.0,
+                       base_z, base_z, curl, pivot, edge=edges)
         base_z = L.base_right + 0.0005
         make_sheet('LastRightPage', sheet_material('LastRight', get(right_i), None, job, fit_of(right_i), None), 0.0,
                    base_z, base_z, curl, root, edge=edges)
