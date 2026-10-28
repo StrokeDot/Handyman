@@ -5,6 +5,7 @@
   "paper_age": 0.55,
   "burn": 0.6,
   "page_aspect": 1.424,
+  "page_count": 20,
   "stitching": true,
   "thread_color": "#b08a5a",
   "spine_bands": 4,

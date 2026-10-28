@@ -150,7 +150,9 @@ def leather_material(color, name='Leather', k=1.0, image=None, surface_aspect=No
         tex = nt.nodes.new('ShaderNodeTexImage')
         tex.image = bpy.data.images.load(str(image), check_existing=True)
         tex.interpolation = 'Cubic'
-        gen = nt.nodes.new('ShaderNodeTexCoord').outputs['Generated']
+        # Follow the object's UVs (not Generated), so a supplied cover image keeps its
+        # orientation when the front cover swings on its hinge.
+        gen = nt.nodes.new('ShaderNodeTexCoord').outputs['UV']
         if surface_aspect and fit:
             size = tex.image.size
             img_aspect = size[1] / max(1, size[0])
@@ -413,12 +415,38 @@ def add_box(bm, x0, x1, y0, y1, z0, z1):
         bm.faces.new([v[i] for i in f])
 
 
-def box(name, x0, x1, y0, y1, z0, z1, mat, parent=None, bevel=0.0):
+def box_uvs(mesh, x0, x1, y0, y1, z0, z1, flip_u=False):
+    """0..1 UVs per face, in the object's own axes.
+
+    `flip_u` is for boards that are built in the open layout and then hinged 180 degrees into
+    the closed book: their local x runs the other way on screen, so u has to run with it or the
+    supplied cover artwork reads mirrored.
+    """
+    du = max(1e-9, x1 - x0)
+    dv = max(1e-9, y1 - y0)
+    dz = max(1e-9, z1 - z0)
+    layer = mesh.uv_layers.new(name='UVMap')
+    for poly in mesh.polygons:
+        n = poly.normal
+        axis = max(range(3), key=lambda i: abs(n[i]))
+        for li in poly.loop_indices:
+            co = mesh.vertices[mesh.loops[li].vertex_index].co
+            if axis == 2:            # top / bottom: x -> u, y -> v
+                u, w = (co.x - x0) / du, (co.y - y0) / dv
+            elif axis == 1:          # front / back edges: x -> u, z -> v
+                u, w = (co.x - x0) / du, (co.z - z0) / dz
+            else:                    # side edges: y -> u, z -> v
+                u, w = (co.y - y0) / dv, (co.z - z0) / dz
+            layer.data[li].uv = (1.0 - u if flip_u else u, w)
+
+
+def box(name, x0, x1, y0, y1, z0, z1, mat, parent=None, bevel=0.0, flip_u=False):
     mesh = bpy.data.meshes.new(name)
     bm = bmesh.new()
     add_box(bm, x0, x1, y0, y1, z0, z1)
     bm.to_mesh(mesh)
     bm.free()
+    box_uvs(mesh, x0, x1, y0, y1, z0, z1, flip_u=flip_u)
     mesh.materials.append(mat)
     ob = bpy.data.objects.new(name, mesh)
     if bevel:
@@ -439,32 +467,81 @@ def quad(name, cx, cy, z, w, h, mat, parent=None):
     return link_object(bpy.data.objects.new(name, mesh), parent)
 
 
-def make_sheet(name, mat, t, z_right, z_left, curl, parent):
-    verts = sheet_vertices(t, PAGE_W, PAGE_H, GRID_X, GRID_Y, z_right, z_left, curl=curl, gutter=LAYOUT.gutter)
-    mesh = bpy.data.meshes.new(name)
-    mesh.from_pydata(verts.tolist(), [], grid_faces(GRID_X, GRID_Y))
-    uvs = grid_uvs(GRID_X, GRID_Y)
+SHEET_T = 0.0012     # paper thickness, kept explicit so pages have real, visible edges
+
+
+def _sheet_solid(verts, nx, ny, thickness=SHEET_T):
+    """Top face + bottom face + rim, with outward windings.
+
+    Built explicitly instead of with a Solidify modifier: Solidify's generated back layer has
+    inverted normals, which broke the Backfacing test in sheet_material and made the left page
+    show the front artwork mirrored. Explicit geometry keeps both the thickness and the correct
+    front/back artwork.
+    """
+    n = nx * ny
+    top = np.asarray(verts, dtype=float)
+    bottom = top.copy()
+    bottom[:, 2] -= thickness
+    all_verts = np.vstack([top, bottom])
+    faces, mats = [], []
+    for r in range(ny - 1):
+        for c in range(nx - 1):
+            a = r * nx + c
+            faces.append((a, a + 1, a + nx + 1, a + nx))              # top, CCW from +z
+            mats.append(0)
+            b = n + a
+            faces.append((b + nx, b + nx + 1, b + 1, b))              # bottom, outward -z
+            mats.append(0)
+    # Rim: the four boundary loops, joining top and bottom.
+    for c in range(nx - 1):
+        a = c
+        faces.append((n + a, n + a + 1, a + 1, a)); mats.append(1)      # spine edge (-y)
+        t = (ny - 1) * nx + c
+        faces.append((t, t + 1, n + t + 1, n + t)); mats.append(1)      # fore edge (+y)
+    for r in range(ny - 1):
+        a = r * nx
+        faces.append((a, n + a, n + a + nx, a + nx)); mats.append(1)    # left
+        q = a + nx - 1
+        faces.append((q + nx, n + q + nx, n + q, q)); mats.append(1)    # right
+    return all_verts, faces, mats
+
+
+def _apply_uvs(mesh, nx, ny, flip_u=False):
+    uvs = grid_uvs(nx, ny)
+    if flip_u:
+        uvs = uvs.copy()
+        uvs[:, 0] = 1.0 - uvs[:, 0]
+    both = np.vstack([uvs, uvs])                 # bottom shares the same UVs
     layer = mesh.uv_layers.new(name='UVMap')
     loop_v = np.zeros(len(mesh.loops), dtype=np.int32)
     mesh.loops.foreach_get('vertex_index', loop_v)
-    layer.data.foreach_set('uv', uvs[loop_v].astype(np.float32).ravel())
+    layer.data.foreach_set('uv', both[loop_v].astype(np.float32).ravel())
+
+
+def make_sheet(name, mat, t, z_right, z_left, curl, parent, edge=None):
+    verts = sheet_vertices(t, PAGE_W, PAGE_H, GRID_X, GRID_Y, z_right, z_left, curl=curl, gutter=LAYOUT.gutter)
+    all_verts, faces, mats = _sheet_solid(verts, GRID_X, GRID_Y)
+    mesh = bpy.data.meshes.new(name)
+    mesh.from_pydata(all_verts.tolist(), [], faces)
+    _apply_uvs(mesh, GRID_X, GRID_Y)
     if hasattr(mesh, 'shade_smooth'):
         mesh.shade_smooth()
     else:
         for p in mesh.polygons:
             p.use_smooth = True
     mesh.materials.append(mat)
-    ob = link_object(bpy.data.objects.new(name, mesh), parent)
-    paper = ob.modifiers.new('Paper', 'SOLIDIFY')
-    paper.thickness = 0.0012       # real paper thickness, so the edges read as paper
-    paper.offset = -1.0            # extrude downwards; the printed face stays on top
-    return ob
+    if edge is not None:
+        mesh.materials.append(edge)
+        for poly, m in zip(mesh.polygons, mats):
+            poly.material_index = m
+    return link_object(bpy.data.objects.new(name, mesh), parent)
 
 
 def update_sheet(ob, t, z_right, z_left, curl, smoothness=1.0):
     verts = sheet_vertices(t, PAGE_W, PAGE_H, GRID_X, GRID_Y, z_right, z_left, curl=curl,
                            gutter=LAYOUT.gutter, smoothness=smoothness)
-    ob.data.vertices.foreach_set('co', verts.astype(np.float32).ravel())
+    all_verts, _, _ = _sheet_solid(verts, GRID_X, GRID_Y)
+    ob.data.vertices.foreach_set('co', all_verts.astype(np.float32).ravel())
     ob.data.update()
 
 
@@ -495,6 +572,14 @@ def spine_object(book, leather, parent):
     mesh.from_pydata(open_pts.tolist(), [], faces)
     if hasattr(mesh, 'shade_smooth'):
         mesh.shade_smooth()
+    # Explicit UVs so the spine artwork follows the strip (u across, v up the book).
+    xs, ys = open_pts[:, 0], open_pts[:, 1]
+    xu, yu = max(1e-9, xs.max() - xs.min()), max(1e-9, ys.max() - ys.min())
+    layer = mesh.uv_layers.new(name='UVMap')
+    for poly in mesh.polygons:
+        for li in poly.loop_indices:
+            co = mesh.vertices[mesh.loops[li].vertex_index].co
+            layer.data[li].uv = ((co.x - xs.min()) / xu, (co.y - ys.min()) / yu)
     mesh.materials.append(leather)
     ob = bpy.data.objects.new('Spine', mesh)
     sol = ob.modifiers.new('Thickness', 'SOLIDIFY')
@@ -625,7 +710,7 @@ def build_book(job):
     if not hide_pages:
         for j in range(L.right_rest_count):
             resting_sheet(f'PagesRight{j}', L, 1, j, L.right_rest_count, edges, root)
-    box('CoverLeft', -PAGE_W - m, 0, -hy, hy, 0, COVER_T, leather, pivot, bevel=0.015)
+    box('CoverLeft', -PAGE_W - m, 0, -hy, hy, 0, COVER_T, leather, pivot, bevel=0.015, flip_u=True)
     quad('EndpaperLeft', -(PAGE_W + m) / 2, 0, COVER_T + 0.0006, PAGE_W + m, 2 * hy, endpaper, pivot)
     inside_border = plain_material('InsideBorder', rgba(book['leather_color'], 0.35), roughness=0.7)
     for i2, ins in enumerate((0.028, 0.046)):
@@ -646,22 +731,22 @@ def build_book(job):
         # page shows when a turn finishes.
         base_z = L.base_left + 0.0005
         make_sheet('LeftPage', sheet_material('Left', None, get(left_i), job, None, fit_of(left_i)), 1.0,
-                   base_z, base_z, curl, pivot)
+                   base_z, base_z, curl, pivot, edge=edges)
         base_z = L.base_right + 0.0005
         make_sheet('LastRightPage', sheet_material('LastRight', get(right_i), None, job, fit_of(right_i), None), 0.0,
-                   base_z, base_z, curl, root)
+                   base_z, base_z, curl, root, edge=edges)
     moving = []
     if not hide_pages:
         for k, (f, b) in enumerate(sheets):
             zr, zl = L.turn_levels(k)
             ob = make_sheet(f'Sheet{k + 1}', sheet_material(f'Sheet{k + 1}', get(f), get(b), job,
-                                                            fit_of(f), fit_of(b)), 0.0, zr, zl, curl, root)
+                                                            fit_of(f), fit_of(b)), 0.0, zr, zl, curl, root, edge=edges)
             moving.append((ob, zr, zl))
         for j in range(len(recorded)):
             k = turns + j
             zr, zl = L.turn_levels(k)
             ob = make_sheet(f'RecSheet{j + 1}', sheet_material(f'RecSheet{j + 1}', None, None, job),
-                            0.0, zr, zl, curl, root)
+                            0.0, zr, zl, curl, root, edge=edges)
             moving.append((ob, zr, zl))
 
     spine_key = spine_object(book, spine_mat, root)
@@ -896,3 +981,4 @@ if __name__ == '__main__':
         log(f'ERROR {exc}')
         sys.stdout.flush()
         os._exit(1)
+
