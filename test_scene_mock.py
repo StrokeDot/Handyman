@@ -49,7 +49,8 @@ def test_full_book_with_cover_opening():
         open(emblem, 'wb').close()
         book = dict(templates.DEFAULTS, folder=tmp, emblem='emblem.png', title='The Journal')
         seq, renders = run(SETTINGS, book, ['/x/a.png', None, '/x/b.png', '/x/c.png', '/x/d.png'])
-    assert seq['turns'] == 2 and renders == seq['frames'] > 0
+    # 5 images: image 0 is page 1 on the right, then sheets (0,1), (2,3), (4,None) = 3 turns.
+    assert seq['turns'] == 3 and renders == seq['frames'] > 0
 
 
 def test_open_start_cycles_and_deboss():
