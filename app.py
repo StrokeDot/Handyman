@@ -956,13 +956,33 @@ class Studio(QMainWindow):
                 'Reinstall Handyman, or check your books folder.')
             return
 
+        # Never discard unsaved work silently.
+        if self.pages.count():
+            answer = QMessageBox.question(
+                self, APP_NAME,
+                'Start a new leather book?\n\n'
+                'This clears the current page list and any recorded or edited timeline '
+                'clips in this session.\n'
+                'Saved projects and your own templates are not touched.',
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No)
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+
         self.book_combo.setCurrentIndex(index)
         book = self.books[index]
         self.page_count.setValue(int(book.get('page_count') or 20))
         self.pages.clear()
+        # a fresh project starts with an empty timeline, not the previous one's clips
+        self.recorded_clips = []
+        self.edited_clips = None
+        try:
+            self.timeline_panel.editor.set_clips([])
+        except Exception:
+            pass
         self.status.setText(
             f'New leather book ready - {self.page_count.value()} sheets. '
-            'Page art cleared. Press "Preview still" to see it.')
+            'Page art and timeline cleared. Press "Preview still" to see it.')
 
     def _save_project(self):
         path, _ = QFileDialog.getSaveFileName(self, 'Save project', self.settings.value('proj_dir', ''),
