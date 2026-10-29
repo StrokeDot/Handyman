@@ -107,7 +107,17 @@ class SheetLayout(Layout):
         return self.right_count - self.turns
 
     def turn_levels(self, t):
-        """Spine heights (right, left) of the t-th turning sheet (0-based), above the resting stacks."""
+        """Spine heights (right, left) of the sheet at RELATIVE index t.
+
+        t < 0 means the sheet is already flipped left (before the opening position);
+        t >= turns means it never turns and rests on the right. Both must stay inside the
+        physical stack - pushing either past the ends is what made the first visible
+        right-hand sheet sink below the resting block.
+        """
+        if t < 0:
+            return (self.top_right, self.base_left + (t + 1) * SHEET_GAP)
+        if t >= self.turns:
+            return (self.base_right + (self.turns - 1 - t) * SHEET_GAP, self.top_left)
         return (self.base_right + (self.turns - t) * SHEET_GAP,
                 self.base_left + (t + 1) * SHEET_GAP)
 

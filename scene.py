@@ -19,13 +19,19 @@ class Scene:
                  page_count=None, smoothness=1.0, recorded_clips=None, clip_list=None):
         self.slide = bool(slide)
         self.smoothness = float(smoothness)
+        # Physical model: every configured sheet exists. start_index sheets are already flipped
+        # left (state 1.0), the next `turns` sheets animate, the rest stay right (state 0.0).
+        self.start_index = 0
+        self.page_count = int(page_count) if page_count else 0
         if clip_list is not None:
             clips = [clip_from_dict(d) for d in clip_list]
             self.turns = sum(1 for c in clips if c.kind == 'turn')
             if page_count:
-                # Nothing rests on the left stack: the first spread is the front pastedown.
-                left_count = 0
-                self.layout = bm.SheetLayout(page_aspect, page_count, left_count, self.turns)
+                # Sheets already flipped on the left when the animation starts. Floor, not round:
+                # a near-zero opening position must mean ZERO left sheets.
+                self.start_index = int(float(open_at) * int(page_count))
+                self.page_count = int(page_count)
+                self.layout = bm.SheetLayout(page_aspect, page_count, self.start_index, self.turns)
             else:
                 self.layout = bm.Layout(page_aspect, self.turns, open_at)
             self.turns = self.layout.turns   # follow any clamping the layout applied
@@ -34,9 +40,11 @@ class Scene:
             extra = list(recorded_clips or [])
             self.turns = int(turns) + len(extra)
             if page_count:
-                # Nothing rests on the left stack: the first spread is the front pastedown.
-                left_count = 0
-                self.layout = bm.SheetLayout(page_aspect, page_count, left_count, self.turns)
+                # Sheets already flipped on the left when the animation starts. Floor, not round:
+                # a near-zero opening position must mean ZERO left sheets.
+                self.start_index = int(float(open_at) * int(page_count))
+                self.page_count = int(page_count)
+                self.layout = bm.SheetLayout(page_aspect, page_count, self.start_index, self.turns)
             else:
                 self.layout = bm.Layout(page_aspect, self.turns, open_at)
             self.turns = self.layout.turns   # follow any clamping the layout applied
@@ -75,7 +83,18 @@ class Scene:
         """Everything's pose at `frame`. Both renderers draw from this one answer."""
         o = self.opening(frame)
         angle, slide = self.layout.opening(o, slide=self.slide, smoothness=self.smoothness)
-        sheet_progress = [self.progress(frame, k) for k in range(self.turns)]
+        # One state entry per PHYSICAL sheet, so state and geometry arrays always match.
+        # Sheets before the start are already left; scheduled sheets animate; the rest stay right.
+        sheet_progress = []
+        for k in range(self.page_count):
+            if k < self.start_index:
+                sheet_progress.append(1.0)
+            elif k < self.start_index + self.turns:
+                sheet_progress.append(self.progress(frame, k - self.start_index))
+            else:
+                sheet_progress.append(0.0)
+        if not sheet_progress:
+            sheet_progress = [self.progress(frame, k) for k in range(self.turns)]
         return dict(
             frame=int(frame),
             cover_progress=o,

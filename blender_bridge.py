@@ -58,6 +58,10 @@ def make_job(settings, book, images, out_dir, frames=None, width=None, height=No
         import page_text
         images = page_text.sides_to_images(pages, str(Path(out_dir) / 'text'),
                                            float(book.get('page_aspect', 1.4)))
+    scene_book = templates.for_scene(book)
+    # Base paper is its own user-selectable texture. Page content is assigned per side only, so a
+    # page carrying text or an illustration is never duplicated onto unassigned sides.
+    scene_book['base_paper_image'] = scene_book.get('paper_image')
     return dict(
         images=[str(p) if p else None for p in images],
         out_dir=str(out_dir),
@@ -76,12 +80,13 @@ def make_job(settings, book, images, out_dir, frames=None, width=None, height=No
         slide=bool(settings['start_closed']),
         open_at=float(settings.get('open_at', 0.04)),
         page_count=int(settings.get('page_count', 50)),
+        turns=(int(settings['turns']) if settings.get('turns') is not None else None),
         smoothness=float(settings.get('smoothness', 1.0)),
         page_fits=list(settings.get('page_fits') or []),
         recorded_clips=list(settings.get('recorded_clips', [])),
         clip_list=list(settings['clip_list']) if settings.get('clip_list') else None,
         transform=dict(settings.get('transform') or {}),
-        book=templates.for_scene(book),
+        book=scene_book,
         # A full-bleed page image (parchment included) must REPLACE the procedural paper: no inset,
         # no partial blend. The margin/strength only make sense for ink artwork printed onto paper.
         image_strength=0.92 if settings.get('blend') == 'Ink on paper (blends in)' else 1.0,
@@ -112,3 +117,5 @@ def parse_line(line):
     if line == 'DONE':
         return ('done',)
     return ('log', line)
+
+

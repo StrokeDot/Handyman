@@ -78,7 +78,34 @@ def test_scene_with_page_count_uses_sheet_layout():
     assert s.layout.page_count == 20
     assert s.turns == s.layout.turns
     pose = s.evaluate(0)
-    assert len(pose['sheet_progress']) == s.turns
+    # One state entry per PHYSICAL sheet, so state and geometry arrays always match.
+    assert len(pose['sheet_progress']) == s.page_count
+
+
+def test_opening_position_places_accounted_sheets():
+    """Further into the book, more sheets are already flipped left and fewer can turn."""
+    for open_at, left, turns in ((0.04, 0, 20), (0.25, 5, 15), (0.50, 10, 10), (0.75, 15, 5)):
+        s = scene.Scene(99, page_aspect=1.4, open_at=open_at, page_count=20)
+        assert s.start_index == left, (open_at, s.start_index)
+        assert s.layout.left_count == left
+        assert s.turns == turns, (open_at, s.turns)
+        prog = s.evaluate(0)['sheet_progress']
+        assert len(prog) == 20
+        # sheets before the start are already left, the rest have not moved yet
+        assert prog[:left] == [1.0] * left
+        assert prog[left:] == [0.0] * (20 - left)
+
+
+def test_partial_turn_counts_keep_unscheduled_sheets_resting():
+    for turns in (0, 1, 2, 20):
+        s = scene.Scene(turns, page_aspect=1.4, open_at=0.04, page_count=20)
+        assert s.turns == turns
+        prog0 = s.evaluate(0)['sheet_progress']
+        prog_end = s.evaluate(s.frames - 1)['sheet_progress']
+        assert len(prog0) == 20 and len(prog_end) == 20
+        assert prog0 == [0.0] * 20, (turns, prog0)      # nothing landed at frame 0
+        assert prog_end[:turns] == [1.0] * turns         # exactly the scheduled turns landed
+        assert prog_end[turns:] == [0.0] * (20 - turns)  # the rest stay on the right
 
 
 def test_scene_smoothness_changes_cover():
@@ -96,7 +123,8 @@ def test_scene_with_recorded_clips_extends_timeline():
                       recorded_clips=[{'duration': 20, 'smoothness': 0.5}])
     assert rec.turns == base.turns + 1
     assert rec.timeline.frames > base.timeline.frames
-    assert len(rec.evaluate(0)['sheet_progress']) == rec.turns
+    # one state entry per physical sheet, regardless of how many are scheduled to turn
+    assert len(rec.evaluate(0)['sheet_progress']) == rec.page_count
 
 
 def test_scene_from_clip_list():
@@ -106,7 +134,9 @@ def test_scene_from_clip_list():
     s = scene.Scene(2, 1.4, 0.04, page_count=20, clip_list=clips)
     assert s.turns == 2
     assert s.frames == 90                       # last turn ends at 89
-    assert len(s.evaluate(0)['sheet_progress']) == 2
+    # one state entry per physical sheet (20), of which only 2 are scheduled to turn
+    assert len(s.evaluate(0)['sheet_progress']) == 20
+    assert s.evaluate(0)['sheet_progress'] == [0.0] * 20
     assert s.evaluate(10)['cover_progress'] > 0
 
 

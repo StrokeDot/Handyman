@@ -128,3 +128,33 @@ if __name__ == '__main__':
         if name.startswith('test_'):
             fn()
             print('ok', name)
+
+
+def test_first_visible_right_sheet_stays_above_the_resting_block():
+    """Opening partway in, the first unturned right-hand sheet must not sink below the stack.
+
+    This is the regression that made middle/three-quarter zero-turn openings show the back
+    pastedown instead of pages 21 / 31.
+    """
+    for left_count, expect_first_right in ((0, 0), (5, 5), (10, 10), (15, 15), (20, None)):
+        L = bm.SheetLayout(1.4, 20, left_count=left_count, turns=0)
+        if expect_first_right is None:
+            continue
+        # relative index 0 for the first sheet that has not turned
+        zr, zl = L.turn_levels(0)
+        assert zr >= L.base_right - 1e-9, (left_count, zr, L.base_right)
+
+
+def test_sheets_before_start_rest_inside_the_left_stack():
+    L = bm.SheetLayout(1.4, 20, left_count=10, turns=5)
+    for k in range(10):
+        zr, zl = L.turn_levels(k - L.left_count)
+        assert zl <= L.base_left + (k + 1) * bm.SHEET_GAP + 1e-9, (k, zl)
+
+
+def test_sheets_after_scheduled_turns_rest_on_the_right():
+    L = bm.SheetLayout(1.4, 20, left_count=10, turns=5)
+    for k in range(15, 20):
+        zr, zl = L.turn_levels(k - L.left_count)
+        assert zr <= L.base_right + 1e-9, (k, zr)
+        assert zr >= L.base_right - (L.right_count) * bm.SHEET_GAP - 1e-9, (k, zr)

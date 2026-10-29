@@ -681,7 +681,7 @@ def build_book(job):
     # The first spread shows the front pastedown (no resting paper page on the left), so nothing
     # rests on the left stack: every sheet is available to turn. Deriving this from open_at used
     # to hand one sheet to the left stack and shorten the turn count by one.
-    left_count = 0
+    left_count = int(float(job.get('open_at', 0.04)) * page_count)
     LAYOUT = L = bm.SheetLayout(book['page_aspect'], page_count, left_count, turns + len(recorded))
     PAGE_H = L.page_h
     m = COVER_MARGIN
@@ -756,13 +756,16 @@ def build_book(job):
     moving = []
     if not hide_pages:
         for k, (f, b) in enumerate(sheets):
-            zr, zl = L.turn_levels(k)
+            # turn_levels() takes the sheet's RELATIVE turn index. Passing the global index made
+            # every sheet after the opening position fall a gap lower per step, sinking the first
+            # visible right-hand sheet below the resting block when the book started partway in.
+            zr, zl = L.turn_levels(k - L.left_count)
             ob = make_sheet(f'Sheet{k + 1}', sheet_material(f'Sheet{k + 1}', get(f), get(b), job,
                                                             fit_of(f), fit_of(b)), 0.0, zr, zl, curl, root, edge=edges)
             moving.append((ob, zr, zl))
         for j in range(len(recorded)):
             k = turns + j
-            zr, zl = L.turn_levels(k)
+            zr, zl = L.turn_levels(k - L.left_count)
             ob = make_sheet(f'RecSheet{j + 1}', sheet_material(f'RecSheet{j + 1}', None, None, job),
                             0.0, zr, zl, curl, root, edge=edges)
             moving.append((ob, zr, zl))
@@ -951,7 +954,10 @@ def main():
     camera = Camera(job)
     setup_lights(job)
 
-    sc = scene.Scene(turns, job['book']['page_aspect'], job.get('open_at', 0.04), job['fps'],
+    # Honour an explicitly scheduled turn count; otherwise animate every available sheet.
+    scheduled = job.get('turns')
+    sc = scene.Scene(turns if scheduled is None else int(scheduled),
+                     job['book']['page_aspect'], job.get('open_at', 0.04), job['fps'],
                      job['start_hold'], job['turn_seconds'], job['pause'], job['end_hold'],
                      job.get('open_seconds', 0.0), job.get('slide', True),
                      page_count=job.get('page_count'), smoothness=job.get('smoothness', 1.0),
@@ -1004,4 +1010,6 @@ if __name__ == '__main__':
         log(f'ERROR {exc}')
         sys.stdout.flush()
         os._exit(1)
+
+
 
