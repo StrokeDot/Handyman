@@ -32,8 +32,10 @@ def test_middle_splits_evenly():
 
 
 def test_clamps():
+    # left_count may legitimately be 0 (first spread is the front pastedown), so all 4 sheets
+    # stay on the right and are available to turn; turns clamps to right_count.
     L = bm.SheetLayout(1.4, 4, left_count=0, turns=99)
-    assert L.left_count == 1 and L.right_count == 3 and L.turns == 3
+    assert L.left_count == 0 and L.right_count == 4 and L.turns == 4
     assert L.right_rest_count == 0
 
 

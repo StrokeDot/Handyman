@@ -83,7 +83,10 @@ class SheetLayout(Layout):
         self.page_count = int(page_count)
         if self.page_count < 2:
             raise ValueError('page_count must be at least 2 (a left and a right page)')
-        self.left_count = int(min(max(left_count, 1), self.page_count - 1))
+        # left_count may be 0: the first spread of this book shows the front pastedown, with no
+        # resting paper page on the left. Clamping it to 1 stole a sheet from the right stack and
+        # forced `turns` one short, which left the last turning sheet pinned in its landed state.
+        self.left_count = int(min(max(left_count, 0), self.page_count - 1))
         self.right_count = self.page_count - self.left_count
         self.turns = int(min(max(turns, 0), self.right_count))
         # Height of the resting stacks (sheets that never turn); the turning sheets ride on top.

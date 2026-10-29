@@ -347,9 +347,14 @@ def sheet_material(name, front, back, job, front_fit=None, back_fit=None):
         paper = paper_tex.outputs['Color']
 
     blend = 'MULTIPLY' if job['blend'] == 'ink' else 'MIX'
+    # A sheet with no assigned content still has to look like paper from the same book. The
+    # fallback is the book's own BASE PAPER texture - never a page's content, which would duplicate
+    # text or an illustration onto unassigned sides, and never generated parchment.
+    base_paper = book.get('base_paper_image') or None
     sides = []
     for side_path, is_back in ((front, False), (back, True)):
-        layer = image_layer(nt, uv, side_path, is_back, job['margin'],
+        source = side_path or base_paper
+        layer = image_layer(nt, uv, source, is_back, job['margin'],
                             back_fit if is_back else front_fit)
         if layer:
             col, alpha = layer
@@ -673,7 +678,10 @@ def build_book(job):
     turns, left_i, sheets, right_i = layout_pages(len(images))
     recorded = job.get('recorded_clips') or []
     page_count = int(job.get('page_count', 50))
-    left_count = int(round(job.get('open_at', 0.04) * page_count))
+    # The first spread shows the front pastedown (no resting paper page on the left), so nothing
+    # rests on the left stack: every sheet is available to turn. Deriving this from open_at used
+    # to hand one sheet to the left stack and shorten the turn count by one.
+    left_count = 0
     LAYOUT = L = bm.SheetLayout(book['page_aspect'], page_count, left_count, turns + len(recorded))
     PAGE_H = L.page_h
     m = COVER_MARGIN
@@ -739,9 +747,12 @@ def build_book(job):
             base_z = L.base_left + 0.0005
             make_sheet('LeftPage', sheet_material('Left', None, get(left_i), job, None, fit_of(left_i)), 1.0,
                        base_z, base_z, curl, pivot, edge=edges)
-        base_z = L.base_right + 0.0005
-        make_sheet('LastRightPage', sheet_material('LastRight', get(right_i), None, job, fit_of(right_i), None), 0.0,
-                   base_z, base_z, curl, root, edge=edges)
+        # The stack bottom is the back pastedown when no page index remains: a real book does not
+        # gain an extra page after the final turn.
+        if right_i is not None:
+            base_z = L.base_right + 0.0005
+            make_sheet('LastRightPage', sheet_material('LastRight', get(right_i), None, job, fit_of(right_i), None), 0.0,
+                       base_z, base_z, curl, root, edge=edges)
     moving = []
     if not hide_pages:
         for k, (f, b) in enumerate(sheets):
@@ -963,7 +974,12 @@ def main():
         hinge_ob.data.update()
         root.location = (slide + BOOK_POS[0], BOOK_POS[1], BOOK_POS[2])
         for k, (ob, zr, zl) in enumerate(moving):
-            t = pose['sheet_progress'][k] if k < len(pose['sheet_progress']) else 1.0
+            # Every built sheet must have a progress entry. A silent fallback here used to pin
+            # surplus sheets in the landed state, which showed the final page from frame one.
+            assert k < len(pose['sheet_progress']), (
+                f'sheet {k} has no turn progress (only {len(pose["sheet_progress"])} entries '
+                f'for {len(moving)} sheets) - turn count and sheet count disagree')
+            t = pose['sheet_progress'][k]
             if t != last_t[k]:
                 update_sheet(ob, t, zr, zl, job['curl'], smoothness=pose['smoothness'])
                 last_t[k] = t

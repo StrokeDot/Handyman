@@ -23,7 +23,8 @@ class Scene:
             clips = [clip_from_dict(d) for d in clip_list]
             self.turns = sum(1 for c in clips if c.kind == 'turn')
             if page_count:
-                left_count = int(round(open_at * page_count))
+                # Nothing rests on the left stack: the first spread is the front pastedown.
+                left_count = 0
                 self.layout = bm.SheetLayout(page_aspect, page_count, left_count, self.turns)
             else:
                 self.layout = bm.Layout(page_aspect, self.turns, open_at)
@@ -33,7 +34,8 @@ class Scene:
             extra = list(recorded_clips or [])
             self.turns = int(turns) + len(extra)
             if page_count:
-                left_count = int(round(open_at * page_count))
+                # Nothing rests on the left stack: the first spread is the front pastedown.
+                left_count = 0
                 self.layout = bm.SheetLayout(page_aspect, page_count, left_count, self.turns)
             else:
                 self.layout = bm.Layout(page_aspect, self.turns, open_at)
