@@ -306,6 +306,13 @@ class Studio(QMainWindow):
         b.clicked.connect(self._save_project)
         row.addWidget(b)
         lv.addLayout(row)
+        # Explicit, reliable way to start the calibrated leather book. It never opens or
+        # overwrites a saved project - it only reconfigures the current session.
+        b = QPushButton('New Leather Book')
+        b.setToolTip('Start a fresh project with the calibrated leather book: '
+                     '20 sheets, 1.424 page aspect, your validated cover/pastedown/spine artwork.')
+        b.clicked.connect(self._new_leather_book)
+        lv.addWidget(b)
         self.timeline_panel = TimelinePanel()
         self.timeline_panel.changed.connect(self._timeline_changed)
         lv.addWidget(self.timeline_panel, 1)
@@ -921,6 +928,42 @@ class Studio(QMainWindow):
             v = {}
         self._apply_state(v)
 
+    def _new_leather_book(self):
+        """Configure this session for the calibrated leather book.
+
+        Selects the Development Preview template, sets its own sheet count and aspect,
+        and clears page artwork so the new project starts clean. Saved projects and the
+        user's own templates are untouched - nothing is written to disk here.
+        """
+        def find():
+            for i, b in enumerate(self.books):
+                if Path(b.get('folder') or '').name == 'leather-book':
+                    return i
+            for i, b in enumerate(self.books):
+                if 'Development Preview' in (b.get('name') or ''):
+                    return i
+            return None
+
+        index = find()
+        if index is None:
+            templates.ensure_starter_books()
+            self._reload_books()
+            index = find()
+        if index is None:
+            QMessageBox.warning(
+                self, APP_NAME,
+                'The "Leather Book - Development Preview" template is not installed.\n'
+                'Reinstall Handyman, or check your books folder.')
+            return
+
+        self.book_combo.setCurrentIndex(index)
+        book = self.books[index]
+        self.page_count.setValue(int(book.get('page_count') or 20))
+        self.pages.clear()
+        self.status.setText(
+            f'New leather book ready - {self.page_count.value()} sheets. '
+            'Page art cleared. Press "Preview still" to see it.')
+
     def _save_project(self):
         path, _ = QFileDialog.getSaveFileName(self, 'Save project', self.settings.value('proj_dir', ''),
                                               'Handyman project (*.hmproj)')
@@ -1140,7 +1183,10 @@ class Studio(QMainWindow):
     def _preview_still(self):
         v = self._values()
         tl = self._timeline(v)
-        mid = tl.turn_start(0) + int(tl.turn * 0.5)
+        # Show the book open at its first spread rather than part-way through a page turn,
+        # which is what makes the cover, pastedown and page artwork all readable at once.
+        first_spread = int(getattr(tl, 'first_turn', 0))
+        mid = min(max(first_spread, 0), max(tl.frames - 1, 0))
         job = self._job(v, self._scratch('still'), frames=[mid], width=960, height=540)
         self._start(job, self._show_still)
 
@@ -1370,4 +1416,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
