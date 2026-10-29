@@ -422,7 +422,7 @@ class Studio(QMainWindow):
         f.addRow('Template', self.book_combo)
         self.page_count = QSpinBox()
         self.page_count.setRange(2, 2000)
-        self.page_count.setValue(50)
+        self.page_count.setValue(20)   # calibrated journal default; template overrides on load
         self.page_count.valueChanged.connect(self._update_summary)
         f.addRow('Page count (sheets)', self.page_count)
         row = QHBoxLayout()
@@ -626,6 +626,11 @@ class Studio(QMainWindow):
                 index = i
         self.book_combo.setCurrentIndex(index)
         self.book_combo.blockSignals(False)
+        # new projects follow the selected template's own sheet count
+        try:
+            self.page_count.setValue(int(self.books[index].get('page_count') or 20))
+        except Exception:
+            pass
 
     def _book(self):
         i = self.book_combo.currentIndex()
@@ -1365,3 +1370,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

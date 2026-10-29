@@ -1,0 +1,21 @@
+{
+  "name": "Leather Book - Development Preview",
+  "leather_color": "#6b3a1e",
+  "paper_color": "#e0c99a",
+  "paper_age": 0.55,
+  "burn": 0.6,
+  "page_aspect": 1.424,
+  "page_count": 20,
+  "stitching": true,
+  "thread_color": "#b08a5a",
+  "spine_bands": 4,
+  "emblem": null,
+  "emblem_style": "medallion",
+  "emblem_size": 0.42,
+  "emblem_y": 0.18,
+  "title_style": "deboss",
+  "title_size": 0.07,
+  "title_y": -0.08,
+  "title": "",
+  "bundle_version": "0.6.19"
+}

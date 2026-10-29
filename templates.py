@@ -65,13 +65,44 @@ def hex_to_linear(value):
     return tuple(out)
 
 
+def _read_json(path):
+    try:
+        return json.loads(Path(path).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+
+
 def ensure_starter_books():
-    """Copy the bundled starter book(s) into the user folder the first time."""
+    """Copy bundled starter books into the user folder, and refresh them on upgrade.
+
+    A bundled book is copied when it is missing - which is how the calibrated leather
+    book reaches users who already have an older install. An existing user book is left
+    completely alone unless the bundled copy is explicitly newer (``bundle_version``)
+    AND the user has never saved it, so nobody's customised template is overwritten.
+    """
     src = paths.resource_dir() / 'resources' / 'books'
     for folder in src.glob('*'):
+        if not folder.is_dir():
+            continue
         dest = paths.books_dir() / folder.name
-        if folder.is_dir() and not dest.exists():
+        bundled = _read_json(folder / 'book.json')
+        if not dest.exists():
             shutil.copytree(folder, dest)
+            continue
+        current = _read_json(dest / 'book.json')
+        if not bundled or not current:
+            continue
+        same = str(current.get('bundle_version') or '') == str(bundled.get('bundle_version') or '')
+        # a Legacy template is never refreshed: users may have customised it
+        if same or current.get('user_modified') or current.get('legacy') or bundled.get('legacy'):
+            continue
+        # Upgrade only the fields the bundle owns; everything else is preserved.
+        merged = dict(current)
+        merged.update({k: v for k, v in bundled.items() if k in
+                       ('page_aspect', 'page_count', 'front_exterior_image',
+                        'front_interior_image', 'back_exterior_image',
+                        'back_interior_image', 'spine_exterior_image', 'bundle_version')})
+        (dest / 'book.json').write_text(json.dumps(merged, indent=2), encoding='utf-8')
 
 
 def load(folder):
@@ -99,7 +130,10 @@ def save(book, new_image=None, art_images=None):
     """
     folder = Path(book.get('folder') or paths.books_dir() / slug(book['name']))
     folder.mkdir(parents=True, exist_ok=True)
+    book['user_modified'] = True      # protects this template from bundled upgrades
     data = {k: book.get(k, v) for k, v in DEFAULTS.items()}
+    if book.get('user_modified'):
+        data['user_modified'] = True
     if new_image:
         target = folder / ('emblem' + Path(new_image).suffix.lower())
         if Path(new_image).resolve() != target.resolve():
@@ -184,3 +218,6 @@ def for_scene(book):
         emblem_y=float(book['emblem_y']), title=book.get('title', ''), title_style=book['title_style'],
         title_size=float(book['title_size']), title_y=float(book['title_y']),
     )
+
+
+

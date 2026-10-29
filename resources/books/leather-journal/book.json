@@ -1,5 +1,5 @@
 {
-  "name": "Leather journal",
+  "name": "Legacy Journal",
   "leather_color": "#6b3a1e",
   "paper_color": "#e0c99a",
   "paper_age": 0.55,
@@ -16,5 +16,7 @@
   "title": "",
   "title_style": "deboss",
   "title_size": 0.07,
-  "title_y": -0.08
+  "title_y": -0.08,
+  "legacy": true,
+  "bundle_version": "0.6.19"
 }
