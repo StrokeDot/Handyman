@@ -4,7 +4,10 @@ name: Test renders
 # contact sheet to the "previews" branch so the look can be checked without a PC.
 on:
   push:
-    branches: [main]
+    # Validate on main and on every active development branch, so feature work is tested
+    # automatically. This workflow only renders previews and runs tests - it never touches
+    # main and never publishes a release (that is release.yml, main only).
+    branches: [main, 'feature/**', 'validation/**']
     paths:
       - book_scene.py
       - page_curl.py
@@ -15,6 +18,7 @@ on:
       - scene.py
       - live_view.py
       - app.py
+      - test_*.py
       - resources/**
       - tools/**
       - .github/workflows/preview.yml
@@ -24,7 +28,8 @@ permissions:
   contents: write
 
 concurrency:
-  group: previews
+  # One run per branch: a new push cancels the previous branch run, so results stay current.
+  group: previews-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

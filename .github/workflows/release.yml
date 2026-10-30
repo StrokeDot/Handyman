@@ -2,9 +2,11 @@ name: Build installer and publish release
 
 # A new release is made whenever APP_VERSION in version.py changes on main.
 # Every other push still builds and tests, so mistakes show up before a release.
+# Development branches build and test too, but the publish step is gated to main only
+# (see "Publish release"), so feature work can never create or alter a release.
 on:
   push:
-    branches: [main]
+    branches: [main, 'feature/**', 'validation/**']
   workflow_dispatch:
 
 permissions:
