@@ -976,13 +976,14 @@ class Studio(QMainWindow):
         # a fresh project starts with an empty timeline, not the previous one's clips
         self.recorded_clips = []
         self.edited_clips = None
-        try:
-            self.timeline_panel.editor.set_clips([])
-        except Exception:
-            pass
+        # TimelinePanel.set_clips is the supported API; the editor is private to it.
+        self.timeline_panel.set_clips([])
+        # Refresh everything that depends on the page list and the book choice.
+        self._update_summary()
+        self._refresh_live()
         self.status.setText(
-            f'New leather book ready - {self.page_count.value()} sheets. '
-            'Page art and timeline cleared. Press "Preview still" to see it.')
+            f'New leather book ready - {self.page_count.value()} sheets, '
+            '0 pages. Page art and timeline cleared. Press "Preview still" to see it.')
 
     def _save_project(self):
         path, _ = QFileDialog.getSaveFileName(self, 'Save project', self.settings.value('proj_dir', ''),
