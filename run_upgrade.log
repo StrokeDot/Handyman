@@ -1,0 +1,5 @@
+ok test_calibrated_book_is_the_default
+ok test_stale_bundle_fields_are_upgraded_when_not_customised
+ok test_upgrade_ships_calibrated_book_and_preserves_user
+ok test_user_modified_template_is_never_overwritten
+ALL 4 UPGRADE TESTS PASSED

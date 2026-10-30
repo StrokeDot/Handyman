@@ -1,0 +1,13 @@
+Traceback (most recent call last):
+  File "/home/runner/work/Handyman/Handyman/tools/ci_liveview.py", line 110, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/home/runner/work/Handyman/Handyman/tools/ci_liveview.py", line 62, in main
+    ('turn landing', t0 + int(tl.turn * 0.8)), ('second spread', tl.turn_start(1) + tl.turn + 2)]
+                                                                 ^^^^^^^^^^^^^^^^
+  File "/home/runner/work/Handyman/Handyman/clips.py", line 129, in turn_start
+    return self._turns[k].start
+           ~~~~~~~~~~~^^^
+IndexError: list index out of range
+QThread: Destroyed while thread '' is still running
+Aborted (core dumped)
