@@ -563,7 +563,11 @@ class LiveView(QOpenGLWidget):
             self._prism(*bm.sheet_slice(L, -1, j, L.left_rest_count), edge)
         if getattr(self, '_has_left_page', True):
             self._sheet(1.0, L.base_left + 0.0015, L.base_left + 0.0015, self._tex_pages['blank'], self._tex_pages['left'])
-        self._cover_art(L)
+        # Blender skips its procedural cover tooling when real artwork is supplied, because
+        # the artwork already carries the medallion, border and stitching. Match that here or
+        # the live view paints old procedural decoration on top of the new cover.
+        if not self.book.get('front_exterior_image'):
+            self._cover_art(L)
         gl.glPopMatrix()
         gl.glPopMatrix()
 
@@ -726,6 +730,8 @@ class LiveView(QOpenGLWidget):
 
     def _cover_art(self, L):
         """Emblem, title and stitching on the front cover (placed as on the closed book)."""
+        if self.book.get('front_exterior_image'):
+            return   # supplied artwork already contains its own tooling
         b = self.book
         cw, ch = L.cover_w, L.cover_h
         cx, z_top = cw / 2, 2 * L.hinge
@@ -790,4 +796,6 @@ class LiveView(QOpenGLWidget):
                 gl.glVertex3f(*bm.closed_to_open(L, x, y, z_top + 0.0006))
             gl.glEnd()
         gl.glEnable(gl.GL_LIGHTING)
+
+
 
