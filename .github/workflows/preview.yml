@@ -94,6 +94,18 @@ jobs:
       - name: Render with Cycles (CPU)
         run: python tools/ci_preview.py ~/blender/blender out cycles 2>&1 | tee out/run_cycles.log; exit ${PIPESTATUS[0]}
 
+      # Gate on the shipped template actually working: template present with all five
+      # panels, preview still aimed at the open first spread, and a real Blender render
+      # landing at the path the app's preview widget loads.
+      - name: Template and first-spread integration tests
+        env:
+          HANDYMAN_BLENDER: ${{ github.workspace }}/../blender/blender
+        run: |
+          python test_new_book_flow.py 2>&1 | tee out/run_new_book.log; exit ${PIPESTATUS[0]}
+
+      - name: Template upgrade / user-work preservation tests
+        run: python test_upgrade.py 2>&1 | tee out/run_upgrade.log; exit ${PIPESTATUS[0]}
+
       - name: Publish to the previews branch
         if: always()
         run: |

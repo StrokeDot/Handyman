@@ -24,6 +24,10 @@ def _version_key(path):
 
 def find_blender(saved=None):
     """Most recent Blender install, or None."""
+    # CI and portable installs can point at Blender explicitly.
+    env = os.environ.get('HANDYMAN_BLENDER')
+    if env and Path(env).is_file():
+        return str(env)
     if saved and Path(saved).is_file():
         return str(saved)
     candidates = []
@@ -117,5 +121,6 @@ def parse_line(line):
     if line == 'DONE':
         return ('done',)
     return ('log', line)
+
 
 

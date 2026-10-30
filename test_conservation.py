@@ -8,8 +8,7 @@ Each sheet contributes to exactly one category per frame:
 import sys
 from pathlib import Path
 
-WS = Path(r'C:\Users\Alejandro\Documents\deepseek-harness\default-workspace')
-sys.path.insert(0, str(WS / 'Handyman'))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import book_model as bm  # noqa: E402
 
 GAP = bm.SHEET_GAP
@@ -116,3 +115,4 @@ for label, a, b in (('p=0.000 -> 0.001', 0.0, 0.001), ('p=0.249 -> 0.251', 0.249
 
 print()
 print('PHASE 1 HARNESS: ALL CHECKS PASSED')
+

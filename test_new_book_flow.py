@@ -12,8 +12,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-WS = Path(r'C:\Users\Alejandro\Documents\deepseek-harness\default-workspace')
-REPO = WS / 'Handyman'
+REPO = Path(__file__).resolve().parent
 sys.path.insert(0, str(REPO))
 
 import templates  # noqa: E402
@@ -87,3 +86,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
