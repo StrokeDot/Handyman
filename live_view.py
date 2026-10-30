@@ -362,6 +362,10 @@ class LiveView(QOpenGLWidget):
         fits = self.values.get('page_fits') or []
         fit_of = lambda i: fits[i] if i is not None and i < len(fits) else None  # noqa: E731
         turns, left_i, sheets, right_i = layout_pages(len(images))
+        # Blender skips the resting left page when there is no left-hand page yet (the first
+        # spread shows the front pastedown). The live view must match, or it draws an extra
+        # blank sheet over the pastedown.
+        self._has_left_page = left_i is not None
         self._tex_pages = {'blank': self._upload('blank', page_image(book, aspect, None, blend, seed=1)),
                            'left': self._upload('left', page_image(book, aspect, get(left_i), blend, seed=2, fit=fit_of(left_i))),
                            'right': self._upload('right', page_image(book, aspect, get(right_i), blend, seed=3, fit=fit_of(right_i)))}
@@ -557,7 +561,8 @@ class LiveView(QOpenGLWidget):
         self._endpaper(-L.page_w - m, 0, -hy, hy, endpaper, self._tex_surface.get('front_interior_image') or self._tex_leather, uv=self._surface_uv('front_interior_image'))
         for j in range(L.left_rest_count):
             self._prism(*bm.sheet_slice(L, -1, j, L.left_rest_count), edge)
-        self._sheet(1.0, L.base_left + 0.0015, L.base_left + 0.0015, self._tex_pages['blank'], self._tex_pages['left'])
+        if getattr(self, '_has_left_page', True):
+            self._sheet(1.0, L.base_left + 0.0015, L.base_left + 0.0015, self._tex_pages['blank'], self._tex_pages['left'])
         self._cover_art(L)
         gl.glPopMatrix()
         gl.glPopMatrix()
@@ -785,3 +790,4 @@ class LiveView(QOpenGLWidget):
                 gl.glVertex3f(*bm.closed_to_open(L, x, y, z_top + 0.0006))
             gl.glEnd()
         gl.glEnable(gl.GL_LIGHTING)
+

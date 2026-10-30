@@ -1258,7 +1258,7 @@ class Studio(QMainWindow):
 
     def _show_still(self, folder):
         self._busy(False)
-        self.status.setText('Preview ready: the first page mid-turn.')
+        self.status.setText('Preview ready: the book at its first spread (Blender render).')
         self.preview_frames = [str(Path(folder) / 'frame_000000.png')]
         self.preview_index = 0
         self._show_view(1)
@@ -1437,5 +1437,6 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
