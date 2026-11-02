@@ -1,0 +1,19 @@
+{
+  "name": "Journal (real pages)",
+  "engine": "journal",
+  "page_aspect": 1.4318,
+  "page_count": 10,
+  "leather_color": "#3a1f10",
+  "paper_color": "#e8cf9f",
+  "front_exterior_image": "front_ext.png",
+  "back_exterior_image": "back_ext.png",
+  "front_interior_image": "front_in.png",
+  "back_interior_image": "back_in.png",
+  "spine_exterior_image": "spine.png",
+  "leather_image": "leather.png",
+  "joint_image": "joint.png",
+  "paper_image": "paper.png",
+  "paper_odd_image": "paper_odd.png",
+  "paper_even_image": "paper_even.png",
+  "bundle_version": "0.7.0"
+}

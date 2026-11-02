@@ -1,5 +1,10 @@
 # Changes
 
+## Unreleased (branch journal-engine)
+- New book engine for the **Journal (real pages)** template. Every sheet is a real solid sheet cut to the page's outline (rounded fore-edge corners, square at the spine), paper never stretches, the page under a turning page is always the real next page, and landed pages are kept above the open cover along their whole width, so the cover never shows through the gutter.
+- The template decides the engine (`"engine": "journal"` in book.json); every other book still uses the original engine.
+- Swap the covers by replacing the images in the template folder; the dimensions stay the same.
+
 ## 0.6.17
 - Fixed the page shape: `page_aspect` is page height divided by width, and 0.6.15 set it to 0.702, which made the page landscape. Portrait page art (2264x3225) needs 1.424, so the journal is portrait again.
 

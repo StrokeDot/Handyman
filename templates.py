@@ -24,6 +24,11 @@ DEFAULTS = {
     'back_interior_image': 'resources/templates/panels/back_in.png',
     'spine_exterior_image': 'resources/templates/panels/spine_ext.png',
     'inside_leather_image': None,
+    # 'classic' = the original book; 'journal' = real-page engine (journal_scene.py)
+    'engine': 'classic',
+    'paper_odd_image': None,      # parchment for right-hand pages (square corner at the spine)
+    'paper_even_image': None,     # parchment for left-hand pages
+    'joint_image': None,          # strip that covers the groove at the open cover's hinge
     'paper_color': '#e0c99a',
     'paper_age': 0.55,          # blotches and yellowing, 0..1
     'burn': 0.6,                # darkened page edges, 0..1
@@ -192,6 +197,11 @@ def for_scene(book):
         p = Path(book['folder']) / book['emblem']
         emblem = str(p) if p.exists() else None
     return dict(
+        engine=book.get('engine') or 'classic',
+        page_count=book.get('page_count'),
+        paper_odd_image=_texture_path(book, book.get('paper_odd_image')),
+        paper_even_image=_texture_path(book, book.get('paper_even_image')),
+        joint_image=_texture_path(book, book.get('joint_image')),
         leather_color=hex_to_linear(book['leather_color']),
         back_cover_color=hex_to_linear(book.get('back_cover_color') or book['leather_color']),
         inside_cover_color=hex_to_linear(book.get('inside_cover_color') or book['paper_color']),

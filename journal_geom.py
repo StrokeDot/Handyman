@@ -1,0 +1,290 @@
+"""Journal engine: book geometry and motion. Pure numpy (no Blender, no Qt), so the Blender
+render and the live view can draw from the same shapes.
+
+Call configure(page_count, page_aspect) before use (defaults: the 20-page journal).
+
+Book space: x across (spine near x = 0, right-hand pages at x > 0), y up the page
+(head at +y), z up from the table (table at z = 0).
+
+Every sheet is inextensible: each row of a sheet is a planar curve in (x, z) defined by
+its tangent angle a(s) along the arc length s from the binding, so paper never stretches.
+"""
+import math
+import numpy as np
+
+# ---- dimensions ------------------------------------------------------------------------
+W = 1.0                    # page width (binding to fore-edge)
+H = 1.4318                 # page height (parchment aspect 1406 / 982)
+N_SHEETS = 10             # 20 pages: a slim journal
+PITCH = 0.0030             # spacing of sheets in the stack (~0.45 mm on a 15 cm page)
+SHEET_T = 0.0024           # physical sheet thickness (the gap between sheets reads as page lines)
+T = N_SHEETS * PITCH       # text block thickness
+TB = 0.028                 # board thickness
+XB = -0.03                 # spine edge of the boards (the joint sits a little outside the text block)
+WC = 1.08                  # board width
+HC = 1.60                  # board height
+ZJ = TB + T                # front-board hinge height (inner face of the closed front board)
+GUTTER_DIP = 0.006         # how far the top page dips into the gutter
+SPINE_BULGE = 0.03
+RC = 0.035                 # fore-edge corner radius of every sheet (measured from the parchment art)
+
+NX, NY = 64, 24            # grid of a turning sheet (NY = rows between the corner bands)
+NX_REST, NY_REST = 40, 2   # grid of a sheet that never moves
+
+
+def pchip(xk, yk):
+    """Monotone cubic interpolation through keyframes (no overshoot), returns f(x)."""
+    xk = np.asarray(xk, float)
+    yk = np.asarray(yk, float)
+    h = np.diff(xk)
+    d = np.diff(yk) / h
+    m = np.zeros_like(yk)
+    for i in range(1, len(xk) - 1):
+        if d[i - 1] * d[i] > 0:
+            w1, w2 = 2 * h[i] + h[i - 1], h[i] + 2 * h[i - 1]
+            m[i] = (w1 + w2) / (w1 / d[i - 1] + w2 / d[i])
+    m[0], m[-1] = d[0], d[-1]
+    if d[0] * m[0] <= 0:
+        m[0] = 0.0
+    if d[-1] * m[-1] <= 0:
+        m[-1] = 0.0
+
+    def f(x):
+        x = np.clip(np.asarray(x, float), xk[0], xk[-1])
+        i = np.clip(np.searchsorted(xk, x, side='right') - 1, 0, len(xk) - 2)
+        t = (x - xk[i]) / h[i]
+        h00 = (1 + 2 * t) * (1 - t) ** 2
+        h10 = t * (1 - t) ** 2
+        h01 = t * t * (3 - 2 * t)
+        h11 = t * t * (t - 1)
+        return h00 * yk[i] + h10 * h[i] * m[i] + h01 * yk[i + 1] + h11 * h[i] * m[i + 1]
+    return f
+
+
+# ---- curves from angle functions --------------------------------------------------------
+S = np.linspace(0.0, W, NX)
+
+
+def integrate(a, s=S, p0=(0.0, 0.0)):
+    """Positions along a curve with tangent angle a(s) (trapezoid rule)."""
+    ds = np.diff(s)
+    c, n = np.cos(a), np.sin(a)
+    x = np.concatenate([[0.0], np.cumsum((c[1:] + c[:-1]) * 0.5 * ds)])
+    z = np.concatenate([[0.0], np.cumsum((n[1:] + n[:-1]) * 0.5 * ds)])
+    return x + p0[0], z + p0[1]
+
+
+def profile(s, L, p=2.0):
+    return np.clip(1.0 - s / L, 0.0, 1.0) ** p
+
+
+def bisect(f, lo, hi, it=60):
+    flo = f(lo)
+    for _ in range(it):
+        mid = 0.5 * (lo + hi)
+        fm = f(mid)
+        if (fm > 0) == (flo > 0):
+            lo, flo = mid, fm
+        else:
+            hi = mid
+    return 0.5 * (lo + hi)
+
+
+# ---- the front board when open ----------------------------------------------------------
+def rot(theta, v):
+    c, s = math.cos(theta), math.sin(theta)
+    return np.array([v[0] * c - v[1] * s, v[0] * s + v[1] * c])
+
+
+def _open_angle():
+    # the open board rests on the table: its far outer corner touches z = 0
+    def f(beta):
+        corner = np.array([XB, ZJ]) + rot(math.pi + beta, (WC, TB))
+        return corner[1]
+    beta = bisect(f, 0.0, 0.6)
+    return math.pi + beta, beta
+
+
+THETA_OPEN, BETA = _open_angle()
+J = np.array([XB, ZJ])
+
+
+# ---- sheet stack: binding points and resting shapes --------------------------------------
+LR = 0.26      # length of the gutter curve on the right
+LL = 0.30      # length of the gutter curve on the left
+
+
+def binding(j):
+    """Binding point of sheet j (0 = bottom, next to the back board)."""
+    zlo = TB + 0.004
+    zhi = TB + T - GUTTER_DIP
+    return np.array([0.0, zlo + (j + 0.5) / N_SHEETS * (zhi - zlo)])
+
+
+BSTEP = (T - GUTTER_DIP - 0.004) / N_SHEETS
+UP_LEFT = np.array([0.5, 0.866])     # each turned page binds just above the one turned before it
+
+
+def binding_left(layer):
+    """Binding point of the sheet that landed on the left as `layer` (0 = first turned).
+    The bound edge rolls as pages turn, so later pages bind above earlier ones and the left
+    stack never crosses itself in the gutter."""
+    # The first turned page binds just above the open cover's hinge, so its gutter curve never
+    # dips under the cover; each later page binds one sheet higher along UP_LEFT.
+    q, d, _ = left_line(0)
+    base = q + d * ((0.0 - q[0]) / d[0]) + np.array([0.0, 0.0003])   # first page's support line, at the spine
+    return base + layer * (1.05 * PITCH / UP_LEFT[1]) * UP_LEFT
+
+
+def flat_right(j):
+    return TB + (j + 0.5) * PITCH
+
+
+def right_rest_angle(j, s=S):
+    """Tangent angle along a resting right-hand sheet: rises out of the gutter, then flat."""
+    p = binding(j)
+    rise = flat_right(j) - p[1]
+    g = lambda d: integrate(d * profile(s, LR), s)[1][-1] - rise
+    d = bisect(g, -0.5, 1.2)
+    return d * profile(s, LR)
+
+
+def left_line(layer):
+    """Support line for a sheet landed on the left: (point, direction, normal)."""
+    d = rot(THETA_OPEN, (1.0, 0.0))            # along the open board, away from the spine
+    nrm = rot(THETA_OPEN, (0.0, -1.0))          # inner-face normal (points up, away from board)
+    off = (layer + 0.5) * PITCH + 0.0012
+    return J + nrm * off, d, nrm
+
+
+def left_rest_angle(j, layer, s=S):
+    p = binding_left(layer)
+    q, d, nrm = left_line(layer)
+    final = math.atan2(d[1], d[0]) % (2 * math.pi)
+
+    def g(gam):
+        a = final - gam * profile(s, LL)
+        x, z = integrate(a, s, p)
+        k = np.searchsorted(s, LL)
+        pt = np.array([x[k], z[k]])
+        return float(np.dot(pt - q, nrm))        # signed distance above the support line
+    gam = bisect(lambda gm: g(gm), -0.2, 2.5)
+    return final - gam * profile(s, LL)
+
+
+# ---- the turn -----------------------------------------------------------------------------
+# root: how far the sheet has rotated from its right-hand shape to its left-hand shape
+E = pchip([0.0, 0.14, 0.24, 0.50, 0.74, 0.88, 1.0],
+          [0.0, 0.0, 0.05, 0.50, 0.93, 1.0, 1.0])
+# bend: extra angle at the outer edge; + = outer edge leads (lift), - = trails (air drag, landing)
+B = pchip([0.0, 0.07, 0.17, 0.30, 0.42, 0.52, 0.62, 0.72, 0.84, 0.94, 1.0],
+          [0.0, 0.30, 0.95, 1.00, 0.90, 0.50, 0.0, -0.42, -0.36, -0.07, 0.0])
+LEAD = 0.16        # how far the top outer corner trails the bottom outer corner
+
+
+def turning_angles(aR, aL, u, v):
+    """Angle function for each row v (0 = bottom edge .. 1 = top edge) at turn progress u.
+
+    Every point runs on its own clock: the binding edge (s = 0) and the whole bottom edge run
+    on the sheet's clock, while points further out towards the top edge run a little behind,
+    so the bottom outer corner (where the hand grabs) leads and the top outer corner trails.
+    The binding never twists, and every point reaches the rest shape at u = 1."""
+    sig = (S / W) ** 1.4
+    rows = []
+    for vv in v:
+        lag = LEAD * vv * (S / W) ** 0.8
+        ue = np.clip((u - lag) / (1.0 - lag), 0.0, 1.0)
+        e = E(ue)
+        rows.append((1 - e) * aR + e * aL + B(ue) * sig)
+    return np.array(rows)
+
+
+def rows(n_mid):
+    """Row positions v (0 = bottom edge .. 1 = top edge): dense bands at the head and tail so
+    the rounded fore-edge corners are cut cleanly, n_mid rows in between."""
+    phi = np.linspace(0.0, math.pi / 2, 7)
+    d = RC * (1.0 - np.cos(phi)) / H
+    mid = np.linspace(RC / H, 1.0 - RC / H, n_mid + 2)[1:-1]
+    return np.concatenate([d, mid, (1.0 - d)[::-1]])
+
+
+def smax(v):
+    """Width of the sheet along row v: the fore-edge corners are rounded with radius RC."""
+    d = min(v, 1.0 - v) * H
+    if d >= RC:
+        return W
+    return W - RC + math.sqrt(max(0.0, RC * RC - (RC - d) ** 2))
+
+
+def sheet_grid(j, state, layer_left=0, u=0.0, ny=NY):
+    """Mid-surface vertices (rows, NX, 3) of sheet j, cut to the page outline.
+    state: 'right', 'left', or 'turn' (with progress u and landing layer)."""
+    v = rows(ny)
+    ny = len(v)
+    p = binding(j)
+    aR = right_rest_angle(j)
+    if state == 'left':
+        p = binding_left(layer_left)
+    elif state == 'turn':
+        w = float(E(u))
+        q = binding_left(layer_left)
+        p = (1 - w) * p + w * q + np.array([1.2 * BSTEP * math.sin(math.pi * w), 0.0])
+    if state == 'right':
+        A = np.repeat(aR[None, :], ny, 0)
+    else:
+        aL = left_rest_angle(j, layer_left)
+        if state == 'left':
+            A = np.repeat(aL[None, :], ny, 0)
+        else:
+            A = turning_angles(aR, aL, u, v)
+    out = np.zeros((ny, NX, 3))
+    for i in range(ny):
+        x, z = integrate(A[i], S, p)
+        s2 = S * smax(v[i]) / W                  # same paper, trimmed at the rounded corners
+        out[i, :, 0] = np.interp(s2, S, x)
+        out[i, :, 2] = np.interp(s2, S, z)
+        out[i, :, 1] = -H / 2 + v[i] * H
+    return out
+
+
+# ---- spine leather ----------------------------------------------------------------------
+def bezier(p0, p1, p2, p3, n=40):
+    t = np.linspace(0, 1, n)[:, None]
+    return ((1 - t) ** 3) * p0 + 3 * ((1 - t) ** 2) * t * p1 + 3 * (1 - t) * t * t * p2 + t ** 3 * p3
+
+
+def _arclen(c):
+    return float(np.sum(np.linalg.norm(np.diff(c, axis=0), axis=1)))
+
+
+def spine_curve(theta, n=40):
+    """Outer surface of the spine leather from the back board to the front board.
+    The back stays rounded (hollow back); opening the cover creases the leather at the joint."""
+    a = np.array([XB, 0.0])
+    b = J + rot(theta, (0.0, TB))
+    k = 4 / 3 * SPINE_BULGE * (1.0 - 0.6 * min(1.0, theta / math.pi))   # draws in as the cover opens
+    return bezier(a, a + np.array([-k, 0.0]), b + np.array([-k, 0.0]), b, n)
+
+
+SPINE_LEN = _arclen(bezier(np.array([XB, 0.0]), np.array([XB - 4 / 3 * SPINE_BULGE, 0.0]),
+                           np.array([XB - 4 / 3 * SPINE_BULGE, 2 * TB + T]), np.array([XB, 2 * TB + T])))
+
+
+# ---- reconfigure for a template ------------------------------------------------------------
+def configure(page_count=None, page_aspect=None, pitch=None, sheet_t=None):
+    """Set the book's sheet count and page shape, and recompute everything derived from them."""
+    global N_SHEETS, H, PITCH, SHEET_T, T, ZJ, THETA_OPEN, BETA, J, BSTEP, HC
+    if page_count:
+        N_SHEETS = int(page_count)
+    if page_aspect:
+        H = float(page_aspect) * W
+        HC = H + 0.17
+    if pitch:
+        PITCH = float(pitch)
+    if sheet_t:
+        SHEET_T = float(sheet_t)
+    T = N_SHEETS * PITCH
+    ZJ = TB + T
+    J = np.array([XB, ZJ])
+    THETA_OPEN, BETA = _open_angle()
+    BSTEP = (T - GUTTER_DIP - 0.004) / N_SHEETS

@@ -1,5 +1,6 @@
 """Finds Blender and runs book_scene.py in the background. No Qt here, so it is testable."""
 import glob
+import json
 import os
 import re
 import shutil
@@ -10,6 +11,7 @@ import paths
 import templates
 
 SCENE_SCRIPT = paths.resource_dir() / 'book_scene.py'
+JOURNAL_SCRIPT = paths.resource_dir() / 'journal_scene.py'
 GLTF_SCRIPT = paths.resource_dir() / 'image_book_export.py'
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 
@@ -100,8 +102,18 @@ def make_job(settings, book, images, out_dir, frames=None, width=None, height=No
     )
 
 
+def scene_script(job_path):
+    """The Blender script for a job: the template decides which book engine draws it."""
+    try:
+        engine = json.loads(Path(job_path).read_text(encoding='utf-8'))['book'].get('engine')
+    except (OSError, ValueError, KeyError, AttributeError):
+        engine = None
+    return JOURNAL_SCRIPT if engine == 'journal' else SCENE_SCRIPT
+
+
 def command(blender, job_path):
-    return [blender, '-b', '--factory-startup', '-noaudio', '-P', str(SCENE_SCRIPT), '--', str(job_path)]
+    return [blender, '-b', '--factory-startup', '-noaudio', '-P', str(scene_script(job_path)), '--',
+            str(job_path)]
 
 
 def command_gltf(blender, job_path):
