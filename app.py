@@ -426,6 +426,7 @@ class Studio(QMainWindow):
         self.book_combo = QComboBox()
         self.book_combo.currentIndexChanged.connect(self._update_summary)
         self.book_combo.currentIndexChanged.connect(self._camera_changed)
+        self.book_combo.activated.connect(self._template_chosen)
         f.addRow('Template', self.book_combo)
         self.page_count = QSpinBox()
         self.page_count.setRange(2, 2000)
@@ -638,6 +639,11 @@ class Studio(QMainWindow):
             self.page_count.setValue(int(self.books[index].get('page_count') or 20))
         except Exception:
             pass
+
+    def _template_chosen(self, index):
+        """Picking a template by hand also takes its own sheet count (a journal is 10 sheets)."""
+        if 0 <= index < len(self.books) and self.books[index].get('page_count'):
+            self.page_count.setValue(int(self.books[index]['page_count']))
 
     def _book(self):
         i = self.book_combo.currentIndex()

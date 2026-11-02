@@ -288,3 +288,54 @@ def configure(page_count=None, page_aspect=None, pitch=None, sheet_t=None):
     J = np.array([XB, ZJ])
     THETA_OPEN, BETA = _open_angle()
     BSTEP = (T - GUTTER_DIP - 0.004) / N_SHEETS
+
+
+# ---- shared by the Blender render and the live preview -----------------------------------
+COVER_MARGIN = 0.09        # cover overhang the camera keeps in frame (around the pages)
+
+
+def solid_from_grid(mid, thick=None):
+    """Top/bottom vertices (2 * rows * cols, 3) of a solid sheet from its mid-surface grid."""
+    thick = SHEET_T if thick is None else thick
+    dx = np.gradient(mid, axis=1)
+    dy = np.gradient(mid, axis=0)
+    nrm = np.cross(dx, dy)
+    nrm /= np.linalg.norm(nrm, axis=2, keepdims=True) + 1e-12
+    top = mid + nrm * thick / 2
+    bot = mid - nrm * thick / 2
+    return np.concatenate([top.reshape(-1, 3), bot.reshape(-1, 3)])
+
+
+def sheet_uvs(n_mid, nx=None):
+    """UVs (rows * cols, 2) of the front face; the picture is trimmed where the paper is."""
+    nx = NX if nx is None else nx
+    vv = rows(n_mid)
+    return np.array([(k / (nx - 1) * smax(v) / W, v) for v in vv for k in range(nx)], dtype=float)
+
+
+def sheet_state(k, t):
+    """(mid-surface grid) of sheet k (0 = first sheet inside the cover) at turn progress t."""
+    j = N_SHEETS - 1 - k
+    if t <= 0.0:
+        return sheet_grid(j, 'right', ny=NY)
+    if t >= 1.0:
+        return sheet_grid(j, 'left', k, ny=NY)
+    return sheet_grid(j, 'turn', k, float(t), ny=NY)
+
+
+THETA_EASE = pchip([0.0, 0.25, 0.55, 0.80, 0.92, 1.0], [0.0, 0.10, 0.47, 0.88, 0.985, 1.0])
+
+
+def cover_angle(opening):
+    """Hinge angle of the front cover for opening progress 0..1."""
+    return float(THETA_EASE(opening)) * THETA_OPEN
+
+
+def camera(cam_settings, frac, aspect):
+    """The app's camera settings applied to this book: (position, right, up, forward, lens).
+    Same framing rule as the classic book, so presets, zoom, shift and slow moves all work."""
+    import camera_fit as cf
+    top = ZJ
+    pts = cf.book_points(W, H, COVER_MARGIN, top)
+    return cf.shot(cam_settings, frac, (0.0, 0.0, top), 2 * (W + COVER_MARGIN), H + 2 * COVER_MARGIN,
+                   pts, aspect)

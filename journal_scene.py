@@ -412,7 +412,6 @@ def surface(name, path, fallback_rgb, **kw):
     return color_material(name, tuple(fallback_rgb), 0.6)
 
 
-THETA = G.pchip([0.0, 0.25, 0.55, 0.80, 0.92, 1.0], [0.0, 0.10, 0.47, 0.88, 0.985, 1.0])
 
 
 def build(job):
@@ -492,14 +491,7 @@ def build(job):
 
 
 def sheet_coords(k, t):
-    j = G.N_SHEETS - 1 - k
-    if t <= 0.0:
-        grid = G.sheet_grid(j, 'right', ny=G.NY)
-    elif t >= 1.0:
-        grid = G.sheet_grid(j, 'left', k, ny=G.NY)
-    else:
-        grid = G.sheet_grid(j, 'turn', k, float(t), ny=G.NY)
-    return solid_from_grid(grid, G.SHEET_T)
+    return G.solid_from_grid(G.sheet_state(k, t))
 
 
 def setup_lights_world():
@@ -523,15 +515,12 @@ def setup_lights_world():
     table.is_shadow_catcher = True
 
 
-def place_camera(cam, open_amount):
-    """Open-book framing; eases back while the cover swings up so it stays in frame."""
-    k = G.HC / 1.60
-    tgt = np.array([-0.04, -0.04, 0.12]) * k
-    dist = 4.55 * k + 0.75 * k * math.sin(math.pi * open_amount) ** 2
-    az, el = 0.0, math.radians(54.0)
-    loc = tgt + dist * np.array([math.sin(az) * math.cos(el), -math.cos(az) * math.cos(el), math.sin(el)])
-    cam.location = loc
-    cam.rotation_euler = _look(tgt - loc)
+def place_camera(cam, job, frac):
+    """The app's camera settings (preset, zoom, shift, slow move), framed like the live preview."""
+    pos, r, u, f, lens = G.camera(job['cam'], frac, job['width'] / job['height'])
+    from mathutils import Matrix
+    cam.matrix_world = Matrix([[r[i], u[i], -f[i], pos[i]] for i in range(3)] + [[0.0, 0.0, 0.0, 1.0]])
+    cam.data.lens = float(lens)
 
 
 def _look(d):
@@ -555,7 +544,9 @@ def main():
     root, pivot, sp, core, obs = build(job)
     setup_lights_world()
     cam_data = bpy.data.cameras.new('Camera')
-    cam_data.lens = 50
+    cam_data.sensor_width = 36.0
+    cam_data.sensor_fit = 'HORIZONTAL'
+    cam_data.clip_start, cam_data.clip_end = 0.05, 200
     cam = bpy.data.objects.new('Camera', cam_data)
     sc_b.collection.objects.link(cam)
     sc_b.camera = cam
@@ -572,19 +563,20 @@ def main():
     out = job['out_dir']
     os.makedirs(out, exist_ok=True)
     last = [None] * len(obs)
+    base_loc = tuple(root.location)
     last_theta = None
     started = time.time()
     log(f'TOTAL {len(frames)}')
     for i, f in enumerate(frames):
         pose = sc.evaluate(f)
-        o = float(pose['cover_progress'])
-        theta = float(THETA(o)) * G.THETA_OPEN
+        theta = G.cover_angle(float(pose['cover_progress']))
+        root.location = (base_loc[0] + float(pose.get('cover_slide', 0.0)), base_loc[1], base_loc[2])
         pivot.rotation_euler = (0.0, -theta, 0.0)
         if theta != last_theta:
             set_coords(sp.data, spine_coords(theta))
             set_coords(core.data, core_coords(theta))
             last_theta = theta
-        place_camera(cam, o)
+        place_camera(cam, job, pose['camera_frac'])
         prog = pose['sheet_progress']
         for k, ob in enumerate(obs):
             t = float(prog[k]) if k < len(prog) else 0.0

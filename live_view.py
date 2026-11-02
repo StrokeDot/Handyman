@@ -17,6 +17,8 @@ import paths
 import scene
 from drag import DragState
 from page_curl import grid_faces, grid_uvs, layout_pages, sheet_vertices
+import journal_geom
+from journal_live import JournalPreview
 
 try:
     from OpenGL import GL as gl
@@ -238,6 +240,10 @@ class LiveView(QOpenGLWidget):
                                  clip_list=values.get('clip_list'))
         self.layout = self.scene.layout
         self.timeline = self.scene.timeline
+        self.journal = None
+        if book.get('engine') == 'journal':
+            # same shapes and camera as journal_scene.py (the final render)
+            self.journal = JournalPreview(book, values.get('page_count') or book.get('page_count'))
         self.frame = min(self.frame, self.timeline.frames - 1)
         self._sheet_cache.clear()
         self.cam = dict(v.get('cam', self.cam))
@@ -354,7 +360,46 @@ class LiveView(QOpenGLWidget):
         self._textures[key] = tid
         return tid
 
+    def _build_journal_textures(self):
+        book, images = self.book, self.images
+        tex = {}
+        for key, field in (('front_ext', 'front_exterior_image'), ('back_ext', 'back_exterior_image'),
+                           ('front_in', 'front_interior_image'), ('back_in', 'back_interior_image'),
+                           ('spine', 'spine_exterior_image')):
+            p = _resolve_texture(book, field)
+            img = QImage(str(p)) if p else QImage()
+            if not img.isNull():
+                tex[key] = self._upload(('j', key), img.scaled(1024, 1024, Qt.AspectRatioMode.KeepAspectRatio,
+                                                               Qt.TransformationMode.SmoothTransformation))
+        papers = {}
+        for key in ('paper_odd', 'paper_even'):
+            p = _resolve_texture(book, f'{key}_image') or _resolve_texture(book, 'paper_image')
+            img = QImage(str(p)) if p else QImage()
+            if not img.isNull():
+                papers[key] = img.scaled(TEX_W * 2, int(TEX_W * 2 * float(book.get('page_aspect', 1.4))),
+                                         Qt.AspectRatioMode.IgnoreAspectRatio,
+                                         Qt.TransformationMode.SmoothTransformation).convertToFormat(
+                                             QImage.Format.Format_RGBA8888)
+                tex[key] = self._upload(('j', key), papers[key])
+        for i, path in enumerate(images):
+            if not path:
+                continue
+            src = QImage(str(path))
+            base = papers.get('paper_odd' if i % 2 == 0 else 'paper_even')
+            if src.isNull() or base is None:
+                continue
+            img = base.copy()
+            p = QPainter(img)
+            p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            p.drawImage(QRectF(0, 0, img.width(), img.height()), src)   # full page, like the render
+            p.end()
+            tex[('page', i)] = self._upload(('j', 'page', i), img)
+        self._journal_tex = tex
+        self._dirty_textures = False
+
     def _build_textures(self):
+        if getattr(self, 'journal', None) is not None:
+            return self._build_journal_textures()
         book, images = self.book, self.images
         aspect = float(book.get('page_aspect', 1.4))
         blend = self.values.get('blend', 'ink')
@@ -484,6 +529,8 @@ class LiveView(QOpenGLWidget):
         f = self.frame
         pose = self.scene.evaluate(f)
         frac = pose['camera_frac']
+        if getattr(self, 'journal', None) is not None:
+            return self._paint_journal(pose, frac, x0, y0, w, h)
 
         # Camera, exactly as the final render frames it.
         top = L.camera_top()
@@ -569,6 +616,43 @@ class LiveView(QOpenGLWidget):
         if not self.book.get('front_exterior_image'):
             self._cover_art(L)
         gl.glPopMatrix()
+        gl.glPopMatrix()
+
+    def _paint_journal(self, pose, frac, x0, y0, w, h):
+        """Journal-engine book: shapes and camera from journal_geom, exactly as the render."""
+        journal_geom.configure(journal_geom.N_SHEETS, float(self.book.get('page_aspect', 1.4318)))
+        cam, r, u, fw, lens = journal_geom.camera(self.cam, frac, self.aspect)
+        gl.glViewport(x0, y0, w, h)
+        gl.glMatrixMode(gl.GL_PROJECTION)
+        gl.glLoadIdentity()
+        th = cf.SENSOR / 2 / lens
+        near, far = 0.05, 200.0
+        gl.glFrustum(-th * near, th * near, -th / self.aspect * near, th / self.aspect * near, near, far)
+        gl.glMatrixMode(gl.GL_MODELVIEW)
+        view = np.eye(4)
+        view[0, :3], view[1, :3], view[2, :3] = r, u, -np.asarray(fw)
+        view[:3, 3] = -view[:3, :3] @ cam
+        gl.glLoadMatrixd(view.T.ravel())
+        key = np.array([-2.3, -2.4, 3.8])       # the render's key light
+        gl.glLightfv(gl.GL_LIGHT0, gl.GL_POSITION, (*(key / np.linalg.norm(key)), 0.0))
+        gl.glLightfv(gl.GL_LIGHT1, gl.GL_POSITION, (0.6, -0.4, 0.5, 0.0))
+        gl.glEnable(gl.GL_LIGHTING)
+        tf = self.values.get('transform') or {}
+        pos = tf.get('pos', (0.0, 0.0, 0.0))
+        rot = tf.get('rot', (0.0, 0.0, 0.0))
+        scale = tf.get('scale', (1.0, 1.0, 1.0))
+        gl.glPushMatrix()
+        gl.glTranslatef(float(pos[0]), float(pos[1]), float(pos[2]))
+        gl.glRotatef(float(rot[2]), 0, 0, 1)
+        gl.glRotatef(float(rot[1]), 0, 1, 0)
+        gl.glRotatef(float(rot[0]), 1, 0, 0)
+        gl.glScalef(float(scale[0]), float(scale[1]), float(scale[2]))
+        if self.drag_sheet is not None:
+            pose = dict(pose, sheet_progress=list(pose['sheet_progress']))
+            if self.drag_sheet < len(pose['sheet_progress']):
+                pose['sheet_progress'][self.drag_sheet] = self.drag_progress
+        self.journal.draw(pose, self._journal_tex, _hex_rgb(self.book.get('leather_color')),
+                          _hex_rgb(self.book.get('paper_color')))
         gl.glPopMatrix()
 
     # ------------------------------------------------------------- drawing

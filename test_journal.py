@@ -67,3 +67,13 @@ def test_journal_template_uses_the_journal_script():
         assert bb.scene_script(job).name == 'journal_scene.py'
         job.write_text(json.dumps({'book': {'engine': 'classic'}}), encoding='utf-8')
         assert bb.scene_script(job).name == 'book_scene.py'
+
+
+def test_app_camera_settings_frame_the_journal():
+    import camera_fit as cf
+    G.configure(10, 1.4318)
+    for name, preset in cf.PRESETS.items():
+        cam, r, u, f, lens = G.camera(dict(preset, zoom=1.0, move='none'), 0.0, 16 / 9)
+        assert np.all(np.isfinite(cam)) and lens > 0, name
+        # the book centre is in front of the camera
+        assert np.dot(np.array([0.0, 0.0, G.ZJ]) - cam, f) > 0, name
