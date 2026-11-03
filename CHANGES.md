@@ -1,5 +1,11 @@
 # Changes
 
+## 0.7.2
+- Fixed: adding pages did not add page turns to the timeline, so the video stayed at one turn (3.7 s) even with 20 pages. The timeline now follows the page list - one turn per two pages. If you edited the timeline by hand, your clips are kept and turns are only added or removed at the end.
+- Fixed: "Hold at end" was ignored once the timeline had clips, so the video stopped the instant the last page landed.
+- The video length shown under the preview is now the length that actually plays and renders.
+- Page list labels: page 1 is on the right (the inside cover is on the left), as in the book.
+
 ## 0.7.1
 - One book: **Leather Journal** (the real-pages journal). The old "Leather Book - Development Preview" and "Legacy Journal" are removed from the list; on update they are moved to the `_retired` folder inside your books folder, so nothing you changed in them is lost.
 - "New Leather Book" now starts from the Leather Journal.

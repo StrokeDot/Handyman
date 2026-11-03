@@ -35,7 +35,7 @@ class Scene:
             else:
                 self.layout = bm.Layout(page_aspect, self.turns, open_at)
             self.turns = self.layout.turns   # follow any clamping the layout applied
-            self.timeline = ClipTimeline.from_clips(clips, fps)
+            self.timeline = ClipTimeline.from_clips(clips, fps, round(float(end_hold) * float(fps)))
         else:
             extra = list(recorded_clips or [])
             self.turns = int(turns) + len(extra)

@@ -133,7 +133,7 @@ def test_scene_from_clip_list():
              clip_to_dict(Clip('turn', 60, 30))]
     s = scene.Scene(2, 1.4, 0.04, page_count=20, clip_list=clips)
     assert s.turns == 2
-    assert s.frames == 90                       # last turn ends at 89
+    assert s.frames == 90 + 45                  # last turn ends at 89, then Hold at end (1.5 s)
     # one state entry per physical sheet (20), of which only 2 are scheduled to turn
     assert len(s.evaluate(0)['sheet_progress']) == 20
     assert s.evaluate(0)['sheet_progress'] == [0.0] * 20

@@ -150,20 +150,21 @@ class ClipTimeline:
         return clip
 
     @classmethod
-    def from_clips(cls, clips, fps):
-        """Build a timeline from an explicit clip list (used by the visual timeline editor)."""
+    def from_clips(cls, clips, fps, end=0):
+        """Build a timeline from an explicit clip list (used by the visual timeline editor).
+        end: frames to hold after the last clip (the "Hold at end" setting)."""
         obj = cls.__new__(cls)
         obj.fps = float(fps)
         obj.clips = list(clips)
         obj._open = next((c for c in obj.clips if c.kind == 'open'), None)
         obj._turns = sorted((c for c in obj.clips if c.kind == 'turn'), key=lambda c: c.start)
         obj.turns = len(obj._turns)
-        obj.frames = max((c.end for c in obj.clips), default=0) + 1
+        obj.end = int(end)
+        obj.frames = max((c.end for c in obj.clips), default=0) + 1 + obj.end
         obj.start = obj._open.start if obj._open else 0
         obj.open = obj._open.duration if obj._open else 0
         obj.turn = obj._turns[0].duration if obj._turns else 0
         obj.pause = 0
-        obj.end = 0
         obj.first_turn = obj._turns[0].start if obj._turns else 0
         return obj
 

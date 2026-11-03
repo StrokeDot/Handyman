@@ -44,7 +44,7 @@ except Exception as _exc:  # PySide6 without OpenGL widgets, or PyOpenGL missing
     LiveView, GL_IMPORT_ERROR = None, str(_exc)
 from page_curl import Timeline, layout_pages
 from timeline_panel import TimelinePanel
-from clips import ClipTimeline, clip_to_dict
+from clips import Clip, ClipTimeline, clip_from_dict, clip_to_dict
 from version import APP_NAME, APP_VERSION
 
 RESOLUTIONS = {'1920 × 1080 (Full HD)': (1920, 1080), '2560 × 1440 (2K)': (2560, 1440),
@@ -225,6 +225,7 @@ class Studio(QMainWindow):
         self.books = []
         self.recorded_clips = []
         self.edited_clips = None
+        self._timeline_hand_edited = False   # True once clips are edited by hand in the timeline
         self._build()
         self._reload_books(self.settings.value('book', ''))
         self._load_settings()
@@ -781,11 +782,11 @@ class Studio(QMainWindow):
                 name = Path(path).name
             else:
                 name = '(blank paper)'
-            side = 'left' if i % 2 == 0 else 'right'
+            side = 'right' if i % 2 == 0 else 'left'
             item.setText(f'{i + 1}. {name}  —  {side}')
         turns = layout_pages(n)[0]
         self.layout_hint.setText(
-            f'The book opens on pages 1 (left) and 2 (right). Each turn reveals the next two. '
+            f'The book opens on the inside cover (left) and page 1 (right). Each turn reveals the next two. '
             f'{n} page(s) → {turns} page turn(s). Drag to reorder.')
         self._update_summary()
 
@@ -982,6 +983,7 @@ class Studio(QMainWindow):
         # a fresh project starts with an empty timeline, not the previous one's clips
         self.recorded_clips = []
         self.edited_clips = None
+        self._timeline_hand_edited = False
         # TimelinePanel.set_clips is the supported API; the editor is private to it.
         self.timeline_panel.set_clips([])
         # Refresh everything that depends on the page list and the book choice.
@@ -1026,10 +1028,47 @@ class Studio(QMainWindow):
     def _update_summary(self, *_):
         if not hasattr(self, 'summary'):
             return
+        self._sync_timeline()
         v = self._values()
-        tl = self._timeline(v)
-        self.summary.setText(f'Video length: {tl.frames / v["fps"]:.1f} s  ·  {tl.frames} frames  ·  {tl.turns} turn(s)')
+        clips = [clip_from_dict(d) for d in (self.edited_clips or [])]
+        if clips:
+            # what actually plays: the timeline clips (the same list the preview and render use)
+            frames = max(c.start + c.duration for c in clips) + round(v['end_hold'] * v['fps'])
+            turns = sum(1 for c in clips if c.kind == 'turn')
+        else:
+            tl = self._timeline(v)
+            frames, turns = tl.frames, tl.turns
+        self.summary.setText(f'Video length: {frames / v["fps"]:.1f} s  ·  {frames} frames  ·  {turns} turn(s)')
         self._schedule_live()
+
+    def _sync_timeline(self):
+        """Keep the timeline in step with the pages: one turn clip per two pages.
+
+        Untouched timelines are rebuilt from the timing settings. A timeline edited by hand keeps
+        its clips; turn clips are only added at the end (or removed from the end) to match."""
+        if not self.books or not hasattr(self, 'timeline_panel'):
+            return
+        turns = layout_pages(self.pages.count())[0]
+        if not self._timeline_hand_edited:
+            self._init_timeline()
+            return
+        clips = [clip_from_dict(d) for d in (self.edited_clips or [])]
+        turn_clips = [c for c in clips if c.kind == 'turn']
+        if len(turn_clips) == turns:
+            return
+        v = self._values()
+        if len(turn_clips) > turns:
+            extra = turn_clips[turns:]
+            clips = [c for c in clips if not any(c is e for e in extra)]
+        else:
+            length = max(2, round(v['turn_seconds'] * v['fps']))
+            gap = round(v['pause'] * v['fps'])
+            end = max((c.start + c.duration for c in clips), default=round(v['start_hold'] * v['fps']))
+            for _ in range(turns - len(turn_clips)):
+                clips.append(Clip('turn', end + gap, length, smoothness=v['smoothness']))
+                end = end + gap + length
+        self.edited_clips = [clip_to_dict(c) for c in clips]
+        self.timeline_panel.set_clips(clips)
 
     # ------------------------------------------------------------ live view
     def _schedule_live(self, *_):
@@ -1068,6 +1107,7 @@ class Studio(QMainWindow):
         self.timeline_panel.set_clips(tl.clips)
 
     def _timeline_changed(self):
+        self._timeline_hand_edited = True
         self.edited_clips = [clip_to_dict(c) for c in self.timeline_panel.editor.clips()]
         self._refresh_live()
 
