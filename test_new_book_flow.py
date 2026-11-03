@@ -22,23 +22,22 @@ from scene import Scene  # noqa: E402
 
 
 def test_new_leather_book_selects_calibrated_template():
-    """The template the button targets must exist, be 20 sheets, and carry all panels."""
-    folder = REPO / 'resources' / 'books' / 'leather-book'
-    assert folder.is_dir(), 'leather-book template missing'
+    """The template the button targets must exist, be the journal engine, and carry all panels."""
+    folder = REPO / 'resources' / 'books' / 'leather-journal'
+    assert folder.is_dir(), 'leather-journal template missing'
     book = templates.load(folder)
-    assert 'Development Preview' in book['name'], book['name']
-    assert int(book['page_count']) == 20, book['page_count']
-    assert abs(float(book['page_aspect']) - 1.424) < 1e-9, book['page_aspect']
+    assert book['name'] == 'Leather Journal' and book['engine'] == 'journal', book['name']
+    assert int(book['page_count']) == 10, book['page_count']
     for field in ('front_exterior_image', 'front_interior_image', 'back_exterior_image',
                   'back_interior_image', 'spine_exterior_image'):
         rel = book.get(field)
         assert rel, f'{field} not set'
-        assert (REPO / rel).exists(), f'{field} missing on disk: {rel}'
+        assert (folder / rel).exists(), f'{field} missing on disk: {rel}'
 
 
 def test_first_spread_frame_is_the_open_book_not_a_turn():
     """Preview still must target the open first spread, not a mid-turn frame."""
-    book = templates.load(REPO / 'resources' / 'books' / 'leather-book')
+    book = templates.load(REPO / 'resources' / 'books' / 'leather-journal')
     sc = Scene(0, float(book['page_aspect']), 0.04, 30, 0.8, 1.3, 0.6, 1.2, 1.6, True,
                page_count=20)
     frame = int(sc.timeline.first_turn)
@@ -49,7 +48,7 @@ def test_first_spread_frame_is_the_open_book_not_a_turn():
 
 def test_preview_render_produces_the_image_the_widget_loads():
     """Render the still through Blender and confirm the exact path exists and decodes."""
-    book = templates.load(REPO / 'resources' / 'books' / 'leather-book')
+    book = templates.load(REPO / 'resources' / 'books' / 'leather-journal')
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp)
         os.environ['APPDATA'] = str(out / 'appdata')

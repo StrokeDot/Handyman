@@ -11,7 +11,7 @@ from pathlib import Path
 import paths
 
 DEFAULTS = {
-    'name': 'Leather journal',
+    'name': 'Leather Journal',
     'leather_color': '#6b3a1e',
     'back_cover_color': None,     # None = same as leather_color (swappable back cover)
     'inside_cover_color': None,   # None = paper-coloured endpaper (swappable inside cover)
@@ -77,6 +77,29 @@ def _read_json(path):
         return {}
 
 
+RETIRED = ('leather-book', 'leather-journal')   # the books the classic engine shipped with
+RENAMED = ('real-pages-journal',)                # 0.7.0's journal, now bundled as leather-journal
+
+
+def retire_old_books():
+    """Move the old classic-engine starter books out of the list (0.7.1: Leather Journal only).
+
+    Nothing is deleted: they go to books/_retired so any edits made to them are kept."""
+    books = paths.books_dir()
+    for name in RETIRED + RENAMED:
+        folder = books / name
+        data = _read_json(folder / 'book.json')
+        if not folder.is_dir() or (name in RETIRED and data.get('engine') == 'journal'):
+            continue
+        dest = books / '_retired' / name
+        n = 1
+        while dest.exists():
+            n += 1
+            dest = books / '_retired' / f'{name}-{n}'
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(folder), str(dest))
+
+
 def ensure_starter_books():
     """Copy bundled starter books into the user folder, and refresh them on upgrade.
 
@@ -86,6 +109,7 @@ def ensure_starter_books():
     AND the user has never saved it, so nobody's customised template is overwritten.
     """
     src = paths.resource_dir() / 'resources' / 'books'
+    retire_old_books()
     for folder in src.glob('*'):
         if not folder.is_dir():
             continue
@@ -123,7 +147,8 @@ def load(folder):
 
 def list_books():
     ensure_starter_books()
-    books = [load(f) for f in sorted(paths.books_dir().glob('*')) if (f / 'book.json').exists()]
+    books = [load(f) for f in sorted(paths.books_dir().glob('*'))
+             if not f.name.startswith('_') and (f / 'book.json').exists()]
     return books or [dict(DEFAULTS, folder=None)]
 
 

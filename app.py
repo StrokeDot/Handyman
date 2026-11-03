@@ -937,16 +937,16 @@ class Studio(QMainWindow):
     def _new_leather_book(self):
         """Configure this session for the calibrated leather book.
 
-        Selects the Development Preview template, sets its own sheet count and aspect,
+        Selects the Leather Journal template, sets its own sheet count and aspect,
         and clears page artwork so the new project starts clean. Saved projects and the
         user's own templates are untouched - nothing is written to disk here.
         """
         def find():
             for i, b in enumerate(self.books):
-                if Path(b.get('folder') or '').name == 'leather-book':
+                if Path(b.get('folder') or '').name == 'leather-journal':
                     return i
             for i, b in enumerate(self.books):
-                if 'Development Preview' in (b.get('name') or ''):
+                if b.get('engine') == 'journal':
                     return i
             return None
 
@@ -958,7 +958,7 @@ class Studio(QMainWindow):
         if index is None:
             QMessageBox.warning(
                 self, APP_NAME,
-                'The "Leather Book - Development Preview" template is not installed.\n'
+                'The "Leather Journal" template is not installed.\n'
                 'Reinstall Handyman, or check your books folder.')
             return
 

@@ -55,7 +55,7 @@ def test_fore_edge_corners_are_rounded_like_the_page_art():
 
 
 def test_journal_template_uses_the_journal_script():
-    book = templates.load(Path(__file__).parent / 'resources' / 'books' / 'real-pages-journal')
+    book = templates.load(Path(__file__).parent / 'resources' / 'books' / 'leather-journal')
     assert book['engine'] == 'journal'
     scene_book = templates.for_scene(book)
     for key in ('front_exterior_image', 'back_exterior_image', 'front_interior_image',

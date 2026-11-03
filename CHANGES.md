@@ -1,5 +1,9 @@
 # Changes
 
+## 0.7.1
+- One book: **Leather Journal** (the real-pages journal). The old "Leather Book - Development Preview" and "Legacy Journal" are removed from the list; on update they are moved to the `_retired` folder inside your books folder, so nothing you changed in them is lost.
+- "New Leather Book" now starts from the Leather Journal.
+
 ## 0.7.0
 - New book engine for the **Journal (real pages)** template. Every sheet is a real solid sheet cut to the page's outline (rounded fore-edge corners, square at the spine), paper never stretches, the page under a turning page is always the real next page, and landed pages are kept above the open cover along their whole width, so the cover never shows through the gutter.
 - The template decides the engine (`"engine": "journal"` in book.json); every other book still uses the original engine.

@@ -1,7 +1,7 @@
 """Upgrade test: a 0.6.17 user with an existing template and saved project.
 
-Verifies that updating ships the calibrated leather book, leaves the user's own
-template and saved project untouched, and defaults new projects to 20 sheets.
+Verifies that updating ships the Leather Journal as the only bundled book, moves the old
+bundled books aside without deleting them, and leaves the user's own books and projects alone.
 """
 import json
 import os
@@ -34,7 +34,7 @@ def setup_user_dir(tmp):
     return books, legacy
 
 
-def test_upgrade_ships_calibrated_book_and_preserves_user():
+def test_upgrade_ships_leather_journal_and_keeps_old_books_safe():
     with tempfile.TemporaryDirectory() as tmp:
         books, legacy = setup_user_dir(tmp)
         old_json = (legacy / 'book.json').read_text(encoding='utf-8')
@@ -43,65 +43,40 @@ def test_upgrade_ships_calibrated_book_and_preserves_user():
         paths.books_dir = lambda: books
         templates.ensure_starter_books()
 
-        # 1. the calibrated book is now available
-        new = books / 'leather-book'
-        assert new.is_dir(), 'calibrated template missing after upgrade'
-        dev = json.loads((new / 'book.json').read_text(encoding='utf-8'))
-        assert dev['page_count'] == 20, dev['page_count']
-        assert abs(dev['page_aspect'] - 1.424) < 1e-9, dev['page_aspect']
-        assert 'Development Preview' in dev['name'], dev['name']
-
-        # 2. the user's existing template is byte-identical
-        assert (legacy / 'book.json').read_text(encoding='utf-8') == old_json
-
+        # 1. the Leather Journal (real pages) is now the bundled book
+        new = json.loads((books / 'leather-journal' / 'book.json').read_text(encoding='utf-8'))
+        assert new['name'] == 'Leather Journal' and new['engine'] == 'journal', new
+        # 2. the old template was moved aside, byte-identical, not deleted
+        kept = books / '_retired' / 'leather-journal' / 'book.json'
+        assert kept.read_text(encoding='utf-8') == old_json
         # 3. the saved project is untouched
         assert (Path(tmp) / 'project.json').read_text(encoding='utf-8') == old_project
 
 
-def test_calibrated_book_is_the_default():
+def test_leather_journal_is_the_only_book():
     with tempfile.TemporaryDirectory() as tmp:
-        books, legacy = setup_user_dir(tmp)
+        books, _ = setup_user_dir(tmp)
+        for name in ('leather-book', 'real-pages-journal'):       # 0.6.x and 0.7.0 leftovers
+            (books / name).mkdir()
+            (books / name / 'book.json').write_text(json.dumps({'name': name}), encoding='utf-8')
         paths.books_dir = lambda: books
-        templates.ensure_starter_books()
         listed = templates.list_books()
-        names = [b['name'] for b in listed]
-        assert any('Development Preview' in n for n in names), names
-        # sorted by folder name: leather-book sorts before leather-journal
-        folders = [Path(b['folder']).name for b in listed]
-        assert folders[0] == 'leather-book', folders
+        assert [b['name'] for b in listed] == ['Leather Journal'], [b['name'] for b in listed]
 
 
-def test_user_modified_template_is_never_overwritten():
+def test_users_own_books_stay_listed():
     with tempfile.TemporaryDirectory() as tmp:
         books = Path(tmp) / 'books'
         books.mkdir(parents=True)
-        mine = books / 'leather-book'
+        mine = books / 'my-bible'
         mine.mkdir()
-        (mine / 'book.json').write_text(json.dumps({
-            'name': 'My customised book', 'page_count': 7,
-            'bundle_version': '0.6.1', 'user_modified': True,
-        }), encoding='utf-8')
+        (mine / 'book.json').write_text(json.dumps({'name': 'My Bible', 'engine': 'journal',
+                                                    'user_modified': True}), encoding='utf-8')
         before = (mine / 'book.json').read_text(encoding='utf-8')
         paths.books_dir = lambda: books
-        templates.ensure_starter_books()
+        names = [b['name'] for b in templates.list_books()]
+        assert 'My Bible' in names and 'Leather Journal' in names, names
         assert (mine / 'book.json').read_text(encoding='utf-8') == before
-
-
-def test_stale_bundle_fields_are_upgraded_when_not_customised():
-    with tempfile.TemporaryDirectory() as tmp:
-        books = Path(tmp) / 'books'
-        books.mkdir(parents=True)
-        stale = books / 'leather-book'
-        stale.mkdir()
-        (stale / 'book.json').write_text(json.dumps({
-            'name': 'Leather Book', 'page_aspect': 1.4, 'page_count': 50,
-            'bundle_version': '0.6.0',
-        }), encoding='utf-8')
-        paths.books_dir = lambda: books
-        templates.ensure_starter_books()
-        d = json.loads((stale / 'book.json').read_text(encoding='utf-8'))
-        assert d['page_count'] == 20, d['page_count']
-        assert abs(d['page_aspect'] - 1.424) < 1e-9
 
 
 def main():
