@@ -14,7 +14,7 @@ import templates
 def _height_above_cover(pts):
     d = G.rot(G.THETA_OPEN, (1.0, 0.0))
     nrm = G.rot(G.THETA_OPEN, (0.0, -1.0))
-    rel = pts - G.J
+    rel = pts - G.J_OPEN
     over = (rel @ d) > -0.002
     return (rel @ nrm)[over]
 
@@ -168,9 +168,22 @@ def test_curved_pages_never_push_through_the_cover_while_it_opens():
                 d = np.array([np.cos(th), np.sin(th)])
                 n = np.array([-np.sin(th), np.cos(th)])
                 g = G.sheet_grid(G.N_SHEETS - 1, 'right', ny=2)[:, :, [0, 2]].reshape(-1, 2)
-                rel = g - G.J
+                rel = g - G.cover_pivot(th)
                 under = (rel @ d > -0.01) & (rel @ d < G.WC)
                 if under.any():
                     assert (-(rel @ n))[under].min() >= G.SHEET_T / 2, (shape, sheets, frac)
     G.set_opening(G.THETA_OPEN)
     G.configure(10, 1.4318, page_shape='flat')
+
+
+
+def test_open_book_is_level_left_and_right():
+    """The open cover lies flat at the same height as the back cover: the two halves match."""
+    G.configure(10, 1.4318)
+    th = G.THETA_OPEN
+    p = G.cover_pivot(th)
+    inner_left = p[1]                              # open cover's inner face height
+    assert abs(inner_left - G.TB) < 1e-9           # back cover's inner face is at TB too
+    assert abs(G.rot(th, (1.0, 0.0))[1]) < 1e-9    # and it is flat (no tilt)
+    # the closed cover still sits on top of the text block
+    assert np.allclose(G.cover_pivot(0.0), G.J)

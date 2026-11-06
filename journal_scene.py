@@ -470,7 +470,8 @@ def build(job):
     jr_me = bpy.data.meshes.new('Joint')
     zb = G.binding(G.N_SHEETS - 1)
     ts = np.linspace(0, 1, 8)
-    prof = [(G.J[0] + (zb[0] + 0.002 - G.J[0]) * t, G.J[1] - 0.002 + (zb[1] - G.J[1]) * t - 0.006 * math.sin(math.pi * t)) for t in ts]
+    jo = G.J_OPEN    # from the open cover's hinge up to the top of the text block, in the gutter
+    prof = [(jo[0] + (zb[0] + 0.002 - jo[0]) * t, jo[1] - 0.002 + (zb[1] - jo[1]) * t - 0.006 * math.sin(math.pi * t)) for t in ts]
     jr_me.from_pydata([(x, yy, z) for yy in (-G.H / 2 - 0.02, G.H / 2 + 0.02) for x, z in prof], [],
                       [(k, k + 1, 9 + k, 8 + k) for k in range(7)])
     jr_me.uv_layers.new(name='UVMap').data.foreach_set(
@@ -623,6 +624,8 @@ def main():
             last_w = w_open
         root.location = (base_loc[0] + float(pose.get('cover_slide', 0.0)), base_loc[1], base_loc[2])
         pivot.rotation_euler = (0.0, -theta, 0.0)
+        pv = G.cover_pivot(theta)
+        pivot.location = (float(pv[0]), 0.0, float(pv[1]))
         if theta != last_theta:
             set_coords(sp.data, spine_coords(theta))
             set_coords(core.data, core_coords(theta))

@@ -516,8 +516,13 @@ class Studio(QMainWindow):
         mv.addLayout(row)
         mv.addWidget(self.views, 1)
         self.playbar = QWidget()
-        pb = QHBoxLayout(self.playbar)
-        pb.setContentsMargins(0, 0, 0, 0)
+        pbv = QVBoxLayout(self.playbar)
+        pbv.setContentsMargins(0, 0, 0, 0)
+        pbv.setSpacing(4)
+        pb = QHBoxLayout()
+        pb2 = QHBoxLayout()
+        pbv.addLayout(pb)
+        pbv.addLayout(pb2)
         self.play_btn = QPushButton('▶ Play')
         self.play_btn.setFixedWidth(90)
         self.play_btn.clicked.connect(self._toggle_play)
@@ -540,9 +545,15 @@ class Studio(QMainWindow):
         self.drag_pages.toggled.connect(lambda on: setattr(self.live, 'drag_pages', on) if self.live else None)
         self.record = QCheckBox('Record turns')
         self.record.setToolTip('While on, each page you turn by hand is added to the animation')
-        for wdg in (self.play_btn, self.scrub, self.time_label, self.speed, self.loop,
-                    self.drag_pages, self.record):
+        # row 1: play and the timeline bar (drag it to move through the animation); row 2: options
+        self.scrub.setMinimumWidth(240)
+        self.scrub.setToolTip('Drag to move through the animation frame by frame')
+        for wdg in (self.play_btn, self.scrub, self.time_label):
             pb.addWidget(wdg, 1 if wdg is self.scrub else 0)
+        pb2.addWidget(QLabel('Speed'))
+        for wdg in (self.speed, self.loop, self.drag_pages, self.record):
+            pb2.addWidget(wdg)
+        pb2.addStretch(1)
         mv.addWidget(self.playbar)
         self.playbar.setVisible(self.live is not None)
         if self.live is not None:

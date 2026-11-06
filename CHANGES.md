@@ -1,5 +1,9 @@
 # Changes
 
+## 0.9.2
+- **The open book is level left and right**: the open cover now lies flat at the same height as the back cover, like a real book whose hinge flexes, instead of tilting down from the top of the pages. Turned pages drape from the spine onto it, so both halves mirror each other. The cover still sits on top of the pages when closed; its hinge drops to table level as it goes over. Checked through the whole animation (opening, landing, turning) for every page shape, turn style and 10 / 25 / 50 sheets, in the live view and the render.
+- The timeline bar under the live view has its own full-width row again, so you can always drag back and forth through the animation; the options (speed, repeat, turn by hand, record) are on the row below.
+
 ## 0.9.1
 - Fixed: with Curved or Very curved pages, the arch pushed up through the closed front cover. Pages are now pressed flat while the book is closed and relax into their curve as the cover lifts off them (fully curved once the cover is 45% open). Checked at every cover angle for 10, 25 and 50 sheets, in the live view and the render.
 

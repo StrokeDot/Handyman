@@ -97,16 +97,24 @@ def rot(theta, v):
 
 
 def _open_angle():
-    # the open board rests on the table: its far outer corner touches z = 0
-    def f(beta):
-        corner = np.array([XB, ZJ]) + rot(math.pi + beta, (WC, TB))
-        return corner[1]
-    beta = bisect(f, 0.0, 0.6)
-    return math.pi + beta, beta
+    # The open cover lies flat on the table, level with the back cover (the hinge flexes, as in
+    # a real book), so the two halves of the open book are mirror images.
+    return math.pi, 0.0
 
 
+SPINE_GAP = 0.012          # open book: space between the two boards' spine edges (spine leather)
 THETA_OPEN, BETA = _open_angle()
-J = np.array([XB, ZJ])
+J = np.array([XB, ZJ])                      # hinge of the closed cover: top of the text block
+J_OPEN = np.array([XB - SPINE_GAP, TB])     # hinge of the open cover: flat on the table
+
+
+def cover_pivot(theta):
+    """Where the cover's hinge is at cover angle theta. It stays at the top of the text block
+    while the cover rises, then drops to table level as the cover goes over, so the open cover
+    lies flat beside the back cover instead of tilting down from the top of the pages."""
+    f = min(1.0, max(0.0, (float(theta) / THETA_OPEN - 0.45) / 0.55))
+    f = f * f * (3.0 - 2.0 * f)
+    return J + (J_OPEN - J) * f
 
 
 # ---- sheet stack: binding points and resting shapes --------------------------------------
@@ -134,8 +142,9 @@ def binding_left(layer):
     stack never crosses itself in the gutter."""
     # The first turned page binds just above the open cover's hinge, so its gutter curve never
     # dips under the cover; each later page binds one sheet higher along UP_LEFT.
-    q, d, _ = left_line(0)
-    base = q + d * ((0.0 - q[0]) / d[0]) + np.array([0.0, 0.0003])   # first page's support line, at the spine
+    # Turned pages leave the text block at its top, at the spine, and drape down onto the open
+    # cover; each later page binds one sheet higher along UP_LEFT.
+    base = np.array([0.0, ZJ + 0.0015])
     return base + layer * (1.05 * PITCH / UP_LEFT[1]) * UP_LEFT
 
 
@@ -179,7 +188,7 @@ def left_line(layer):
     d = rot(THETA_OPEN, (1.0, 0.0))            # along the open board, away from the spine
     nrm = rot(THETA_OPEN, (0.0, -1.0))          # inner-face normal (points up, away from board)
     off = (layer + 0.5) * PITCH + 0.0012
-    return J + nrm * off, d, nrm
+    return J_OPEN + nrm * off, d, nrm
 
 
 def left_rest_angle(j, layer, s=S):
@@ -197,7 +206,7 @@ def left_rest_angle(j, layer, s=S):
         # lowest point of the page beyond the gutter curve sits exactly on its support (a flat
         # page: everywhere beyond LL; a curved page: its fore-edge, the arch floats above)
         return float(np.min((pts - q) @ nrm))
-    gam = bisect(lambda gm: g(gm), -0.6, 2.5)
+    gam = bisect(lambda gm: g(gm), -2.0, 2.5)
     return final - gam * profile(s, LL) - arch
 
 
@@ -309,7 +318,7 @@ def spine_curve(theta, n=40):
     """Outer surface of the spine leather from the back board to the front board.
     The back stays rounded (hollow back); opening the cover creases the leather at the joint."""
     a = np.array([XB, 0.0])
-    b = J + rot(theta, (0.0, TB))
+    b = cover_pivot(theta) + rot(theta, (0.0, TB))
     k = 4 / 3 * SPINE_BULGE * (1.0 - 0.6 * min(1.0, theta / math.pi))   # draws in as the cover opens
     return bezier(a, a + np.array([-k, 0.0]), b + np.array([-k, 0.0]), b, n)
 
@@ -321,7 +330,7 @@ SPINE_LEN = _arclen(bezier(np.array([XB, 0.0]), np.array([XB - 4 / 3 * SPINE_BUL
 # ---- reconfigure for a template ------------------------------------------------------------
 def configure(page_count=None, page_aspect=None, pitch=None, sheet_t=None, page_shape=None, turn_style=None):
     """Set the book's sheet count and page shape, and recompute everything derived from them."""
-    global N_SHEETS, H, PITCH, SHEET_T, T, ZJ, THETA_OPEN, BETA, J, BSTEP, HC, CURVE, E, B, LEAD, SIG
+    global N_SHEETS, H, PITCH, SHEET_T, T, ZJ, THETA_OPEN, BETA, J, J_OPEN, BSTEP, HC, CURVE, E, B, LEAD, SIG
     if page_shape is not None:
         CURVE = PAGE_SHAPES.get(str(page_shape), 0.0) if isinstance(page_shape, str) else float(page_shape)
     if turn_style is not None:
@@ -339,6 +348,7 @@ def configure(page_count=None, page_aspect=None, pitch=None, sheet_t=None, page_
     T = N_SHEETS * PITCH
     ZJ = TB + T
     J = np.array([XB, ZJ])
+    J_OPEN = np.array([XB - SPINE_GAP, TB])
     THETA_OPEN, BETA = _open_angle()
     BSTEP = (T - GUTTER_DIP - 0.004) / N_SHEETS
 
