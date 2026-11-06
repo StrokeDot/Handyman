@@ -187,3 +187,31 @@ def test_open_book_is_level_left_and_right():
     assert abs(G.rot(th, (1.0, 0.0))[1]) < 1e-9    # and it is flat (no tilt)
     # the closed cover still sits on top of the text block
     assert np.allclose(G.cover_pivot(0.0), G.J)
+
+
+def test_pages_are_sewn_at_a_fixed_spot_on_the_spine():
+    """A page turns about its own seam; the seam does not move while it turns."""
+    G.configure(10, 1.4318)
+    G.set_opening(G.THETA_OPEN)
+    n = G.N_SHEETS
+    for k in (0, 4, 9):
+        seam = G.binding(n - 1 - k)
+        assert np.allclose(G.binding_left(k), seam)
+        for u in (0.0, 0.3, 0.7, 1.0):
+            g = G.sheet_grid(n - 1 - k, 'turn', k, u, ny=2)
+            row = g[len(g) // 2]
+            assert np.allclose(row[0, [0, 2]], seam, atol=1e-6), (k, u)
+
+
+def test_open_spine_is_a_hump_between_the_covers_with_pages_sewn_along_it():
+    G.configure(10, 1.4318)
+    G.set_opening(G.THETA_OPEN)
+    seams = np.array([G.open_seam(k) for k in range(G.N_SHEETS)])
+    assert seams[:, 0].min() >= G.J_OPEN[0] - 1e-9 and seams[:, 0].max() <= G.XB + 1e-9   # between the covers
+    assert seams[:, 1].max() > G.TB + 0.5 * G.spine_hump_height()                          # a real hump
+    mid = seams[:, 1].argmax()
+    assert 2 <= mid <= G.N_SHEETS - 3                                                       # highest in the middle
+    G.set_opening(0.0)
+    closed = np.array([G.binding(j) for j in range(G.N_SHEETS)])
+    assert np.allclose(closed[:, 0], 0.0)                                                   # closed: a column
+    G.set_opening(G.THETA_OPEN)

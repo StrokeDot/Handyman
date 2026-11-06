@@ -1,5 +1,10 @@
 # Changes
 
+## 0.9.3
+- **Pages are sewn to the spine, like a real book**: every sheet is sewn at its own fixed spot along the spine and turns about it. When the book opens, the spine rolls into a hump between the two covers (the bent hinge) with the pages sewn along it, so each side lies out flat and the top pages dip into the gutter. Before, pages were tied to the top of the stack, so with many pages on one side they curled up at the middle and the spine disappeared.
+- The open spine is now as wide as the book is thick, so thicker books open realistically too.
+- Checked: every neighbouring pair of sheets on both sides with 0, half and all pages turned; a page mid-turn against the pages sewn beside it; the moving cover; for every page shape, turn style and 10 / 25 / 50 sheets - in the live view and the render.
+
 ## 0.9.2
 - **The open book is level left and right**: the open cover now lies flat at the same height as the back cover, like a real book whose hinge flexes, instead of tilting down from the top of the pages. Turned pages drape from the spine onto it, so both halves mirror each other. The cover still sits on top of the pages when closed; its hinge drops to table level as it goes over. Checked through the whole animation (opening, landing, turning) for every page shape, turn style and 10 / 25 / 50 sheets, in the live view and the render.
 - The timeline bar under the live view has its own full-width row again, so you can always drag back and forth through the animation; the options (speed, repeat, turn by hand, record) are on the row below.

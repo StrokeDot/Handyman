@@ -348,8 +348,11 @@ def core_coords(theta):
     tang = np.gradient(c, axis=0)
     tang /= np.linalg.norm(tang, axis=1, keepdims=True)
     ci = c + np.c_[tang[:, 1], -tang[:, 0]] * (SPINE_LEATHER + 0.001)
-    z0, z1 = G.TB + 0.002, min(G.ZJ - 0.002, ci[-1, 1])
-    line = np.c_[np.full(SPINE_N, 0.003), np.linspace(z0, z1, SPINE_N)]
+    # the other side of the filler follows the seams (a column when closed, the hump when open)
+    seams = np.array([G.binding(jj) for jj in range(G.N_SHEETS)]) - np.array([0.0, 0.0012])
+    tt = np.linspace(0, 1, SPINE_N)
+    ts = np.linspace(0, 1, len(seams))
+    line = np.c_[np.interp(tt, ts, seams[:, 0]), np.interp(tt, ts, seams[:, 1])]
     out = []
     for yy in (-G.H / 2 - 0.004, G.H / 2 + 0.004):
         out += [(x, yy, z) for x, z in ci] + [(x, yy, z) for x, z in line]
@@ -619,6 +622,7 @@ def main():
         pose = sc.evaluate(f)
         theta = G.cover_angle(float(pose['cover_progress']))
         w_open = G.set_opening(theta)            # pages relax into their curve as the cover opens
+        w_open = (round(w_open, 7), round(G.OPEN_B, 7))   # ...and the spine rolls open under them
         if w_open != last_w:
             last = [None] * len(obs)
             last_w = w_open
@@ -639,7 +643,7 @@ def main():
                 last[k] = t
         path = os.path.join(out, f'frame_{offset + i:06d}.png')
         cam_key = None if job['cam'].get('move', 'none') == 'none' else round(float(pose['camera_frac']), 6)
-        key = (round(theta, 7), round(w_open, 7), tuple(round(float(x), 7) for x in prog), cam_key,
+        key = (round(theta, 7), w_open, tuple(round(float(x), 7) for x in prog), cam_key,
                round(float(pose.get('cover_slide', 0.0)), 7))
         if key == last_key and last_path:
             shutil.copyfile(last_path, path)          # nothing moved: same picture, no render

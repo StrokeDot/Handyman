@@ -63,7 +63,7 @@ class JournalPreview:
 
     # ------------------------------------------------------------------ meshes
     def sheet(self, k, t):
-        key = (k, round(float(t), 4), round(G.OPEN_W, 4))
+        key = (k, round(float(t), 4), round(G.OPEN_W, 4), round(G.OPEN_B, 4))
         if key not in self._cache:
             v = G.solid_from_grid(G.sheet_state(k, t)).astype(np.float32)
             n = _normals(v, np.concatenate([self.top, self.bottom]))

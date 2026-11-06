@@ -102,7 +102,7 @@ def _open_angle():
     return math.pi, 0.0
 
 
-SPINE_GAP = 0.012          # open book: space between the two boards' spine edges (spine leather)
+SPINE_GAP = T + 0.006      # open book: space between the covers' spine edges = width of the spine
 THETA_OPEN, BETA = _open_angle()
 J = np.array([XB, ZJ])                      # hinge of the closed cover: top of the text block
 J_OPEN = np.array([XB - SPINE_GAP, TB])     # hinge of the open cover: flat on the table
@@ -122,8 +122,38 @@ LR = 0.26      # length of the gutter curve on the right
 LL = 0.30      # length of the gutter curve on the left
 
 
+OPEN_B = 1.0       # how far the spine has rolled open (0 = closed book, 1 = open)
+
+
+def spine_hump_height():
+    """Height of the spine's hump between the open covers (the bent hinge)."""
+    return 0.35 * T + 0.004
+
+
+def open_seam(k):
+    """Where sheet k (0 = first sheet, the first one turned) is sewn when the book is open:
+    a fixed spot along the hump of the spine between the two covers - first sheets on the
+    left end, last sheets on the right end. A sheet's seam never moves while it turns."""
+    lp = np.array([J_OPEN[0], TB + 0.0006])
+    rp = np.array([XB, TB + 0.0006])
+    ch = 4.0 / 3.0 * spine_hump_height()
+    c = bezier(lp, lp + np.array([0.0, ch]), rp + np.array([0.0, ch]), rp, 64)
+    L = np.concatenate([[0.0], np.cumsum(np.linalg.norm(np.diff(c, axis=0), axis=1))])
+    target = (k + 0.5) / N_SHEETS * L[-1]
+    return np.array([np.interp(target, L, c[:, 0]), np.interp(target, L, c[:, 1])])
+
+
 def binding(j):
-    """Binding point of sheet j (0 = bottom, next to the back board)."""
+    """Binding point (seam) of sheet j (0 = bottom, next to the back board). Closed book: a
+    column at the back of the text block. As the book opens the spine rolls into the hump
+    between the covers, carrying every seam to its fixed open spot."""
+    closed = closed_binding(j)
+    if OPEN_B <= 0.0:
+        return closed
+    return closed + (open_seam(N_SHEETS - 1 - j) - closed) * OPEN_B
+
+
+def closed_binding(j):
     zhi = TB + T - GUTTER_DIP
     # bound edges at least one sheet thickness apart (thin books: the gutter dip gives way)
     step = max((zhi - TB - 0.004) / N_SHEETS, 1.06 * SHEET_T)
@@ -137,15 +167,9 @@ UP_LEFT = np.array([0.5, 0.866])     # each turned page binds just above the one
 
 
 def binding_left(layer):
-    """Binding point of the sheet that landed on the left as `layer` (0 = first turned).
-    The bound edge rolls as pages turn, so later pages bind above earlier ones and the left
-    stack never crosses itself in the gutter."""
-    # The first turned page binds just above the open cover's hinge, so its gutter curve never
-    # dips under the cover; each later page binds one sheet higher along UP_LEFT.
-    # Turned pages leave the text block at its top, at the spine, and drape down onto the open
-    # cover; each later page binds one sheet higher along UP_LEFT.
-    base = np.array([0.0, ZJ + 0.0015])
-    return base + layer * (1.05 * PITCH / UP_LEFT[1]) * UP_LEFT
+    """Seam of the sheet that landed on the left as `layer` (0 = first turned): the same fixed
+    spot on the spine it was sewn at - a page turns about its seam, the seam does not move."""
+    return binding(N_SHEETS - 1 - layer)
 
 
 CURVE = 0.0        # page "pillow": 0 = flat pages; ~0.15 gentle, ~0.26 strong (radians at the spine)
@@ -163,9 +187,10 @@ def set_opening(theta):
     """Pages are pressed flat while the book is closed and relax into their curve as the cover
     lifts off them: flat at 0, fully curved once the cover is 45% open. (Checked: at every cover
     angle the curved pages stay below the cover.)"""
-    global OPEN_W
+    global OPEN_W, OPEN_B
     f = min(1.0, max(0.0, (float(theta) / THETA_OPEN) / 0.45))
     OPEN_W = f * f * (3.0 - 2.0 * f)
+    OPEN_B = _spine_roll(theta)
     return OPEN_W
 
 
@@ -285,7 +310,7 @@ def sheet_grid(j, state, layer_left=0, u=0.0, ny=NY):
     elif state == 'turn':
         w = float(E(u))
         q = binding_left(layer_left)
-        p = (1 - w) * p + w * q + np.array([1.2 * BSTEP * math.sin(math.pi * w), 0.0])
+        p = (1 - w) * p + w * q
     if state == 'right':
         A = np.repeat(aR[None, :], ny, 0)
     else:
@@ -320,7 +345,17 @@ def spine_curve(theta, n=40):
     a = np.array([XB, 0.0])
     b = cover_pivot(theta) + rot(theta, (0.0, TB))
     k = 4 / 3 * SPINE_BULGE * (1.0 - 0.6 * min(1.0, theta / math.pi))   # draws in as the cover opens
-    return bezier(a, a + np.array([-k, 0.0]), b + np.array([-k, 0.0]), b, n)
+    closed_a, closed_b = a + np.array([-k, 0.0]), b + np.array([-k, 0.0])
+    # open: the leather arches up between the two covers, under the seams (the bent hinge)
+    ch = 4.0 / 3.0 * (spine_hump_height() + TB - 0.0015)
+    open_a, open_b = a + np.array([0.0, ch]), b + np.array([0.0, ch])
+    f = _spine_roll(theta)
+    return bezier(a, closed_a + (open_a - closed_a) * f, closed_b + (open_b - closed_b) * f, b, n)
+
+
+def _spine_roll(theta):
+    f = min(1.0, max(0.0, (float(theta) / THETA_OPEN - 0.45) / 0.55))
+    return f * f * (3.0 - 2.0 * f)
 
 
 SPINE_LEN = _arclen(bezier(np.array([XB, 0.0]), np.array([XB - 4 / 3 * SPINE_BULGE, 0.0]),
@@ -330,7 +365,7 @@ SPINE_LEN = _arclen(bezier(np.array([XB, 0.0]), np.array([XB - 4 / 3 * SPINE_BUL
 # ---- reconfigure for a template ------------------------------------------------------------
 def configure(page_count=None, page_aspect=None, pitch=None, sheet_t=None, page_shape=None, turn_style=None):
     """Set the book's sheet count and page shape, and recompute everything derived from them."""
-    global N_SHEETS, H, PITCH, SHEET_T, T, ZJ, THETA_OPEN, BETA, J, J_OPEN, BSTEP, HC, CURVE, E, B, LEAD, SIG
+    global N_SHEETS, H, PITCH, SHEET_T, T, ZJ, THETA_OPEN, BETA, J, J_OPEN, SPINE_GAP, BSTEP, HC, CURVE, E, B, LEAD, SIG
     if page_shape is not None:
         CURVE = PAGE_SHAPES.get(str(page_shape), 0.0) if isinstance(page_shape, str) else float(page_shape)
     if turn_style is not None:
@@ -348,6 +383,7 @@ def configure(page_count=None, page_aspect=None, pitch=None, sheet_t=None, page_
     T = N_SHEETS * PITCH
     ZJ = TB + T
     J = np.array([XB, ZJ])
+    SPINE_GAP = T + 0.006
     J_OPEN = np.array([XB - SPINE_GAP, TB])
     THETA_OPEN, BETA = _open_angle()
     BSTEP = (T - GUTTER_DIP - 0.004) / N_SHEETS
@@ -403,14 +439,16 @@ def turn_points():
     global OPEN_W
     key = (N_SHEETS, H, PITCH, CURVE, LEAD, SIG)
     if key not in _TURN_PTS:
+        global OPEN_B
         saved, OPEN_W = OPEN_W, 1.0
+        saved_b, OPEN_B = OPEN_B, 1.0
         pts = []
         for u in np.linspace(0.1, 0.9, 17):
             g = sheet_grid(N_SHEETS - 1, 'turn', 0, float(u), ny=2)
             cols = sorted(set(list(range(0, g.shape[1], 6)) + [g.shape[1] - 1]))   # include the outer edge
             pts.append(g[:, cols].reshape(-1, 3))
         _TURN_PTS[key] = np.concatenate(pts)
-        OPEN_W = saved
+        OPEN_W, OPEN_B = saved, saved_b
     return _TURN_PTS[key]
 
 
