@@ -176,7 +176,7 @@ class RenderWorker(QThread):
         made = []
         if opts['mov']:
             self.message.emit('Encoding ProRes 4444 MOV…')
-            made.append(encode.encode_mov(out, fps))
+            made.append(encode.encode_mov(out, fps, size=opts.get('mov_size', 'small')))
         if opts['webm']:
             self.message.emit('Encoding transparent WebM…')
             made.append(encode.encode_webm(out, fps))
@@ -668,10 +668,21 @@ class Studio(QMainWindow):
         f.addRow('Quality', self.quality)
         self.mov = QCheckBox('MOV with transparency (best for Filmora)')
         self.mov.setChecked(True)
+        self.mov_size = QComboBox()
+        self.mov_size.addItem('Smaller file - looks the same (recommended)', 'small')
+        self.mov_size.addItem('Maximum quality - very large file', 'max')
+        self.mov_size.setToolTip('Smaller is about a quarter of the size with no visible difference')
+        self.mov.toggled.connect(self.mov_size.setEnabled)
         self.webm = QCheckBox('WebM (small file)')
         self.keep_png = QCheckBox('Also keep the PNG frames')
-        for w in (self.mov, self.webm, self.keep_png):
+        f.addRow(self.mov)
+        f.addRow('MOV file size', self.mov_size)
+        for w in (self.webm, self.keep_png):
             f.addRow(w)
+        tip = QLabel('Tip: 30 frames per second is plenty for page turns and makes files half the size of 60.')
+        tip.setObjectName('hint')
+        tip.setWordWrap(True)
+        f.addRow(tip)
         row = QHBoxLayout()
         self.out_label = QLabel()
         self.out_label.setWordWrap(True)
@@ -1024,7 +1035,8 @@ class Studio(QMainWindow):
     def _state(self):
         v = self._values()
         v.update(resolution=self.resolution.currentText(), mov=self.mov.isChecked(), webm=self.webm.isChecked(),
-                 keep_png=self.keep_png.isChecked(), book=self._book().get('folder') or '',
+                 keep_png=self.keep_png.isChecked(), mov_size=self.mov_size.currentData() or 'small',
+                 book=self._book().get('folder') or '',
                  pages=self._page_content())
         return v
 
@@ -1050,6 +1062,9 @@ class Studio(QMainWindow):
                          ('start_closed', self.start_closed)):
             if key in v:
                 box.setChecked(bool(v[key]))
+        i = self.mov_size.findData(v.get('mov_size', 'small'))
+        if i >= 0:
+            self.mov_size.setCurrentIndex(i)
         if v.get('book'):
             self._reload_books(v['book'])
         return self._set_pages(v.get('pages', []))
@@ -1554,7 +1569,8 @@ class Studio(QMainWindow):
             self.keep_png.setChecked(True)
         folder = self.output_dir / datetime.now().strftime('Render_%Y-%m-%d_%H-%M-%S')
         job = self._job(self._values(), folder)
-        opts = dict(mov=self.mov.isChecked(), webm=self.webm.isChecked(), keep_png=self.keep_png.isChecked())
+        opts = dict(mov=self.mov.isChecked(), webm=self.webm.isChecked(), keep_png=self.keep_png.isChecked(),
+                    mov_size=self.mov_size.currentData() or 'small')
         self._start(job, self._render_done, opts)
 
     def _render_done(self, folder):

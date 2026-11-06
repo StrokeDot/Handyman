@@ -1,5 +1,9 @@
 # Changes
 
+## 0.8.3
+- **Much smaller MOV files**: new "MOV file size" choice in the Export tab. "Smaller file - looks the same" (the new default) is about a quarter of the size: measured 47.6 dB against the original frames, above the ~45 dB where differences stop being visible. A 3.6 GB video becomes roughly 0.9 GB. "Maximum quality" keeps the old, very large files.
+- Tip in the Export tab: 30 frames per second is plenty for page turns and halves the size again compared with 60.
+
 ## 0.8.2
 - Fixed: the turning page went out of the top of the picture while it stood up mid-turn. The camera now frames the open book and the standing page together, centred, with a margin all round - on every camera preset, in the live view and the video alike. Zoom still works as before if you want it closer.
 
