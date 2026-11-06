@@ -1,5 +1,8 @@
 # Changes
 
+## 0.9.1
+- Fixed: with Curved or Very curved pages, the arch pushed up through the closed front cover. Pages are now pressed flat while the book is closed and relax into their curve as the cover lifts off them (fully curved once the cover is 45% open). Checked at every cover angle for 10, 25 and 50 sheets, in the live view and the render.
+
 ## 0.9.0 - page styles and faster renders
 - **Page shape** (Book section): Flat, Curved or Very curved. Curved pages rise out of the spine in a soft arch, like a real open book. Every page stays on top of the one below it.
 - **Page turn style** (Animation tab): Natural (the smooth arc you had), Corner peel (like a hand-made After Effects turn: the bottom corner curls up slowly, the page whips over, then lands with its corner still curled) and Quick and light.

@@ -63,7 +63,7 @@ class JournalPreview:
 
     # ------------------------------------------------------------------ meshes
     def sheet(self, k, t):
-        key = (k, round(float(t), 4))
+        key = (k, round(float(t), 4), round(G.OPEN_W, 4))
         if key not in self._cache:
             v = G.solid_from_grid(G.sheet_state(k, t)).astype(np.float32)
             n = _normals(v, np.concatenate([self.top, self.bottom]))
@@ -76,6 +76,7 @@ class JournalPreview:
     def draw(self, pose, tex, leather_rgb, paper_rgb):
         """tex: {'front_ext','back_ext','front_in','back_in','spine', ('page', i) or 'paper_odd'/'paper_even'}."""
         theta = G.cover_angle(float(pose['cover_progress']))
+        G.set_opening(theta)          # pages flat while closed, curved once the cover lifts off them
         slide = float(pose.get('cover_slide', 0.0))
         gl.glPushMatrix()
         gl.glTranslatef(slide, 0, 0)

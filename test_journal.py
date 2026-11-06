@@ -155,3 +155,22 @@ def test_curved_pages_rise_out_of_the_spine():
     G.configure(10, 1.4318, page_shape='flat')
     r = G.sheet_grid(G.N_SHEETS - 1, 'right', ny=2)[8]
     assert r[:, 2].max() - r[-1, 2] < 1e-3
+
+
+def test_curved_pages_never_push_through_the_cover_while_it_opens():
+    """Closed book: pages flat under the cover. Opening: the curve grows only as the cover lifts."""
+    for shape in ('flat', 'curved', 'very curved'):
+        for sheets in (10, 25, 50):
+            G.configure(sheets, 1.4318, page_shape=shape)
+            for frac in np.linspace(0, 1, 26):
+                th = frac * G.THETA_OPEN
+                G.set_opening(th)
+                d = np.array([np.cos(th), np.sin(th)])
+                n = np.array([-np.sin(th), np.cos(th)])
+                g = G.sheet_grid(G.N_SHEETS - 1, 'right', ny=2)[:, :, [0, 2]].reshape(-1, 2)
+                rel = g - G.J
+                under = (rel @ d > -0.01) & (rel @ d < G.WC)
+                if under.any():
+                    assert (-(rel @ n))[under].min() >= G.SHEET_T / 2, (shape, sheets, frac)
+    G.set_opening(G.THETA_OPEN)
+    G.configure(10, 1.4318, page_shape='flat')

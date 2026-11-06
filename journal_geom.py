@@ -139,14 +139,25 @@ def binding_left(layer):
     return base + layer * (1.05 * PITCH / UP_LEFT[1]) * UP_LEFT
 
 
-CURVE = 0.0        # page "pillow": 0 = flat pages; ~0.1 gentle, ~0.18 strong (radians at the spine)
+CURVE = 0.0        # page "pillow": 0 = flat pages; ~0.15 gentle, ~0.26 strong (radians at the spine)
+OPEN_W = 1.0       # how far the pages have relaxed into their curve (0 = closed book, pages flat)
 PAGE_SHAPES = {'flat': 0.0, 'curved': 0.15, 'very curved': 0.26}
 
 
 def pillow(s=S):
     """Extra angle that makes a resting page rise out of the spine and come back down at the
     fore-edge (cos: + near the spine, - near the edge; its height gain over the page is ~0)."""
-    return CURVE * np.cos(np.pi * np.asarray(s) / W)
+    return CURVE * OPEN_W * np.cos(np.pi * np.asarray(s) / W)
+
+
+def set_opening(theta):
+    """Pages are pressed flat while the book is closed and relax into their curve as the cover
+    lifts off them: flat at 0, fully curved once the cover is 45% open. (Checked: at every cover
+    angle the curved pages stay below the cover.)"""
+    global OPEN_W
+    f = min(1.0, max(0.0, (float(theta) / THETA_OPEN) / 0.45))
+    OPEN_W = f * f * (3.0 - 2.0 * f)
+    return OPEN_W
 
 
 def flat_right(j):
@@ -379,14 +390,17 @@ _TURN_PTS = {}
 def turn_points():
     """Points of a page mid-turn (the real journal motion), for framing: the camera keeps the
     whole standing page in the picture, not just the flat book."""
+    global OPEN_W
     key = (N_SHEETS, H, PITCH, CURVE, LEAD, SIG)
     if key not in _TURN_PTS:
+        saved, OPEN_W = OPEN_W, 1.0
         pts = []
         for u in np.linspace(0.1, 0.9, 17):
             g = sheet_grid(N_SHEETS - 1, 'turn', 0, float(u), ny=2)
             cols = sorted(set(list(range(0, g.shape[1], 6)) + [g.shape[1] - 1]))   # include the outer edge
             pts.append(g[:, cols].reshape(-1, 3))
         _TURN_PTS[key] = np.concatenate(pts)
+        OPEN_W = saved
     return _TURN_PTS[key]
 
 

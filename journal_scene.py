@@ -608,6 +608,7 @@ def main():
     out = job['out_dir']
     os.makedirs(out, exist_ok=True)
     last = [None] * len(obs)
+    last_w = None
     last_key, last_path = None, None
     base_loc = tuple(root.location)
     last_theta = None
@@ -616,6 +617,10 @@ def main():
     for i, f in enumerate(frames):
         pose = sc.evaluate(f)
         theta = G.cover_angle(float(pose['cover_progress']))
+        w_open = G.set_opening(theta)            # pages relax into their curve as the cover opens
+        if w_open != last_w:
+            last = [None] * len(obs)
+            last_w = w_open
         root.location = (base_loc[0] + float(pose.get('cover_slide', 0.0)), base_loc[1], base_loc[2])
         pivot.rotation_euler = (0.0, -theta, 0.0)
         if theta != last_theta:
@@ -631,7 +636,7 @@ def main():
                 last[k] = t
         path = os.path.join(out, f'frame_{offset + i:06d}.png')
         cam_key = None if job['cam'].get('move', 'none') == 'none' else round(float(pose['camera_frac']), 6)
-        key = (round(theta, 7), tuple(round(float(x), 7) for x in prog), cam_key,
+        key = (round(theta, 7), round(w_open, 7), tuple(round(float(x), 7) for x in prog), cam_key,
                round(float(pose.get('cover_slide', 0.0)), 7))
         if key == last_key and last_path:
             shutil.copyfile(last_path, path)          # nothing moved: same picture, no render
