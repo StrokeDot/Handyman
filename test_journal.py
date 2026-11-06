@@ -77,3 +77,42 @@ def test_app_camera_settings_frame_the_journal():
         assert np.all(np.isfinite(cam)) and lens > 0, name
         # the book centre is in front of the camera
         assert np.dot(np.array([0.0, 0.0, G.ZJ]) - cam, f) > 0, name
+
+
+def _png_size(path):
+    import struct
+    with open(path, 'rb') as fh:
+        head = fh.read(24)
+    return struct.unpack('>II', head[16:24])
+
+
+def test_bundled_journal_images_have_the_sizes_the_template_requires():
+    folder = Path(__file__).parent / 'resources' / 'books' / 'leather-journal'
+    book = templates.load(folder)
+    sizes = book['image_sizes']
+    for field, (w, h) in sizes.items():
+        if field == 'page':
+            continue
+        assert _png_size(folder / book[field]) == (w, h), field
+
+
+def test_covers_match_the_board_shape_so_nothing_is_stretched():
+    folder = Path(__file__).parent / 'resources' / 'books' / 'leather-journal'
+    book = templates.load(folder)
+    G.configure(int(book['page_count']), float(book['page_aspect']))
+    w, h = book['image_sizes']['front_exterior_image']
+    assert abs(h / w - G.HC / G.WC) < 0.002
+    pw, ph = book['image_sizes']['page']
+    assert abs(ph / pw - G.H / G.W) < 0.002
+
+
+def test_saving_a_journal_keeps_its_engine_page_count_and_sizes():
+    import paths
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(__file__).parent / 'resources' / 'books' / 'leather-journal'
+        book = templates.load(src)
+        book['folder'] = str(Path(tmp) / 'copy')
+        saved = templates.save(book)
+        assert saved['engine'] == 'journal'
+        assert int(saved['page_count']) == 10
+        assert saved['image_sizes']['page'] == [982, 1406]

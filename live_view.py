@@ -31,6 +31,19 @@ NX, NY = 40, 24
 TEX_W = 512
 
 
+def log_problem(msg):
+    """Append a live-view error with its traceback to Handyman/logs/live_view.log."""
+    import datetime
+    import traceback
+    try:
+        d = paths.user_dir() / 'logs'
+        d.mkdir(parents=True, exist_ok=True)
+        with open(d / 'live_view.log', 'a', encoding='utf-8') as fh:
+            fh.write(f'--- {datetime.datetime.now():%Y-%m-%d %H:%M:%S}  {msg}\n{traceback.format_exc()}\n')
+    except OSError:
+        pass
+
+
 def _hex_rgb(value):
     value = (value or '#808080').lstrip('#')
     return tuple(int(value[i:i + 2], 16) / 255 for i in (0, 2, 4))
@@ -171,6 +184,7 @@ class LiveView(QOpenGLWidget):
     reset = Signal()
     frameChanged = Signal(int, int)       # frame, total
     failed = Signal(str)
+    problem = Signal(str)      # a frame failed after the view had worked: reported, view kept
     pageTurned = Signal(int, int, float)  # start frame, duration, smoothness (record mode)
 
     def __init__(self):
@@ -481,8 +495,15 @@ class LiveView(QOpenGLWidget):
             return
         try:
             self._paint()
+            self._painted_ok = True
         except Exception as exc:
-            self.broken = f'{type(exc).__name__}: {exc}'
+            msg = f'{type(exc).__name__}: {exc}'
+            log_problem(msg)
+            if getattr(self, '_painted_ok', False):
+                # The view has drawn before, so OpenGL works: skip this frame, keep the view.
+                self.problem.emit(msg)
+                return
+            self.broken = msg
             self.failed.emit(self.broken)
 
     def _frame_rect(self):

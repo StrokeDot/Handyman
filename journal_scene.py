@@ -509,10 +509,21 @@ def setup_lights_world():
     world.use_nodes = True
     world.node_tree.nodes['Background'].inputs['Color'].default_value = (0.05, 0.045, 0.04, 1)
     bpy.context.scene.world = world
-    bpy.ops.mesh.primitive_plane_add(size=12, location=(0, 0, 0))
+
+
+def add_shadow_catcher(root):
+    """Cycles only: an invisible surface just under the back board that only catches the
+    book's shadow. It is attached to the book, so a rotated or moved book never sinks into it.
+    (EEVEE cannot make a surface shadow-only - it would render as a white floor - so the fast
+    modes have no table, like the classic engine.)"""
+    if bpy.context.scene.render.engine != 'CYCLES':
+        return
+    bpy.ops.mesh.primitive_plane_add(size=6, location=(0, 0, 0))
     table = bpy.context.active_object
     table.name = 'ShadowCatcher'
     table.is_shadow_catcher = True
+    table.parent = root
+    table.location = (0.5, 0.0, -0.0008)
 
 
 def place_camera(cam, job, frac):
@@ -543,6 +554,7 @@ def main():
         sc_b.cycles.glossy_bounces = 1
     root, pivot, sp, core, obs = build(job)
     setup_lights_world()
+    add_shadow_catcher(root)
     cam_data = bpy.data.cameras.new('Camera')
     cam_data.sensor_width = 36.0
     cam_data.sensor_fit = 'HORIZONTAL'

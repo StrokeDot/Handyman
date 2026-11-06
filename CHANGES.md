@@ -1,5 +1,12 @@
 # Changes
 
+## 0.7.3
+- **Swap any image of the Leather Journal**: Book → Edit… opens "Journal design" - front and back covers (outside and inside), spine, leather, hinge strip, and the paper for right- and left-hand pages. Each image must be exactly the size shown; a wrong size is refused with the size needed. "Original" puts back the shipped image, and "Save size guides…" saves the current images, named with their sizes, to paint over.
+- Page images you add must be 982 × 1406 px for the journal (shown under the page list); wrong sizes are refused.
+- Fixed: with the book rotated (3D transform), half of it disappeared in "Preview still" and renders, cut off by the table under it; in Draft/Final quality that table also rendered as a white floor. The fast modes now have no table (like the old engine) and in Photoreal the shadow surface moves with the book.
+- The live view no longer gives up and switches to the flat beige fallback after a single bad frame; the error is written to Handyman\logs\live_view.log.
+- Cover images are now exactly the cover's shape (1080 × 1602 px), so nothing is stretched.
+
 ## 0.7.2
 - Fixed: adding pages did not add page turns to the timeline, so the video stayed at one turn (3.7 s) even with 20 pages. The timeline now follows the page list - one turn per two pages. If you edited the timeline by hand, your clips are kept and turns are only added or removed at the end.
 - Fixed: "Hold at end" was ignored once the timeline had clips, so the video stopped the instant the last page landed.

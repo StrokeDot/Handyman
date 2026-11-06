@@ -15,5 +15,51 @@
   "paper_image": "paper.png",
   "paper_odd_image": "paper_odd.png",
   "paper_even_image": "paper_even.png",
-  "bundle_version": "0.7.1"
+  "bundle_version": "0.7.3",
+  "image_sizes": {
+    "front_exterior_image": [
+      1080,
+      1602
+    ],
+    "back_exterior_image": [
+      1080,
+      1602
+    ],
+    "front_interior_image": [
+      1080,
+      1602
+    ],
+    "back_interior_image": [
+      1080,
+      1602
+    ],
+    "spine_exterior_image": [
+      724,
+      2172
+    ],
+    "leather_image": [
+      724,
+      2172
+    ],
+    "joint_image": [
+      56,
+      1406
+    ],
+    "paper_odd_image": [
+      982,
+      1406
+    ],
+    "paper_even_image": [
+      982,
+      1406
+    ],
+    "paper_image": [
+      982,
+      1406
+    ],
+    "page": [
+      982,
+      1406
+    ]
+  }
 }

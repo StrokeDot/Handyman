@@ -4,6 +4,7 @@ Verifies that updating ships the Leather Journal as the only bundled book, moves
 bundled books aside without deleting them, and leaves the user's own books and projects alone.
 """
 import json
+import shutil
 import os
 import sys
 import tempfile
@@ -90,3 +91,39 @@ def main():
 if __name__ == '__main__':
     main()
 
+
+
+def test_untouched_journal_gets_new_images_on_update():
+    with tempfile.TemporaryDirectory() as tmp:
+        books = Path(tmp) / 'books'
+        src = REPO / 'resources' / 'books' / 'leather-journal'
+        dest = books / 'leather-journal'
+        shutil.copytree(src, dest)
+        old = json.loads((dest / 'book.json').read_text(encoding='utf-8'))
+        old['bundle_version'] = '0.7.1'
+        old.pop('image_sizes', None)
+        (dest / 'book.json').write_text(json.dumps(old), encoding='utf-8')
+        (dest / 'front_ext.png').write_bytes(b'old')
+        paths.books_dir = lambda: books
+        templates.ensure_starter_books()
+        new = json.loads((dest / 'book.json').read_text(encoding='utf-8'))
+        assert new['image_sizes']['page'] == [982, 1406]
+        assert (dest / 'front_ext.png').read_bytes() == (src / 'front_ext.png').read_bytes()
+
+
+def test_edited_journal_keeps_its_images_but_learns_the_size_rules():
+    with tempfile.TemporaryDirectory() as tmp:
+        books = Path(tmp) / 'books'
+        src = REPO / 'resources' / 'books' / 'leather-journal'
+        dest = books / 'leather-journal'
+        shutil.copytree(src, dest)
+        old = json.loads((dest / 'book.json').read_text(encoding='utf-8'))
+        old.update(bundle_version='0.7.1', user_modified=True)
+        old.pop('image_sizes', None)
+        (dest / 'book.json').write_text(json.dumps(old), encoding='utf-8')
+        (dest / 'front_ext.png').write_bytes(b'mine')
+        paths.books_dir = lambda: books
+        templates.ensure_starter_books()
+        new = json.loads((dest / 'book.json').read_text(encoding='utf-8'))
+        assert new['image_sizes']['page'] == [982, 1406]
+        assert (dest / 'front_ext.png').read_bytes() == b'mine'

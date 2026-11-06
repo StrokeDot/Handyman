@@ -29,6 +29,8 @@ DEFAULTS = {
     'paper_odd_image': None,      # parchment for right-hand pages (square corner at the spine)
     'paper_even_image': None,     # parchment for left-hand pages
     'joint_image': None,          # strip that covers the groove at the open cover's hinge
+    'page_count': None,           # the template's own sheet count (None = app default)
+    'image_sizes': None,          # journal: {field: [w, h]} exact pixel size each image must have
     'paper_color': '#e0c99a',
     'paper_age': 0.55,          # blotches and yellowing, 0..1
     'burn': 0.6,                # darkened page edges, 0..1
@@ -122,8 +124,21 @@ def ensure_starter_books():
         if not bundled or not current:
             continue
         same = str(current.get('bundle_version') or '') == str(bundled.get('bundle_version') or '')
+        if bundled.get('image_sizes') and not current.get('image_sizes'):
+            # the size rules for new uploads always reach the user's copy (nothing else changes)
+            current['image_sizes'] = bundled['image_sizes']
+            (dest / 'book.json').write_text(json.dumps(current, indent=2), encoding='utf-8')
         # a Legacy template is never refreshed: users may have customised it
         if same or current.get('user_modified') or current.get('legacy') or bundled.get('legacy'):
+            continue
+        if bundled.get('engine') == 'journal':
+            # an untouched bundled journal: take the new images and settings as shipped
+            for f in folder.iterdir():
+                if f.is_file() and f.name != 'book.json':
+                    shutil.copyfile(f, dest / f.name)
+            merged = dict(current)
+            merged.update(bundled)
+            (dest / 'book.json').write_text(json.dumps(merged, indent=2), encoding='utf-8')
             continue
         # Upgrade only the fields the bundle owns; everything else is preserved.
         merged = dict(current)

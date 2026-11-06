@@ -29,6 +29,7 @@ import paths
 import templates
 import updater
 from book_dialog import BookDialog
+from journal_dialog import JournalDialog, check_size, required_size
 
 # Check for Qt WebEngine WITHOUT importing it: importing it early reconfigures Qt's OpenGL
 # setup and can leave the Live 3D view (a QOpenGLWidget) black.
@@ -385,6 +386,8 @@ class Studio(QMainWindow):
             self.live.frameChanged.connect(self._live_frame)
             self.live.pageTurned.connect(self._on_page_turned)
             self.live.failed.connect(self._live_failed)
+            self.live.problem.connect(lambda m: self.status.setText(
+                f'Live view skipped a frame ({m}). Details: {paths.user_dir() / "logs" / "live_view.log"}'))
         self._live_timer = QTimer(self)
         self._live_timer.setSingleShot(True)
         self._live_timer.timeout.connect(self._refresh_live)
@@ -651,6 +654,13 @@ class Studio(QMainWindow):
         return self.books[i] if 0 <= i < len(self.books) else self.books[0]
 
     def _edit_book(self):
+        if self._book().get('engine') == 'journal':
+            dlg = JournalDialog(self._book(), self)
+            if dlg.exec() == QDialog.DialogCode.Accepted:
+                saved = templates.save(dlg.result_book(), None, dlg.new_images)
+                self._reload_books(saved['folder'])
+                self.status.setText(f'Saved book "{saved["name"]}". The live view shows the new images.')
+            return
         dlg = BookDialog(self._book(), self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             saved = templates.save(dlg.result_book(), dlg.new_image, dlg.art_images)
@@ -738,11 +748,20 @@ class Studio(QMainWindow):
     def _add_images(self):
         files, _ = QFileDialog.getOpenFileNames(self, 'Choose page images', self.settings.value('img_dir', ''),
                                                 'Images (*.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)')
+        book = self._book() if self.books else {}
+        refused = []
         for path in files:
+            problem = check_size(book, 'page', path) if required_size(book, 'page') else None
+            if problem:
+                refused.append(problem)
+                continue
             self._add_page_item(path)
         if files:
             self.settings.setValue('img_dir', str(Path(files[0]).parent))
         self._pages_changed()
+        if refused:
+            QMessageBox.warning(self, APP_NAME, f'{len(refused)} image(s) were not added:\n\n'
+                                + '\n\n'.join(refused[:6]) + ('\n…' if len(refused) > 6 else ''))
 
     def _add_blank(self):
         self._add_page_item(None)
@@ -785,9 +804,11 @@ class Studio(QMainWindow):
             side = 'right' if i % 2 == 0 else 'left'
             item.setText(f'{i + 1}. {name}  —  {side}')
         turns = layout_pages(n)[0]
+        need = required_size(self._book(), 'page') if self.books else None
+        size = f' Page images: {need[0]} × {need[1]} px.' if need else ''
         self.layout_hint.setText(
             f'The book opens on the inside cover (left) and page 1 (right). Each turn reveals the next two. '
-            f'{n} page(s) → {turns} page turn(s). Drag to reorder.')
+            f'{n} page(s) → {turns} page turn(s). Drag to reorder.{size}')
         self._update_summary()
 
     def _set_pages(self, pages):
