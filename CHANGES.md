@@ -1,5 +1,13 @@
 # Changes
 
+## 0.9.0 - page styles and faster renders
+- **Page shape** (Book section): Flat, Curved or Very curved. Curved pages rise out of the spine in a soft arch, like a real open book. Every page stays on top of the one below it.
+- **Page turn style** (Animation tab): Natural (the smooth arc you had), Corner peel (like a hand-made After Effects turn: the bottom corner curls up slowly, the page whips over, then lands with its corner still curled) and Quick and light.
+- **Add a fast flip...** (Animation tab): flip through many pages in a second or two, like riffling them with your thumb. Pages fan over without passing through each other; blank pages are added if the book needs more.
+- **Faster renders**: frames where nothing moves are copied instead of rendered again. Photoreal keeps the scene loaded between frames, cleans up noise on the graphics card and stops sampling pixels that are already clean (about 30% faster even without a graphics card).
+- **Render with 2 Blenders at once** (Settings, on by default): each renders half of the video at the same time, so your graphics card is kept busy instead of waiting.
+- Thin books: the bound edges of the pages are now always at least a sheet apart at the spine.
+
 ## 0.8.3
 - **Much smaller MOV files**: new "MOV file size" choice in the Export tab. "Smaller file - looks the same" (the new default) is about a quarter of the size: measured 47.6 dB against the original frames, above the ~45 dB where differences stop being visible. A 3.6 GB video becomes roughly 0.9 GB. "Maximum quality" keeps the old, very large files.
 - Tip in the Export tab: 30 frames per second is plenty for page turns and halves the size again compared with 60.

@@ -92,6 +92,8 @@ def make_job(settings, book, images, out_dir, frames=None, width=None, height=No
         recorded_clips=list(settings.get('recorded_clips', [])),
         clip_list=list(settings['clip_list']) if settings.get('clip_list') else None,
         transform=dict(settings.get('transform') or {}),
+        page_shape=str(settings.get('page_shape') or 'flat'),
+        turn_style=str(settings.get('turn_style') or 'natural'),
         book=scene_book,
         # A full-bleed page image (parchment included) must REPLACE the procedural paper: no inset,
         # no partial blend. The margin/strength only make sense for ink artwork printed onto paper.

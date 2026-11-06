@@ -127,3 +127,31 @@ def test_standing_page_stays_inside_the_picture_on_every_preset():
                               for t in np.linspace(0, 1, 41)])
         x, y, _ = cf.project(pts, cam, r, u, f, lens, 16 / 9)
         assert np.abs(x).max() < 0.95 and np.abs(y).max() < 0.95, (name, np.abs(x).max(), np.abs(y).max())
+
+
+def test_every_page_shape_and_turn_style_stays_clear():
+    """Curved pages and all turn styles: landed pages above the cover and each other, turning
+    pages above the stack, paper never stretched."""
+    for shape in ('flat', 'curved', 'very curved'):
+        for style in ('natural', 'corner peel', 'quick'):
+            G.configure(10, 1.4318, page_shape=shape, turn_style=style)
+            n = G.N_SHEETS
+            for layer in range(2):
+                g = G.sheet_grid(n - 1 - layer, 'left', layer, ny=2)
+                h = _height_above_cover(g[:, :, [0, 2]].reshape(-1, 2))
+                assert h.min() >= G.SHEET_T / 2 + layer * G.PITCH - 1e-4, (shape, style, layer)
+            for u in np.linspace(0, 1, 11):
+                g = G.sheet_grid(n - 1, 'turn', 0, float(u), ny=4)
+                mid = g[len(g) // 2]
+                length = np.sum(np.linalg.norm(np.diff(mid, axis=0), axis=1))
+                assert math.isclose(length, G.W, rel_tol=3e-3), (shape, style, u, length)
+    G.configure(10, 1.4318, page_shape='flat', turn_style='natural')
+
+
+def test_curved_pages_rise_out_of_the_spine():
+    G.configure(10, 1.4318, page_shape='very curved')
+    r = G.sheet_grid(G.N_SHEETS - 1, 'right', ny=2)[8]
+    assert r[:, 2].max() - r[-1, 2] > 0.05          # an arch well above the fore-edge
+    G.configure(10, 1.4318, page_shape='flat')
+    r = G.sheet_grid(G.N_SHEETS - 1, 'right', ny=2)[8]
+    assert r[:, 2].max() - r[-1, 2] < 1e-3

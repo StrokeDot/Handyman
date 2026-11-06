@@ -47,8 +47,9 @@ def _normals(v, tris):
 class JournalPreview:
     """Holds cached meshes; draw() paints one frame with the current GL matrices."""
 
-    def __init__(self, book, page_count):
-        G.configure(int(page_count or book.get('page_count') or 10), float(book.get('page_aspect', 1.4318)))
+    def __init__(self, book, page_count, page_shape='flat', turn_style='natural'):
+        G.configure(int(page_count or book.get('page_count') or 10), float(book.get('page_aspect', 1.4318)),
+                    page_shape=page_shape, turn_style=turn_style)
         self.rows = len(G.rows(G.NY))
         self.cols = G.NX
         self.top, self.bottom, self.rim = _faces(self.rows, self.cols)

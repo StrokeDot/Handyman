@@ -116,9 +116,12 @@ LL = 0.30      # length of the gutter curve on the left
 
 def binding(j):
     """Binding point of sheet j (0 = bottom, next to the back board)."""
-    zlo = TB + 0.004
     zhi = TB + T - GUTTER_DIP
-    return np.array([0.0, zlo + (j + 0.5) / N_SHEETS * (zhi - zlo)])
+    # bound edges at least one sheet thickness apart (thin books: the gutter dip gives way)
+    step = max((zhi - TB - 0.004) / N_SHEETS, 1.06 * SHEET_T)
+    zlo = max(TB + 0.0003, zhi - N_SHEETS * step)
+    step = (zhi - zlo) / N_SHEETS
+    return np.array([0.0, zlo + (j + 0.5) * step])
 
 
 BSTEP = (T - GUTTER_DIP - 0.004) / N_SHEETS
@@ -136,6 +139,16 @@ def binding_left(layer):
     return base + layer * (1.05 * PITCH / UP_LEFT[1]) * UP_LEFT
 
 
+CURVE = 0.0        # page "pillow": 0 = flat pages; ~0.1 gentle, ~0.18 strong (radians at the spine)
+PAGE_SHAPES = {'flat': 0.0, 'curved': 0.15, 'very curved': 0.26}
+
+
+def pillow(s=S):
+    """Extra angle that makes a resting page rise out of the spine and come back down at the
+    fore-edge (cos: + near the spine, - near the edge; its height gain over the page is ~0)."""
+    return CURVE * np.cos(np.pi * np.asarray(s) / W)
+
+
 def flat_right(j):
     return TB + (j + 0.5) * PITCH
 
@@ -144,9 +157,10 @@ def right_rest_angle(j, s=S):
     """Tangent angle along a resting right-hand sheet: rises out of the gutter, then flat."""
     p = binding(j)
     rise = flat_right(j) - p[1]
-    g = lambda d: integrate(d * profile(s, LR), s)[1][-1] - rise
+    arch = pillow(s)
+    g = lambda d: integrate(d * profile(s, LR) + arch, s)[1][-1] - rise
     d = bisect(g, -0.5, 1.2)
-    return d * profile(s, LR)
+    return d * profile(s, LR) + arch
 
 
 def left_line(layer):
@@ -162,14 +176,18 @@ def left_rest_angle(j, layer, s=S):
     q, d, nrm = left_line(layer)
     final = math.atan2(d[1], d[0]) % (2 * math.pi)
 
+    arch = pillow(s)
+    k0 = int(np.searchsorted(s, LL))
+
     def g(gam):
-        a = final - gam * profile(s, LL)
+        a = final - gam * profile(s, LL) - arch
         x, z = integrate(a, s, p)
-        k = np.searchsorted(s, LL)
-        pt = np.array([x[k], z[k]])
-        return float(np.dot(pt - q, nrm))        # signed distance above the support line
-    gam = bisect(lambda gm: g(gm), -0.2, 2.5)
-    return final - gam * profile(s, LL)
+        pts = np.stack([x[k0:], z[k0:]], axis=1)
+        # lowest point of the page beyond the gutter curve sits exactly on its support (a flat
+        # page: everywhere beyond LL; a curved page: its fore-edge, the arch floats above)
+        return float(np.min((pts - q) @ nrm))
+    gam = bisect(lambda gm: g(gm), -0.6, 2.5)
+    return final - gam * profile(s, LL) - arch
 
 
 # ---- the turn -----------------------------------------------------------------------------
@@ -180,6 +198,25 @@ E = pchip([0.0, 0.14, 0.24, 0.50, 0.74, 0.88, 1.0],
 B = pchip([0.0, 0.07, 0.17, 0.30, 0.42, 0.52, 0.62, 0.72, 0.84, 0.94, 1.0],
           [0.0, 0.30, 0.95, 1.00, 0.90, 0.50, 0.0, -0.42, -0.36, -0.07, 0.0])
 LEAD = 0.16        # how far the top outer corner trails the bottom outer corner
+SIG = 1.4          # how much the bend is concentrated at the outer edge (higher = only the edge)
+
+TURN_STYLES = {
+    # the original: the page lifts and swings over in one smooth arc
+    'natural': dict(E=E, B=B, LEAD=0.16, SIG=1.4),
+    # like a hand-made After Effects turn: the bottom corner peels up slowly, the page whips over
+    # quickly, then lands with its corner still curled and relaxes
+    'corner peel': dict(
+        E=pchip([0.0, 0.40, 0.52, 0.58, 0.64, 0.71, 0.80, 1.0],
+                [0.0, 0.02, 0.10, 0.30, 0.62, 0.92, 1.0, 1.0]),
+        B=pchip([0.0, 0.15, 0.32, 0.48, 0.56, 0.64, 0.72, 0.84, 0.94, 1.0],
+                [0.0, 0.45, 1.05, 1.45, 1.10, 0.10, -0.50, -0.28, -0.06, 0.0]),
+        LEAD=0.45, SIG=2.6),
+    # quick and light: little lift, almost no bend - for fast flips through many pages
+    'quick': dict(
+        E=pchip([0.0, 0.08, 0.50, 0.90, 1.0], [0.0, 0.03, 0.50, 0.98, 1.0]),
+        B=pchip([0.0, 0.15, 0.40, 0.65, 0.85, 1.0], [0.0, 0.35, 0.40, -0.25, -0.08, 0.0]),
+        LEAD=0.10, SIG=1.6),
+}
 
 
 def turning_angles(aR, aL, u, v):
@@ -189,7 +226,7 @@ def turning_angles(aR, aL, u, v):
     on the sheet's clock, while points further out towards the top edge run a little behind,
     so the bottom outer corner (where the hand grabs) leads and the top outer corner trails.
     The binding never twists, and every point reaches the rest shape at u = 1."""
-    sig = (S / W) ** 1.4
+    sig = (S / W) ** SIG
     rows = []
     for vv in v:
         lag = LEAD * vv * (S / W) ** 0.8
@@ -271,9 +308,14 @@ SPINE_LEN = _arclen(bezier(np.array([XB, 0.0]), np.array([XB - 4 / 3 * SPINE_BUL
 
 
 # ---- reconfigure for a template ------------------------------------------------------------
-def configure(page_count=None, page_aspect=None, pitch=None, sheet_t=None):
+def configure(page_count=None, page_aspect=None, pitch=None, sheet_t=None, page_shape=None, turn_style=None):
     """Set the book's sheet count and page shape, and recompute everything derived from them."""
-    global N_SHEETS, H, PITCH, SHEET_T, T, ZJ, THETA_OPEN, BETA, J, BSTEP, HC
+    global N_SHEETS, H, PITCH, SHEET_T, T, ZJ, THETA_OPEN, BETA, J, BSTEP, HC, CURVE, E, B, LEAD, SIG
+    if page_shape is not None:
+        CURVE = PAGE_SHAPES.get(str(page_shape), 0.0) if isinstance(page_shape, str) else float(page_shape)
+    if turn_style is not None:
+        st = TURN_STYLES.get(str(turn_style), TURN_STYLES['natural'])
+        E, B, LEAD, SIG = st['E'], st['B'], st['LEAD'], st['SIG']
     if page_count:
         N_SHEETS = int(page_count)
     if page_aspect:
@@ -337,7 +379,7 @@ _TURN_PTS = {}
 def turn_points():
     """Points of a page mid-turn (the real journal motion), for framing: the camera keeps the
     whole standing page in the picture, not just the flat book."""
-    key = (N_SHEETS, H, PITCH)
+    key = (N_SHEETS, H, PITCH, CURVE, LEAD, SIG)
     if key not in _TURN_PTS:
         pts = []
         for u in np.linspace(0.1, 0.9, 17):

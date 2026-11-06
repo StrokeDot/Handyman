@@ -11,6 +11,7 @@ landed page is kept above the open cover along its whole width.
 import json
 import math
 import os
+import shutil
 import sys
 import time
 
@@ -417,7 +418,8 @@ def surface(name, path, fallback_rgb, **kw):
 def build(job):
     book = job['book']
     sheets = int(job.get('page_count') or book.get('page_count') or 10)
-    G.configure(sheets, float(book.get('page_aspect', 1.4318)))
+    G.configure(sheets, float(book.get('page_aspect', 1.4318)), page_shape=job.get('page_shape', 'flat'),
+                turn_style=job.get('turn_style', 'natural'))
     images = list(job.get('images') or [])
     leather_rgb = book.get('leather_color', (0.12, 0.05, 0.02))
 
@@ -539,6 +541,32 @@ def _look(d):
     return Vector(tuple(float(x) for x in d)).to_track_quat('-Z', 'Y').to_euler()
 
 
+def tune_cycles(scene):
+    """Photoreal speed: keep the scene loaded between frames (only the moving pages are
+    updated), denoise on the graphics card, and stop sampling early where a pixel is clean."""
+    c = scene.cycles
+    c.max_bounces, c.diffuse_bounces, c.glossy_bounces = 4, 2, 1
+    c.transmission_bounces, c.volume_bounces, c.transparent_max_bounces = 1, 0, 4
+    c.caustics_reflective = c.caustics_refractive = False
+    c.use_adaptive_sampling = True
+    c.adaptive_threshold = 0.03
+    c.samples = min(int(c.samples), 64)
+    scene.render.use_persistent_data = True       # no full scene rebuild per frame
+    gpu = c.device == 'GPU'
+    try:
+        kind = bpy.context.preferences.addons['cycles'].preferences.compute_device_type
+    except Exception:
+        kind = None
+    for attr, val in (('denoiser', 'OPTIX' if gpu and kind == 'OPTIX' else 'OPENIMAGEDENOISE'),
+                      ('denoising_use_gpu', gpu), ('denoising_prefilter', 'FAST')):
+        try:
+            setattr(c, attr, val)
+        except (AttributeError, TypeError):
+            pass
+    log(f'INFO Cycles tuned: {c.samples} samples (adaptive), persistent data, denoiser {c.denoiser}'
+        f'{" on GPU" if gpu else ""}')
+
+
 def main():
     job_path = sys.argv[sys.argv.index('--') + 1]
     with open(job_path, encoding='utf-8') as fh:
@@ -549,9 +577,7 @@ def main():
     sc_b.view_settings.view_transform = 'Standard'
     sc_b.view_settings.exposure = -1.25
     if sc_b.render.engine == 'CYCLES':
-        sc_b.cycles.max_bounces = 4
-        sc_b.cycles.diffuse_bounces = 2
-        sc_b.cycles.glossy_bounces = 1
+        tune_cycles(sc_b)
     root, pivot, sp, core, obs = build(job)
     setup_lights_world()
     add_shadow_catcher(root)
@@ -572,9 +598,17 @@ def main():
                      page_count=G.N_SHEETS, smoothness=job.get('smoothness', 1.0),
                      recorded_clips=job.get('recorded_clips'), clip_list=job.get('clip_list'))
     frames = job.get('frames') or list(range(sc.frames))
+    total_frames = len(frames)
+    offset = 0
+    chunk = job.get('chunk')           # [k, n]: this Blender renders part k of n (side by side)
+    if chunk:
+        k, n = int(chunk[0]), int(chunk[1])
+        a, b = len(frames) * k // n, len(frames) * (k + 1) // n
+        frames, offset = frames[a:b], a
     out = job['out_dir']
     os.makedirs(out, exist_ok=True)
     last = [None] * len(obs)
+    last_key, last_path = None, None
     base_loc = tuple(root.location)
     last_theta = None
     started = time.time()
@@ -595,13 +629,24 @@ def main():
             if t != last[k]:
                 set_coords(ob.data, sheet_coords(k, t))
                 last[k] = t
-        sc_b.frame_current = f
-        sc_b.render.filepath = os.path.join(out, f'frame_{i:06d}.png')
-        bpy.ops.render.render(write_still=True)
+        path = os.path.join(out, f'frame_{offset + i:06d}.png')
+        cam_key = None if job['cam'].get('move', 'none') == 'none' else round(float(pose['camera_frac']), 6)
+        key = (round(theta, 7), tuple(round(float(x), 7) for x in prog), cam_key,
+               round(float(pose.get('cover_slide', 0.0)), 7))
+        if key == last_key and last_path:
+            shutil.copyfile(last_path, path)          # nothing moved: same picture, no render
+        else:
+            sc_b.frame_current = f
+            sc_b.render.filepath = path
+            bpy.ops.render.render(write_still=True)
+            last_key, last_path = key, path
         log(f'PROGRESS {i + 1} {len(frames)}')
+    if chunk and int(chunk[0]) != 0:
+        log('DONE')
+        return
     with open(os.path.join(out, 'sequence.json'), 'w', encoding='utf-8') as fh:
-        json.dump(dict(width=job['width'], height=job['height'], fps=job['fps'], frames=len(frames),
-                       turns=turns, seconds=round(len(frames) / job['fps'], 3), alpha=True,
+        json.dump(dict(width=job['width'], height=job['height'], fps=job['fps'], frames=total_frames,
+                       turns=turns, seconds=round(total_frames / job['fps'], 3), alpha=True,
                        render_seconds=round(time.time() - started, 1)), fh, indent=2)
     log('DONE')
 

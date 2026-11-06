@@ -276,7 +276,8 @@ class LiveView(QOpenGLWidget):
         self.journal = None
         if book.get('engine') == 'journal':
             # same shapes and camera as journal_scene.py (the final render)
-            self.journal = JournalPreview(book, values.get('page_count') or book.get('page_count'))
+            self.journal = JournalPreview(book, values.get('page_count') or book.get('page_count'),
+                                          values.get('page_shape') or 'flat', values.get('turn_style') or 'natural')
         self.frame = min(self.frame, self.timeline.frames - 1)
         self._sheet_cache.clear()
         self.cam = dict(v.get('cam', self.cam))

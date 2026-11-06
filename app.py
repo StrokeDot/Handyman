@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import os
 import sys
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -121,46 +122,76 @@ class RenderWorker(QThread):
     finished_ok = Signal(str)            # folder
     failed = Signal(str)
 
-    def __init__(self, blender, job, encode_opts=None):
+    def __init__(self, blender, job, encode_opts=None, workers=1):
         super().__init__()
         self.blender, self.job, self.encode_opts = blender, job, encode_opts
+        self.workers = max(1, int(workers))
         self.proc = None
+        self.procs = []
         self.cancelled = False
 
     def cancel(self):
         self.cancelled = True
-        if self.proc and self.proc.poll() is None:
-            self.proc.kill()
+        for p in self.procs or [self.proc]:
+            if p and p.poll() is None:
+                p.kill()
 
     def run(self):
         out = Path(self.job['out_dir'])
         out.mkdir(parents=True, exist_ok=True)
-        job_path = out / 'job.json'
-        job_path.write_text(json.dumps(self.job, indent=2), encoding='utf-8')
+        # Journal books can be rendered by several Blenders side by side, each doing one part of
+        # the video: one draws on the graphics card while another prepares or saves its frame.
+        n = self.workers if (self.job['book'].get('engine') == 'journal' and not self.job.get('frames')) else 1
+        jobs = []
+        for k in range(n):
+            job = dict(self.job, chunk=[k, n]) if n > 1 else self.job
+            path = out / (f'job_{k}.json' if n > 1 else 'job.json')
+            path.write_text(json.dumps(job, indent=2), encoding='utf-8')
+            jobs.append(path)
         error, tail, started = None, [], time.time()
-        try:
-            self.proc = subprocess.Popen(bb.command(self.blender, job_path), stdout=subprocess.PIPE,
-                                         stderr=subprocess.STDOUT, text=True, encoding='utf-8',
-                                         errors='replace', creationflags=NO_WINDOW)
-            for line in self.proc.stdout:
+        done = [0] * n
+        totals = [0] * n
+        lock = threading.Lock()
+
+        def pump(k, proc):
+            nonlocal error, tail
+            for line in proc.stdout:
                 kind, *rest = bb.parse_line(line)
-                if kind == 'progress':
-                    done, total = rest
-                    self.progress.emit(done, total, (time.time() - started) / max(1, done))
-                elif kind == 'error':
-                    error = rest[0]
-                elif kind == 'log' and line.strip():
-                    tail = (tail + [line.rstrip()])[-40:]
-                    if line.startswith(('INFO', 'WARNING')):
-                        self.message.emit(line.strip())
-            self.proc.wait()
+                with lock:
+                    if kind == 'progress':
+                        done[k], totals[k] = rest
+                        d = sum(done)
+                        if all(totals):
+                            self.progress.emit(d, sum(totals), (time.time() - started) / max(1, d))
+                    elif kind == 'error':
+                        error = rest[0]
+                    elif kind == 'log' and line.strip():
+                        tail = (tail + [f'[{k + 1}] ' + line.rstrip() if n > 1 else line.rstrip()])[-40:]
+                        if line.startswith(('INFO', 'WARNING')) and k == 0:
+                            self.message.emit(line.strip() + (f'  ({n} Blenders side by side)' if n > 1 else ''))
+        try:
+            for path in jobs:
+                p = subprocess.Popen(bb.command(self.blender, path), stdout=subprocess.PIPE,
+                                     stderr=subprocess.STDOUT, text=True, encoding='utf-8',
+                                     errors='replace', creationflags=NO_WINDOW)
+                self.procs.append(p)
+            self.proc = self.procs[0]
+            readers = [threading.Thread(target=pump, args=(k, p), daemon=True) for k, p in enumerate(self.procs)]
+            for t in readers:
+                t.start()
+            for p in self.procs:
+                p.wait()
+            for t in readers:
+                t.join(timeout=5)
         except OSError as exc:
+            self.cancel()
             self.failed.emit(f'Could not start Blender: {exc}')
             return
         if self.cancelled:
             self.failed.emit('Cancelled. Frames already rendered are in:\n' + str(out))
             return
-        if self.proc.returncode or error:
+        if any(p.returncode for p in self.procs) or error:
+            self.cancel()
             self.failed.emit((error or 'Blender stopped unexpectedly.') + '\n\nLast Blender output:\n' + '\n'.join(tail))
             return
         if self.encode_opts:
@@ -342,6 +373,15 @@ class Studio(QMainWindow):
         self.page_count.setToolTip('Each sheet is 2 pages (front and back). More sheets = thicker book.')
         self.page_count.valueChanged.connect(self._update_summary)
         row.addWidget(self.page_count)
+        bl.addLayout(row)
+        row = QHBoxLayout()
+        row.addWidget(QLabel('Page shape'))
+        self.page_shape = QComboBox()
+        for label, key in (('Flat', 'flat'), ('Curved', 'curved'), ('Very curved', 'very curved')):
+            self.page_shape.addItem(label, key)
+        self.page_shape.setToolTip('Curved: the pages rise out of the spine in a soft arch, like a real open book')
+        self.page_shape.currentIndexChanged.connect(self._schedule_live)
+        row.addWidget(self.page_shape, 1)
         bl.addLayout(row)
         row = QHBoxLayout()
         for text, fn, tip in (('Make a copy…', self._copy_book, 'Save this design under a new name'),
@@ -620,6 +660,18 @@ class Studio(QMainWindow):
         av = QVBoxLayout(anim)
         timing = QGroupBox('Timing (seconds)')
         f = QFormLayout(timing)
+        self.turn_style = QComboBox()
+        for label, key in (('Natural (smooth arc)', 'natural'),
+                           ('Corner peel (like After Effects)', 'corner peel'),
+                           ('Quick and light', 'quick')):
+            self.turn_style.addItem(label, key)
+        self.turn_style.setToolTip('How each page moves as it turns')
+        self.turn_style.currentIndexChanged.connect(self._schedule_live)
+        f.addRow('Page turn style', self.turn_style)
+        flip = QPushButton('Add a fast flip…')
+        flip.setToolTip('Flip through many pages quickly, like riffling them with your thumb')
+        flip.clicked.connect(self._fast_flip)
+        f.addRow(flip)
         self.start_closed = QCheckBox('Start closed, then open the cover')
         self.start_closed.setChecked(True)
         self.start_closed.toggled.connect(self._update_summary)
@@ -711,6 +763,12 @@ class Studio(QMainWindow):
         row.addWidget(b)
         row.addWidget(t)
         el.addLayout(row)
+        self.parallel = QCheckBox('Render with 2 Blenders at once (faster)')
+        self.parallel.setToolTip('Each Blender renders half of the video at the same time, so the graphics card '
+                                 'is kept busy. Turn off if your computer runs out of memory.')
+        self.parallel.setChecked(self.settings.value('parallel', 'true') == 'true')
+        self.parallel.toggled.connect(lambda on: self.settings.setValue('parallel', 'true' if on else 'false'))
+        el.addWidget(self.parallel)
         sv.addWidget(eng)
         upd = QGroupBox('Updates')
         ul = QVBoxLayout(upd)
@@ -774,6 +832,45 @@ class Studio(QMainWindow):
         self._pages_changed()
         self.status.setText(f'Added {added} blank page(s): all {target} pages now turn.' if added
                             else 'Every page of the book already has a page in the list.')
+
+    def _fast_flip(self):
+        """Add a burst of quick, overlapping page turns at the end of the animation."""
+        from PySide6.QtWidgets import QInputDialog
+        v = self._values()
+        turned = layout_pages(self.pages.count())[0] if self.pages.count() else 0
+        left = max(1, self.page_count.value() - turned)
+        n, ok = QInputDialog.getInt(self, 'Fast flip', f'How many pages to flip? (up to {left} left in the book)',
+                                    min(8, left), 2, max(2, left))
+        if not ok:
+            return
+        secs, ok = QInputDialog.getDouble(self, 'Fast flip', f'Flip {n} pages in how many seconds?',
+                                          max(0.8, round(n * 0.18, 1)), 0.3, 30.0, 1)
+        if not ok:
+            return
+        fps = v['fps']
+        # each page needs a page on both sides: add blank pages so the list covers the new turns
+        need = (turned + n) * 2
+        while self.pages.count() < need:
+            self._add_page_item(None)
+        self._timeline_hand_edited = True
+        self._pages_changed()                       # adds n turn clips at the end
+        clips = [clip_from_dict(d) for d in (self.edited_clips or [])]
+        turns = [c for c in clips if c.kind == 'turn']
+        burst = turns[-n:]
+        total = max(2, round(secs * fps))
+        each = max(4, round(total * 0.42))          # one page's own turn
+        gap = max(1, round((total - each) / max(1, n - 1)))
+        gap = max(gap, round(each * 0.2))           # pages stay a sheet apart in the air
+        start = (burst[0].start if burst else 0)
+        prev_end = max((c.start + c.duration for c in clips if not any(c is b for b in burst)), default=0)
+        start = max(prev_end + round(v['pause'] * fps), 0)
+        for k, c in enumerate(burst):
+            c.start, c.duration = start + k * gap, each
+        self.edited_clips = [clip_to_dict(c) for c in clips]
+        self.timeline_panel.set_clips(clips)
+        self._update_summary()
+        self.status.setText(f'Added a fast flip: {n} pages in about {(gap * (n - 1) + each) / fps:.1f} s. '
+                            'Press Play to watch it.')
 
     def _clear_pages(self):
         if self.pages.count() and QMessageBox.question(
@@ -1030,6 +1127,8 @@ class Studio(QMainWindow):
                     blend=self.blend.currentText(), page_count=self.page_count.value(),
                     smoothness=self.smooth.value() / 100, recorded_clips=self.recorded_clips,
                     clip_list=self.edited_clips, transform=self._transform(),
+                    page_shape=self.page_shape.currentData() or 'flat',
+                    turn_style=self.turn_style.currentData() or 'natural',
                     page_fits=self._page_fits())
 
     def _state(self):
@@ -1062,6 +1161,10 @@ class Studio(QMainWindow):
                          ('start_closed', self.start_closed)):
             if key in v:
                 box.setChecked(bool(v[key]))
+        for combo, key, default in ((self.page_shape, 'page_shape', 'flat'), (self.turn_style, 'turn_style', 'natural')):
+            j = combo.findData(v.get(key, default))
+            if j >= 0:
+                combo.setCurrentIndex(j)
         i = self.mov_size.findData(v.get('mov_size', 'small'))
         if i >= 0:
             self.mov_size.setCurrentIndex(i)
@@ -1429,7 +1532,8 @@ class Studio(QMainWindow):
         self.progress.setValue(0)
         self._busy(True)
         self.status.setText('Starting Blender… (the first frame is slower while materials compile)')
-        self.worker = RenderWorker(self.blender, job, encode_opts)
+        workers = 2 if self.parallel.isChecked() else 1
+        self.worker = RenderWorker(self.blender, job, encode_opts, workers=workers)
         self.worker.progress.connect(self._on_progress)
         self.worker.message.connect(self.status.setText)
         self.worker.finished_ok.connect(on_done)
