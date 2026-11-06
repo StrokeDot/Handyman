@@ -180,7 +180,28 @@ PAGE_SHAPES = {'flat': 0.0, 'curved': 0.15, 'very curved': 0.26}
 def pillow(s=S):
     """Extra angle that makes a resting page rise out of the spine and come back down at the
     fore-edge (cos: + near the spine, - near the edge; its height gain over the page is ~0)."""
-    return CURVE * OPEN_W * np.cos(np.pi * np.asarray(s) / W)
+    return CURVE * OPEN_W * SHEET_W * np.cos(np.pi * np.asarray(s) / W)
+
+
+SHEET_W = 1.0      # curve of the sheet being computed (0 = flat, 1 = full curve); see curve_weights
+
+
+def curve_weights(progress):
+    """How curved each sheet is, from every sheet's turn progress (0 = right, 1 = left).
+
+    Only the two pages you can see are curved; every page under them is flat:
+      * a page curves while the page before it turns away (it is being revealed) or while it
+        turns itself - so the first spread, just opened, is still flat;
+      * it goes flat again while the next page lands on top of it.
+    w[k] = max(p[k-1], p[k]) * (1 - p[k+1])"""
+    p = [float(x) for x in progress]
+    n = len(p)
+    out = []
+    for k in range(n):
+        before = p[k - 1] if k > 0 else 0.0
+        after = p[k + 1] if k + 1 < n else 0.0
+        out.append(max(before, p[k]) * (1.0 - after))
+    return out
 
 
 def set_opening(theta):
@@ -298,9 +319,19 @@ def smax(v):
     return W - RC + math.sqrt(max(0.0, RC * RC - (RC - d) ** 2))
 
 
-def sheet_grid(j, state, layer_left=0, u=0.0, ny=NY):
+def sheet_grid(j, state, layer_left=0, u=0.0, ny=NY, curve=1.0):
     """Mid-surface vertices (rows, NX, 3) of sheet j, cut to the page outline.
-    state: 'right', 'left', or 'turn' (with progress u and landing layer)."""
+    state: 'right', 'left', or 'turn' (with progress u and landing layer).
+    curve: how much of the page-shape curve this sheet has (see curve_weights)."""
+    global SHEET_W
+    saved, SHEET_W = SHEET_W, float(curve)
+    try:
+        return _sheet_grid(j, state, layer_left, u, ny)
+    finally:
+        SHEET_W = saved
+
+
+def _sheet_grid(j, state, layer_left, u, ny):
     v = rows(ny)
     ny = len(v)
     p = binding(j)
@@ -412,14 +443,15 @@ def sheet_uvs(n_mid, nx=None):
     return np.array([(k / (nx - 1) * smax(v) / W, v) for v in vv for k in range(nx)], dtype=float)
 
 
-def sheet_state(k, t):
-    """(mid-surface grid) of sheet k (0 = first sheet inside the cover) at turn progress t."""
+def sheet_state(k, t, curve=1.0):
+    """(mid-surface grid) of sheet k (0 = first sheet inside the cover) at turn progress t,
+    with `curve` of the page-shape curve (see curve_weights)."""
     j = N_SHEETS - 1 - k
     if t <= 0.0:
-        return sheet_grid(j, 'right', ny=NY)
+        return sheet_grid(j, 'right', ny=NY, curve=curve)
     if t >= 1.0:
-        return sheet_grid(j, 'left', k, ny=NY)
-    return sheet_grid(j, 'turn', k, float(t), ny=NY)
+        return sheet_grid(j, 'left', k, ny=NY, curve=curve)
+    return sheet_grid(j, 'turn', k, float(t), ny=NY, curve=curve)
 
 
 THETA_EASE = pchip([0.0, 0.25, 0.55, 0.80, 0.92, 1.0], [0.0, 0.10, 0.47, 0.88, 0.985, 1.0])

@@ -1,5 +1,8 @@
 # Changes
 
+## 0.9.4
+- **The curve travels with the visible pages** (Curved / Very curved): only the two pages you can see are curved; every page under them is flat. The first spread, just opened, is flat. As a page turns, it and the page it reveals on the right curve up together; the page it lands on goes flat again. Checked through every turn (and fast flips) for every turn style - no page touches another - in the live view and the render.
+
 ## 0.9.3
 - **Pages are sewn to the spine, like a real book**: every sheet is sewn at its own fixed spot along the spine and turns about it. When the book opens, the spine rolls into a hump between the two covers (the bent hinge) with the pages sewn along it, so each side lies out flat and the top pages dip into the gutter. Before, pages were tied to the top of the stack, so with many pages on one side they curled up at the middle and the spine disappeared.
 - The open spine is now as wide as the book is thick, so thicker books open realistically too.

@@ -215,3 +215,33 @@ def test_open_spine_is_a_hump_between_the_covers_with_pages_sewn_along_it():
     closed = np.array([G.binding(j) for j in range(G.N_SHEETS)])
     assert np.allclose(closed[:, 0], 0.0)                                                   # closed: a column
     G.set_opening(G.THETA_OPEN)
+
+
+def test_only_the_visible_spread_is_curved():
+    """Just opened: flat. While a page turns, it and the page it reveals curve; the page it lands
+    on goes flat; every page underneath stays flat."""
+    w = G.curve_weights
+    assert w([0, 0, 0, 0]) == [0, 0, 0, 0]                       # just opened: flat
+    assert w([0.5, 0, 0, 0])[:2] == [0.5, 0.5]                   # curving as page 1 turns
+    assert w([1, 0, 0, 0]) == [1, 1, 0, 0]                       # page 1 landed: the spread is curved
+    mid = w([1, 0.4, 0, 0])
+    assert abs(mid[0] - 0.6) < 1e-9 and mid[1] == 1 and abs(mid[2] - 0.4) < 1e-9
+    assert w([1, 1, 0, 0]) == [0, 1, 1, 0]                       # page 1 now covered: flat
+    assert w([1, 1, 1, 1]) == [0, 0, 0, 1]
+
+
+def test_travelling_curve_never_makes_pages_touch():
+    def mind(a, b):
+        return min(np.min(np.linalg.norm(a[i][:, None] - b[i][None], axis=2)) for i in range(0, a.shape[0], 4))
+    G.configure(10, 1.4318, page_shape='very curved')
+    G.set_opening(G.THETA_OPEN)
+    n = G.N_SHEETS
+    for landed in (0, 1, 4):
+        for u in np.linspace(0, 1, 9):
+            prog = [1.0] * landed + [float(u)] + [0.0] * (n - landed - 1)
+            cw = G.curve_weights(prog)
+            sh = [G.sheet_grid(n - 1 - k, 'right' if p <= 0 else ('left' if p >= 1 else 'turn'), k, float(p),
+                               ny=2, curve=cw[k])[:, :, [0, 2]] for k, p in enumerate(prog)]
+            for a in range(max(0, landed - 2), min(n - 1, landed + 2)):
+                assert mind(sh[a], sh[a + 1]) >= G.SHEET_T - 1e-4, (landed, u, a)
+    G.configure(10, 1.4318, page_shape='flat')

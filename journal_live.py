@@ -62,10 +62,10 @@ class JournalPreview:
         self._cache = {}
 
     # ------------------------------------------------------------------ meshes
-    def sheet(self, k, t):
-        key = (k, round(float(t), 4), round(G.OPEN_W, 4), round(G.OPEN_B, 4))
+    def sheet(self, k, t, curve=1.0):
+        key = (k, round(float(t), 4), round(G.OPEN_W, 4), round(G.OPEN_B, 4), round(float(curve), 4))
         if key not in self._cache:
-            v = G.solid_from_grid(G.sheet_state(k, t)).astype(np.float32)
+            v = G.solid_from_grid(G.sheet_state(k, t, curve)).astype(np.float32)
             n = _normals(v, np.concatenate([self.top, self.bottom]))
             self._cache[key] = (v, n)
             if len(self._cache) > 600:
@@ -90,11 +90,12 @@ class JournalPreview:
         self._spine(theta, tex.get('spine'), leather_rgb)
         edge = tuple(np.array(paper_rgb) * 0.78)
         prog = pose['sheet_progress']
+        ts = [float(prog[k]) if k < len(prog) else 0.0 for k in range(G.N_SHEETS)]
+        cw = G.curve_weights(ts)          # only the visible spread is curved; pages under it are flat
         for k in range(G.N_SHEETS):
-            t = float(prog[k]) if k < len(prog) else 0.0
             front = tex.get(('page', 2 * k)) or tex.get('paper_odd')
             back = tex.get(('page', 2 * k + 1)) or tex.get('paper_even')
-            self._sheet(k, t, front, back, edge)
+            self._sheet(k, ts[k], front, back, edge, cw[k])
         gl.glPopMatrix()
 
     def _board(self, x0, tex_top, tex_bottom, colour):
@@ -153,8 +154,8 @@ class JournalPreview:
         gl.glEnd()
         gl.glDisable(gl.GL_TEXTURE_2D)
 
-    def _sheet(self, k, t, tex_front, tex_back, edge):
-        v, n = self.sheet(k, t)
+    def _sheet(self, k, t, tex_front, tex_back, edge, curve=1.0):
+        v, n = self.sheet(k, t, curve)
         gl.glEnableClientState(gl.GL_VERTEX_ARRAY)
         gl.glEnableClientState(gl.GL_NORMAL_ARRAY)
         gl.glVertexPointer(3, gl.GL_FLOAT, 0, v)

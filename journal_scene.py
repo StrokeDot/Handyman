@@ -496,8 +496,8 @@ def build(job):
     return root, pivot, sp, core, obs
 
 
-def sheet_coords(k, t):
-    return G.solid_from_grid(G.sheet_state(k, t))
+def sheet_coords(k, t, curve=1.0):
+    return G.solid_from_grid(G.sheet_state(k, t, curve))
 
 
 def setup_lights_world():
@@ -636,11 +636,13 @@ def main():
             last_theta = theta
         place_camera(cam, job, pose['camera_frac'])
         prog = pose['sheet_progress']
+        ts = [float(prog[k]) if k < len(prog) else 0.0 for k in range(len(obs))]
+        cw = G.curve_weights(ts)          # only the visible spread is curved; pages under it are flat
         for k, ob in enumerate(obs):
-            t = float(prog[k]) if k < len(prog) else 0.0
-            if t != last[k]:
-                set_coords(ob.data, sheet_coords(k, t))
-                last[k] = t
+            state = (ts[k], round(cw[k], 6))
+            if state != last[k]:
+                set_coords(ob.data, sheet_coords(k, ts[k], cw[k]))
+                last[k] = state
         path = os.path.join(out, f'frame_{offset + i:06d}.png')
         cam_key = None if job['cam'].get('move', 'none') == 'none' else round(float(pose['camera_frac']), 6)
         key = (round(theta, 7), w_open, tuple(round(float(x), 7) for x in prog), cam_key,
