@@ -1,5 +1,16 @@
 # Changes
 
+## 0.8.0 - easier to use
+- New, simpler window laid out in the order you work: **1 Your book** and **2 Pages** on the left, the preview in the middle, and tabs for **Camera**, **Animation**, **Export** and **Settings** on the right. **Render video** is the big amber button at the top.
+- **Change covers & paper...** is now a big button right under the book choice.
+- **Straighten the book** (Camera tab): one click levels the picture - no sideways lean, book facing you squarely, no rotation. The default camera no longer leans.
+- **Fill with blank**: one click adds blank pages until every page of the book turns. **Clear all** empties the list.
+- Plain names: Render a still, Quick test video, Repeat, Turn pages by hand, Look from above, Walk around, Lean sideways, Zoom...
+- Controls the Leather Journal does not use (page curl, image fit, page-image mode) are hidden for it.
+- "Book position" (move / rotate / scale) is folded away under Advanced in the Camera tab.
+- A fixed dark theme, so the app looks the same whatever Windows is set to.
+- Live view: the back of a turning page is lit like the front, as in the render.
+
 ## 0.7.3
 - **Swap any image of the Leather Journal**: Book > Edit… opens "Journal design" - front and back covers (outside and inside), spine, leather, hinge strip, and the paper for right- and left-hand pages. Each image must be exactly the size shown; a wrong size is refused with the size needed. "Original" puts back the shipped image, and "Save size guides…" saves the current images, named with their sizes, to paint over.
 - Page images you add must be 982 × 1406 px for the journal (shown under the page list); wrong sizes are refused.

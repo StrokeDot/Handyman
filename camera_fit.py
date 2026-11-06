@@ -11,7 +11,7 @@ from page_curl import sheet_vertices
 SENSOR = 36.0  # mm, Blender's default sensor width (horizontal for landscape frames)
 
 PRESETS = {
-    'Eye level (reading at a desk)': dict(tilt=50, turn=0, roll=-3, lens=35),
+    'Eye level (reading at a desk)': dict(tilt=50, turn=0, roll=0, lens=35),
     'Top-down (like a game journal)': dict(tilt=89, turn=0, roll=0, lens=50),
     'Angled': dict(tilt=60, turn=0, roll=0, lens=50),
     'Low angle': dict(tilt=32, turn=0, roll=0, lens=35),

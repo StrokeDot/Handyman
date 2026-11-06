@@ -17,8 +17,8 @@ from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QFormLayout,
     QGroupBox, QHBoxLayout, QInputDialog, QLabel, QListWidget, QListWidgetItem, QMainWindow,
-    QMessageBox, QProgressBar, QProgressDialog, QPushButton, QScrollArea, QSlider, QSpinBox, QSplitter,
-    QStackedWidget, QVBoxLayout, QWidget,
+    QGridLayout, QMessageBox, QProgressBar, QProgressDialog, QPushButton, QScrollArea, QSlider, QSpinBox,
+    QSplitter, QStackedWidget, QTabWidget, QVBoxLayout, QWidget,
 )
 
 import blender_bridge as bb
@@ -47,6 +47,32 @@ from page_curl import Timeline, layout_pages
 from timeline_panel import TimelinePanel
 from clips import Clip, ClipTimeline, clip_from_dict, clip_to_dict
 from version import APP_NAME, APP_VERSION
+
+APP_STYLE = """
+QGroupBox { font-weight: 600; font-size: 13px; border: 1px solid #3a3a42; border-radius: 8px;
+            margin-top: 14px; padding: 10px 8px 8px 8px; }
+QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; color: #e8c58a; }
+QPushButton { padding: 6px 10px; border-radius: 6px; background: #34343c; border: 1px solid #4a4a54;
+              color: #e8e8ee; }
+QPushButton:hover { background: #3e3e48; border-color: #5c5c68; }
+QPushButton:pressed { background: #2c2c33; }
+QPushButton:disabled { color: #6c6c74; background: #2c2c32; border-color: #3a3a42; }
+QPushButton#primary { background: #d08a2c; color: #1b1206; font-weight: 700; font-size: 14px;
+                      padding: 8px 22px; border: none; }
+QPushButton#primary:hover { background: #e39a38; }
+QPushButton#primary:disabled { background: #5a4a33; color: #2a2015; }
+QPushButton#accent { background: #3b3326; border: 1px solid #8a6a3a; color: #f0d7a8; font-weight: 600;
+                     padding: 8px 10px; }
+QPushButton#accent:hover { background: #4a3f2e; }
+QPushButton#small { padding: 3px 8px; }
+QPushButton#tab { padding: 6px 16px; }
+QPushButton#tab:checked { background: #4a3f2e; border: 1px solid #8a6a3a; color: #f0d7a8; }
+QLabel#hint { color: #9a9aa3; }
+QLabel#summary { color: #cfcfd6; font-weight: 600; }
+QTabWidget::pane { border: 1px solid #3a3a42; border-radius: 6px; }
+QTabBar::tab { padding: 7px 14px; }
+"""
+
 
 RESOLUTIONS = {'1920 × 1080 (Full HD)': (1920, 1080), '2560 × 1440 (2K)': (2560, 1440),
                '3840 × 2160 (4K)': (3840, 2160)}
@@ -233,6 +259,7 @@ class Studio(QMainWindow):
         self._init_timeline()
         self._update_summary()
         self._update_blender_label()
+        self._update_engine_ui()
         self._camera_changed()
         self._show_view(0)
         self._check_recovery()
@@ -241,36 +268,139 @@ class Studio(QMainWindow):
 
     # ---------------------------------------------------------------- layout
     def _build(self):
-        root = QSplitter()
-        self.setCentralWidget(root)
+        """Main window, laid out in the order you work:
+        top bar (new / open / save ... render) · left: 1 Book, 2 Pages · centre: preview ·
+        right: tabs for Camera, Animation, Export, Settings."""
+        central = QWidget()
+        central.setObjectName('central')
+        self.setCentralWidget(central)
+        outer = QVBoxLayout(central)
+        outer.setContentsMargins(10, 8, 10, 8)
+        outer.setSpacing(8)
+        self.setStyleSheet(APP_STYLE)
 
-        # Pages
+        # ---- top bar ------------------------------------------------------------------
+        top = QHBoxLayout()
+        b = QPushButton('New book')
+        b.setToolTip('Start fresh with the Leather Journal (your pages list is cleared)')
+        b.clicked.connect(self._new_leather_book)
+        top.addWidget(b)
+        b = QPushButton('Open project…')
+        b.clicked.connect(self._open_project)
+        top.addWidget(b)
+        b = QPushButton('Save project…')
+        b.clicked.connect(self._save_project)
+        top.addWidget(b)
+        top.addStretch(1)
+        self.summary = QLabel()
+        self.summary.setObjectName('summary')
+        top.addWidget(self.summary)
+        top.addSpacing(12)
+        self.render_btn = QPushButton('Render video')
+        self.render_btn.setObjectName('primary')
+        self.render_btn.setToolTip('Make the final video with everything you set')
+        self.render_btn.clicked.connect(self._render)
+        top.addWidget(self.render_btn)
+        self.cancel_btn = QPushButton('Cancel')
+        self.cancel_btn.setEnabled(False)
+        self.cancel_btn.clicked.connect(self._cancel)
+        top.addWidget(self.cancel_btn)
+        self.open_btn = QPushButton('Open video folder')
+        self.open_btn.clicked.connect(lambda: self._open_output())
+        top.addWidget(self.open_btn)
+        outer.addLayout(top)
+
+        root = QSplitter()
+        outer.addWidget(root, 1)
+
+        # ---- left: 1 Book, 2 Pages ----------------------------------------------------
         left = QWidget()
         lv = QVBoxLayout(left)
-        lv.addWidget(QLabel('<b>Pages</b> (in reading order)'))
-        self.pages = QListWidget()
-        self.pages.setIconSize(QPixmap(64, 64).size())
-        self.pages.setDragDropMode(QListWidget.DragDropMode.InternalMove)
-        self.pages.model().rowsMoved.connect(self._pages_changed)
-        lv.addWidget(self.pages, 1)
+        lv.setContentsMargins(0, 0, 0, 0)
+
+        bookbox = QGroupBox('1  Your book')
+        bl = QVBoxLayout(bookbox)
+        self.book_combo = QComboBox()
+        self.book_combo.setToolTip('Which book design to use')
+        self.book_combo.currentIndexChanged.connect(self._update_summary)
+        self.book_combo.currentIndexChanged.connect(self._camera_changed)
+        self.book_combo.currentIndexChanged.connect(self._update_engine_ui)
+        self.book_combo.activated.connect(self._template_chosen)
+        bl.addWidget(self.book_combo)
+        design = QPushButton('Change covers && paper…')
+        design.setObjectName('accent')
+        design.setToolTip('Swap the front and back covers, the inside covers, the spine and the paper')
+        design.clicked.connect(self._edit_book)
+        bl.addWidget(design)
         row = QHBoxLayout()
-        for text, fn in (('Add images…', self._add_images), ('Add text page…', self._add_text),
-                         ('Add blank page', self._add_blank), ('Remove', self._remove_page)):
+        row.addWidget(QLabel('Pages in the book'))
+        self.page_count = QSpinBox()
+        self.page_count.setRange(2, 2000)
+        self.page_count.setValue(20)   # sheets; template overrides on load
+        self.page_count.setSuffix(' sheets')
+        self.page_count.setToolTip('Each sheet is 2 pages (front and back). More sheets = thicker book.')
+        self.page_count.valueChanged.connect(self._update_summary)
+        row.addWidget(self.page_count)
+        bl.addLayout(row)
+        row = QHBoxLayout()
+        for text, fn, tip in (('Make a copy…', self._copy_book, 'Save this design under a new name'),
+                              ('Open books folder', self._open_books_folder, 'Where your book designs are kept')):
             b = QPushButton(text)
+            b.setObjectName('small')
+            b.setToolTip(tip)
             b.clicked.connect(fn)
             row.addWidget(b)
-        lv.addLayout(row)
-        row = QHBoxLayout()
-        for text, step in (('Move up', -1), ('Move down', 1)):
+        bl.addLayout(row)
+        self.blend_row = QWidget()
+        r = QHBoxLayout(self.blend_row)
+        r.setContentsMargins(0, 0, 0, 0)
+        r.addWidget(QLabel('Page images'))
+        self.blend = self._combo(bb.BLEND)
+        self.blend.currentTextChanged.connect(self._schedule_live)
+        r.addWidget(self.blend, 1)
+        bl.addWidget(self.blend_row)
+        lv.addWidget(bookbox)
+
+        pagebox = QGroupBox('2  Pages (in reading order)')
+        pl = QVBoxLayout(pagebox)
+        self.pages = QListWidget()
+        self.pages.setIconSize(QPixmap(48, 48).size())
+        self.pages.setDragDropMode(QListWidget.DragDropMode.InternalMove)
+        self.pages.model().rowsMoved.connect(self._pages_changed)
+        pl.addWidget(self.pages, 1)
+        grid = QGridLayout()
+        for i, (text, fn, tip) in enumerate((
+                ('+ Images…', self._add_images, 'Add one page per image'),
+                ('+ Text page…', self._add_text, 'Type a page of text'),
+                ('+ Blank page', self._add_blank, 'Add an empty page'),
+                ('Fill with blank', self._fill_blank, 'Add blank pages until every page of the book turns'))):
             b = QPushButton(text)
-            b.clicked.connect(lambda _=False, s=step: self._move_page(s))
+            b.setToolTip(tip)
+            b.clicked.connect(fn)
+            grid.addWidget(b, i // 2, i % 2)
+        pl.addLayout(grid)
+        row = QHBoxLayout()
+        for text, fn in (('▲', lambda: self._move_page(-1)), ('▼', lambda: self._move_page(1))):
+            b = QPushButton(text)
+            b.setObjectName('small')
+            b.setToolTip('Move the selected page up' if text == '▲' else 'Move the selected page down')
+            b.clicked.connect(fn)
             row.addWidget(b)
-        lv.addLayout(row)
+        b = QPushButton('Remove')
+        b.setObjectName('small')
+        b.clicked.connect(self._remove_page)
+        row.addWidget(b)
+        b = QPushButton('Clear all')
+        b.setObjectName('small')
+        b.clicked.connect(self._clear_pages)
+        row.addWidget(b)
+        pl.addLayout(row)
         self.layout_hint = QLabel()
+        self.layout_hint.setObjectName('hint')
         self.layout_hint.setWordWrap(True)
-        lv.addWidget(self.layout_hint)
-        pgroup = QGroupBox('Page image framing (the selected page)')
-        pf = QFormLayout(pgroup)
+        pl.addWidget(self.layout_hint)
+        self.page_framing = QGroupBox('Fit the selected image on its page')
+        pf = QFormLayout(self.page_framing)
         row = QHBoxLayout()
         self.p_fit = QComboBox()
         self.p_fit.addItems(['Fit', 'Fill', 'Stretch'])
@@ -293,67 +423,57 @@ class Studio(QMainWindow):
         row.addWidget(QLabel('Y'))
         row.addWidget(self.p_y)
         pf.addRow('Position', row)
-        lv.addWidget(pgroup)
+        pl.addWidget(self.page_framing)
         self._fit_loading = False
         self.pages.currentRowChanged.connect(self._load_page_fit)
         self.p_fit.currentTextChanged.connect(self._apply_page_fit)
         self.p_scale.valueChanged.connect(self._apply_page_fit)
         self.p_x.valueChanged.connect(self._apply_page_fit)
         self.p_y.valueChanged.connect(self._apply_page_fit)
-        row = QHBoxLayout()
-        b = QPushButton('Open project…')
-        b.clicked.connect(self._open_project)
-        row.addWidget(b)
-        b = QPushButton('Save project…')
-        b.clicked.connect(self._save_project)
-        row.addWidget(b)
-        lv.addLayout(row)
-        # Explicit, reliable way to start the calibrated leather book. It never opens or
-        # overwrites a saved project - it only reconfigures the current session.
-        b = QPushButton('New Leather Book')
-        b.setToolTip('Start a fresh project with the calibrated leather book: '
-                     '20 sheets, 1.424 page aspect, your validated cover/pastedown/spine artwork.')
-        b.clicked.connect(self._new_leather_book)
-        lv.addWidget(b)
-        self.timeline_panel = TimelinePanel()
-        self.timeline_panel.changed.connect(self._timeline_changed)
-        lv.addWidget(self.timeline_panel, 1)
+        lv.addWidget(pagebox, 1)
         root.addWidget(left)
 
-        # Preview
+        # ---- centre: preview ----------------------------------------------------------
         mid = QWidget()
         mv = QVBoxLayout(mid)
-        self.preview = QLabel('Press "Preview still" to see your book.\nThe checkerboard means transparent.')
+        mv.setContentsMargins(0, 0, 0, 0)
+        self.preview = QLabel('Press "Render a still" to see your book as the final video will look.\n'
+                              'The checkerboard means transparent.')
         self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.preview.setMinimumSize(640, 360)
+        self.preview.setMinimumSize(560, 320)
         self.preview.setStyleSheet('background:#26262b;color:#aaa;border-radius:6px')
-        # Two views in the big area: the live camera outline (drag it) and the rendered preview.
         self.views = QStackedWidget()
         self.live = LiveView() if (LiveView is not None and GL_IMPORT_ERROR is None) else None
         self.framing = self.live or FramingView()
         self.views.addWidget(self.framing)
         self.views.addWidget(self.preview)
-        # Created on first use: loading Qt WebEngine at startup disturbs the OpenGL view.
         self.gltf = None
-        if self.gltf is not None:
-            self.views.addWidget(self.gltf)
         row = QHBoxLayout()
-        self.view_shot = QPushButton('Live 3D view (drag to move the camera)')
-        self.view_render = QPushButton('Rendered preview')
+        self.view_shot = QPushButton('Live view')
+        self.view_shot.setToolTip('Instant preview. Drag: left = look around, right = move, wheel = zoom, '
+                                  'double-click = reset')
+        self.view_render = QPushButton('Rendered picture')
+        self.view_render.setToolTip('What Blender made when you pressed "Render a still" or "Quick test video"')
         for b, i in ((self.view_shot, 0), (self.view_render, 1)):
             b.setCheckable(True)
+            b.setObjectName('tab')
             b.clicked.connect(lambda _=False, i=i: self._show_view(i))
             row.addWidget(b)
-        # Hidden for now: Qt WebEngine repeatedly crashed the app when shown next to the
-        # OpenGL viewport, even with a shared GL context. The export code stays for a future
-        # standalone window, but the button is not offered until that is proven stable.
+        row.addStretch(1)
+        self.still_btn = QPushButton('Render a still')
+        self.still_btn.setToolTip('Blender renders one picture of the open book - the real look, in about a minute')
+        self.still_btn.clicked.connect(self._preview_still)
+        self.anim_btn = QPushButton('Quick test video')
+        self.anim_btn.setToolTip('Blender renders a rough, low-quality video of the first two page turns')
+        self.anim_btn.clicked.connect(self._preview_anim)
+        row.addWidget(self.still_btn)
+        row.addWidget(self.anim_btn)
         self.view_gltf = QPushButton('glTF Viewport (Beta)')
         self.view_gltf.setCheckable(True)
         self.view_gltf.setVisible(False)
         self.view_gltf.clicked.connect(self._show_gltf)
         mv.addLayout(row)
         mv.addWidget(self.views, 1)
-        # Playback for the live view: no rendering needed.
         self.playbar = QWidget()
         pb = QHBoxLayout(self.playbar)
         pb.setContentsMargins(0, 0, 0, 0)
@@ -368,16 +488,18 @@ class Studio(QMainWindow):
         self.speed = QComboBox()
         self.speed.addItems(['0.25×', '0.5×', '1×', '1.5×', '2×'])
         self.speed.setCurrentText('1×')
+        self.speed.setToolTip('Playback speed of the live view (the video is not affected)')
         self.speed.currentTextChanged.connect(self._speed_changed)
-        self.loop = QCheckBox('Loop')
+        self.loop = QCheckBox('Repeat')
+        self.loop.setToolTip('Start again from the beginning when playback reaches the end')
         self.loop.setChecked(True)
         self.loop.toggled.connect(lambda on: setattr(self.live, 'loop', on) if self.live else None)
-        self.drag_pages = QCheckBox('Drag pages')
+        self.drag_pages = QCheckBox('Turn pages by hand')
         self.drag_pages.setToolTip('Left-drag a page in the live view to turn it')
         self.drag_pages.toggled.connect(lambda on: setattr(self.live, 'drag_pages', on) if self.live else None)
-        self.record = QCheckBox('Record')
-        self.record.setToolTip('While on, each finished page drag is added to the timeline')
-        for wdg in (self.play_btn, self.scrub, self.time_label, QLabel('Speed'), self.speed, self.loop,
+        self.record = QCheckBox('Record turns')
+        self.record.setToolTip('While on, each page you turn by hand is added to the animation')
+        for wdg in (self.play_btn, self.scrub, self.time_label, self.speed, self.loop,
                     self.drag_pages, self.record):
             pb.addWidget(wdg, 1 if wdg is self.scrub else 0)
         mv.addWidget(self.playbar)
@@ -391,97 +513,70 @@ class Studio(QMainWindow):
         self._live_timer = QTimer(self)
         self._live_timer.setSingleShot(True)
         self._live_timer.timeout.connect(self._refresh_live)
-        row = QHBoxLayout()
-        self.still_btn = QPushButton('Preview still')
-        self.still_btn.clicked.connect(self._preview_still)
-        self.anim_btn = QPushButton('Preview animation (draft)')
-        self.anim_btn.clicked.connect(self._preview_anim)
-        row.addWidget(self.still_btn)
-        row.addWidget(self.anim_btn)
-        mv.addLayout(row)
-        self.summary = QLabel()
-        mv.addWidget(self.summary)
         self.progress = QProgressBar()
+        self.progress.setTextVisible(True)
         mv.addWidget(self.progress)
         self.status = QLabel('Ready.')
+        self.status.setObjectName('hint')
         self.status.setWordWrap(True)
         mv.addWidget(self.status)
-        row = QHBoxLayout()
-        self.render_btn = QPushButton('Render video')
-        self.render_btn.setStyleSheet('font-weight:bold;padding:8px 18px')
-        self.render_btn.clicked.connect(self._render)
-        self.cancel_btn = QPushButton('Cancel')
-        self.cancel_btn.setEnabled(False)
-        self.cancel_btn.clicked.connect(self._cancel)
-        self.open_btn = QPushButton('Open output folder')
-        self.open_btn.clicked.connect(lambda: self._open_output())
-        row.addWidget(self.render_btn)
-        row.addWidget(self.cancel_btn)
-        row.addWidget(self.open_btn)
-        mv.addLayout(row)
         root.addWidget(mid)
 
-        # Settings (scrollable, so it fits on smaller screens)
-        right = QWidget()
-        rv = QVBoxLayout(right)
+        # ---- right: tabs ------------------------------------------------------------------
+        tabs = QTabWidget()
+        self.side_tabs = tabs
 
-        bookbox = QGroupBox('Book')
-        f = QFormLayout(bookbox)
-        self.book_combo = QComboBox()
-        self.book_combo.currentIndexChanged.connect(self._update_summary)
-        self.book_combo.currentIndexChanged.connect(self._camera_changed)
-        self.book_combo.activated.connect(self._template_chosen)
-        f.addRow('Template', self.book_combo)
-        self.page_count = QSpinBox()
-        self.page_count.setRange(2, 2000)
-        self.page_count.setValue(20)   # calibrated journal default; template overrides on load
-        self.page_count.valueChanged.connect(self._update_summary)
-        f.addRow('Page count (sheets)', self.page_count)
-        row = QHBoxLayout()
-        for text, fn in (('Edit…', self._edit_book), ('Make a copy…', self._copy_book),
-                         ('Open folder', self._open_books_folder)):
-            b = QPushButton(text)
-            b.clicked.connect(fn)
-            row.addWidget(b)
-        f.addRow(row)
-        self.blend = self._combo(bb.BLEND)
-        self.blend.currentTextChanged.connect(self._schedule_live)
-        f.addRow('Page images', self.blend)
-        rv.addWidget(bookbox)
-
-        cambox = QGroupBox('Camera')
-        f = QFormLayout(cambox)
+        # Camera tab
+        cam = QWidget()
+        cv = QVBoxLayout(cam)
         self.framing.orbit.connect(self._orbit)
         self.framing.pan.connect(self._pan)
         self.framing.zoomed.connect(lambda n: self.zoom.setValue(round(self.zoom.value() * 1.08 ** n)))
         self.framing.reset.connect(lambda: self._apply_preset(self.shot.currentText()))
-        f.addRow(QLabel('<small>Or drag the big picture: left = look around, right = move, wheel = zoom, '
-                        'double-click = reset</small>'))
+        straight = QPushButton('Straighten the book')
+        straight.setObjectName('accent')
+        straight.setToolTip('Level the picture: no sideways lean, book facing you squarely, no rotation')
+        straight.clicked.connect(self._straighten)
+        cv.addWidget(straight)
+        g = QGroupBox('Camera')
+        f = QFormLayout(g)
         self.shot = self._combo(cf.PRESETS)
         self.shot.currentTextChanged.connect(self._apply_preset)
         f.addRow('Start from', self.shot)
         self.tilt = self._slider(-89, 89, 50)
         self.turn = self._slider(-180, 180, 0)
-        self.roll = self._slider(-180, 180, -3)
+        self.roll = self._slider(-180, 180, 0)
         self.lens = self._slider(18, 100, 35)
         self.zoom = self._slider(50, 250, 100)
         self.shift_x = self._slider(-60, 60, 0)
         self.shift_y = self._slider(-60, 60, 0)
-        for label, sl in (('Tilt (below ↔ above)', self.tilt), ('Turn around', self.turn), ('Tilt picture', self.roll),
-                          ('Perspective (lens)', self.lens), ('Book size', self.zoom),
-                          ('Left / right', self.shift_x), ('Down / up', self.shift_y)):
+        for label, sl in (('Look from above ↕', self.tilt), ('Walk around ↔', self.turn),
+                          ('Lean sideways', self.roll), ('Zoom', self.zoom),
+                          ('Move left / right', self.shift_x), ('Move down / up', self.shift_y),
+                          ('Perspective', self.lens)):
             sl.valueChanged.connect(self._camera_changed)
             f.addRow(label, sl)
         self.move = self._combo(cf.MOVES)
         self.move.currentTextChanged.connect(self._camera_changed)
-        f.addRow('Camera move', self.move)
-        b = QPushButton('Reset to the chosen start')
+        f.addRow('Camera motion', self.move)
+        b = QPushButton('Reset camera')
         b.clicked.connect(lambda: self._apply_preset(self.shot.currentText()))
         f.addRow(b)
-        rv.addWidget(cambox)
+        cv.addWidget(g)
+        hint = QLabel('Tip: drag the live view - left button looks around, right button moves, '
+                      'mouse wheel zooms, double-click resets.')
+        hint.setObjectName('hint')
+        hint.setWordWrap(True)
+        cv.addWidget(hint)
 
-        xform = QGroupBox('3D transform (the whole book)')
+        xform = QGroupBox('Book position (advanced)')
+        xform.setCheckable(True)
+        xform.setChecked(False)
+        self.xform_box = xform
         f = QFormLayout(xform)
+        xform_body = QWidget()
+        xf = QFormLayout(xform_body)
+        xf.setContentsMargins(0, 0, 0, 0)
 
         def num(lo, hi, val, step):
             s = QDoubleSpinBox()
@@ -489,6 +584,8 @@ class Studio(QMainWindow):
             s.setSingleStep(step)
             s.setDecimals(2)
             s.setValue(val)
+            s.setMinimumWidth(56)
+            s.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)   # type or scroll the wheel
             s.valueChanged.connect(self._schedule_live)
             return s
 
@@ -496,25 +593,30 @@ class Studio(QMainWindow):
         self.pos_x, self.pos_y, self.pos_z = num(-3, 3, 0, 0.1), num(-3, 3, 0, 0.1), num(-3, 3, 0, 0.1)
         for w in (self.pos_x, self.pos_y, self.pos_z):
             row.addWidget(w)
-        f.addRow('Position X / Y / Z', row)
-
+        xf.addRow('Move X / Y / Z', row)
         row = QHBoxLayout()
         self.rot_x, self.rot_y, self.rot_z = num(-180, 180, 0, 5), num(-180, 180, 0, 5), num(-180, 180, 0, 5)
         for w in (self.rot_x, self.rot_y, self.rot_z):
             row.addWidget(w)
-        f.addRow('Rotation X / Y / Z (°)', row)
-
+        xf.addRow('Rotate X / Y / Z (°)', row)
         row = QHBoxLayout()
         self.scl_x, self.scl_y, self.scl_z = num(0.1, 5, 1, 0.1), num(0.1, 5, 1, 0.1), num(0.1, 5, 1, 0.1)
         for w in (self.scl_x, self.scl_y, self.scl_z):
             row.addWidget(w)
-        f.addRow('Scale X / Y / Z', row)
-
-        b = QPushButton('Reset transform')
+        xf.addRow('Scale X / Y / Z', row)
+        b = QPushButton('Reset book position')
         b.clicked.connect(self._reset_transform)
-        f.addRow(b)
-        rv.addWidget(xform)
+        xf.addRow(b)
+        f.addRow(xform_body)
+        xform_body.setVisible(False)
+        xform.toggled.connect(xform_body.setVisible)
+        cv.addWidget(xform)
+        cv.addStretch(1)
+        tabs.addTab(self._scrolled(cam), 'Camera')
 
+        # Animation tab
+        anim = QWidget()
+        av = QVBoxLayout(anim)
         timing = QGroupBox('Timing (seconds)')
         f = QFormLayout(timing)
         self.start_closed = QCheckBox('Start closed, then open the cover')
@@ -531,18 +633,26 @@ class Studio(QMainWindow):
         self.end_s = self._spin(0, 10, 1.5)
         f.addRow('Cover opening', self.open_s)
         f.addRow('Each page turn', self.turn_s)
-        f.addRow('Pause between', self.pause_s)
-        f.addRow('Hold at start', self.start_s)
-        f.addRow('Hold at end', self.end_s)
-        self.curl = self._slider(0, 150, 90)
-        self.curl.valueChanged.connect(self._schedule_live)
-        f.addRow('Page curl', self.curl)
+        f.addRow('Pause between turns', self.pause_s)
+        f.addRow('Wait before starting', self.start_s)
+        f.addRow('Wait at the end', self.end_s)
         self.smooth = self._slider(0, 100, 100)
         self.smooth.valueChanged.connect(self._schedule_live)
-        f.addRow('Smoothness (0 = linear, 100 = gentle)', self.smooth)
-        rv.addWidget(timing)
+        f.addRow('Smoothness', self.smooth)
+        self.curl_label = QLabel('Page curl')
+        self.curl = self._slider(0, 150, 90)
+        self.curl.valueChanged.connect(self._schedule_live)
+        f.addRow(self.curl_label, self.curl)
+        av.addWidget(timing)
+        self.timeline_panel = TimelinePanel()
+        self.timeline_panel.changed.connect(self._timeline_changed)
+        av.addWidget(self.timeline_panel, 1)
+        tabs.addTab(anim, 'Animation')
 
-        out = QGroupBox('Export')
+        # Export tab
+        exp = QWidget()
+        ev = QVBoxLayout(exp)
+        out = QGroupBox('Video')
         f = QFormLayout(out)
         self.resolution = self._combo(RESOLUTIONS)
         self.resolution.currentTextChanged.connect(self._camera_changed)
@@ -552,13 +662,13 @@ class Studio(QMainWindow):
         self.fps.currentTextChanged.connect(self._update_summary)
         self.quality = self._combo(bb.QUALITY)
         self.quality.setCurrentIndex(1)
-        f.addRow('Resolution', self.resolution)
-        f.addRow('Frame rate', self.fps)
+        f.addRow('Size', self.resolution)
+        f.addRow('Frames per second', self.fps)
         f.addRow('Quality', self.quality)
-        self.mov = QCheckBox('MOV ProRes 4444 (best for Filmora)')
+        self.mov = QCheckBox('MOV with transparency (best for Filmora)')
         self.mov.setChecked(True)
-        self.webm = QCheckBox('WebM VP9 (small file)')
-        self.keep_png = QCheckBox('Keep PNG frames')
+        self.webm = QCheckBox('WebM (small file)')
+        self.keep_png = QCheckBox('Also keep the PNG frames')
         for w in (self.mov, self.webm, self.keep_png):
             f.addRow(w)
         row = QHBoxLayout()
@@ -569,13 +679,18 @@ class Studio(QMainWindow):
         row.addWidget(self.out_label, 1)
         row.addWidget(b)
         f.addRow('Save to', row)
-        rv.addWidget(out)
+        ev.addWidget(out)
+        ev.addStretch(1)
+        tabs.addTab(exp, 'Export')
 
-        eng = QGroupBox('3D engine and updates')
-        ev = QVBoxLayout(eng)
+        # Settings tab
+        st = QWidget()
+        sv = QVBoxLayout(st)
+        eng = QGroupBox('Blender (the 3D engine)')
+        el = QVBoxLayout(eng)
         self.blender_label = QLabel()
         self.blender_label.setWordWrap(True)
-        ev.addWidget(self.blender_label)
+        el.addWidget(self.blender_label)
         row = QHBoxLayout()
         b = QPushButton('Find blender.exe…')
         b.clicked.connect(self._browse_blender)
@@ -583,7 +698,10 @@ class Studio(QMainWindow):
         t.clicked.connect(self._test_blender)
         row.addWidget(b)
         row.addWidget(t)
-        ev.addLayout(row)
+        el.addLayout(row)
+        sv.addWidget(eng)
+        upd = QGroupBox('Updates')
+        ul = QVBoxLayout(upd)
         row = QHBoxLayout()
         u = QPushButton('Check for updates')
         u.clicked.connect(lambda: self._check_updates(quiet=False))
@@ -592,20 +710,64 @@ class Studio(QMainWindow):
         self.auto_update.setChecked(self.settings.value('auto_update', 'true') == 'true')
         self.auto_update.toggled.connect(lambda on: self.settings.setValue('auto_update', 'true' if on else 'false'))
         row.addWidget(self.auto_update)
-        ev.addLayout(row)
-        ev.addWidget(QLabel(f'Version {APP_VERSION}'))
-        rv.addWidget(eng)
-        rv.addStretch(1)
+        ul.addLayout(row)
+        ul.addWidget(QLabel(f'Version {APP_VERSION}'))
+        sv.addWidget(upd)
+        sv.addStretch(1)
+        tabs.addTab(st, 'Settings')
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setWidget(right)
-        scroll.setMinimumWidth(360)
-        root.addWidget(scroll)
-        root.setSizes([260, 760, 380])
+        tabs.setMinimumWidth(360)
+        root.addWidget(tabs)
+        root.setSizes([290, 800, 380])
+        root.setStretchFactor(1, 1)
 
         for w in (self.turn_s, self.pause_s, self.start_s, self.end_s, self.open_s):
             w.valueChanged.connect(self._update_summary)
+
+    def _scrolled(self, widget):
+        s = QScrollArea()
+        s.setWidgetResizable(True)
+        s.setFrameShape(QScrollArea.Shape.NoFrame)
+        s.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        s.setWidget(widget)
+        return s
+
+    def _update_engine_ui(self, *_):
+        """Hide controls the chosen book does not use, so only what matters is on screen."""
+        if not hasattr(self, 'page_framing') or not self.books:
+            return
+        journal = self._book().get('engine') == 'journal'
+        self.page_framing.setVisible(not journal)     # journal pages are always full-page images
+        self.blend_row.setVisible(not journal)
+        self.curl.setVisible(not journal)              # the journal has its own natural page bend
+        self.curl_label.setVisible(not journal)
+
+    def _straighten(self):
+        """A level, square-on picture: no sideways lean or walk-around, no book rotation."""
+        self.roll.setValue(0)
+        self.turn.setValue(0)
+        self.shift_x.setValue(0)
+        for w in (self.rot_x, self.rot_y, self.rot_z):
+            w.setValue(0)
+        self.status.setText('Straightened: the book faces you squarely with no lean. '
+                            'Use "Look from above" to change the angle.')
+
+    def _fill_blank(self):
+        """Add blank pages until the list has every page of the book (2 per sheet)."""
+        target = self.page_count.value() * 2
+        added = 0
+        while self.pages.count() < target:
+            self._add_page_item(None)
+            added += 1
+        self._pages_changed()
+        self.status.setText(f'Added {added} blank page(s): all {target} pages now turn.' if added
+                            else 'Every page of the book already has a page in the list.')
+
+    def _clear_pages(self):
+        if self.pages.count() and QMessageBox.question(
+                self, APP_NAME, 'Remove all pages from the list?') == QMessageBox.StandardButton.Yes:
+            self.pages.clear()
+            self._pages_changed()
 
     def _combo(self, mapping):
         c = QComboBox()
@@ -1482,6 +1644,24 @@ class Studio(QMainWindow):
             self._marker_path().unlink(missing_ok=True)
 
 
+def apply_theme(app):
+    """One fixed dark theme, so the app looks the same whatever Windows is set to."""
+    from PySide6.QtGui import QPalette
+    app.setStyle('Fusion')
+    p = QPalette()
+    for role, col in ((QPalette.ColorRole.Window, '#1f1f24'), (QPalette.ColorRole.WindowText, '#e6e6ec'),
+                      (QPalette.ColorRole.Base, '#26262c'), (QPalette.ColorRole.AlternateBase, '#2c2c33'),
+                      (QPalette.ColorRole.Text, '#e6e6ec'), (QPalette.ColorRole.Button, '#34343c'),
+                      (QPalette.ColorRole.ButtonText, '#e8e8ee'), (QPalette.ColorRole.Highlight, '#b8772a'),
+                      (QPalette.ColorRole.HighlightedText, '#ffffff'), (QPalette.ColorRole.ToolTipBase, '#2c2c33'),
+                      (QPalette.ColorRole.ToolTipText, '#e6e6ec'), (QPalette.ColorRole.PlaceholderText, '#8a8a92')):
+        p.setColor(role, QColor(col))
+    p.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, QColor('#6c6c74'))
+    p.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, QColor('#6c6c74'))
+    p.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.WindowText, QColor('#6c6c74'))
+    app.setPalette(p)
+
+
 def main():
     # WebEngine and the OpenGL viewport can only coexist when they share GL contexts,
     # and this attribute must be set before the QApplication exists.
@@ -1490,7 +1670,7 @@ def main():
     os.environ.setdefault('QTWEBENGINE_CHROMIUM_FLAGS', '--disable-gpu')
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
-    app.setStyle('Fusion')
+    apply_theme(app)
     check = (paths.resource_dir() / 'assets' / 'check.svg').as_posix()
     app.setStyleSheet(
         'QCheckBox::indicator{width:15px;height:15px;border:1px solid #8a8a92;border-radius:3px;background:#2a2a30}'

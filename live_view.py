@@ -658,6 +658,7 @@ class LiveView(QOpenGLWidget):
         gl.glLightfv(gl.GL_LIGHT0, gl.GL_POSITION, (*(key / np.linalg.norm(key)), 0.0))
         gl.glLightfv(gl.GL_LIGHT1, gl.GL_POSITION, (0.6, -0.4, 0.5, 0.0))
         gl.glEnable(gl.GL_LIGHTING)
+        gl.glLightModeli(gl.GL_LIGHT_MODEL_TWO_SIDE, gl.GL_TRUE)   # page backs lit too, as in the render
         tf = self.values.get('transform') or {}
         pos = tf.get('pos', (0.0, 0.0, 0.0))
         rot = tf.get('rot', (0.0, 0.0, 0.0))
