@@ -116,3 +116,14 @@ def test_saving_a_journal_keeps_its_engine_page_count_and_sizes():
         assert saved['engine'] == 'journal'
         assert int(saved['page_count']) == 10
         assert saved['image_sizes']['page'] == [982, 1406]
+
+
+def test_standing_page_stays_inside_the_picture_on_every_preset():
+    import camera_fit as cf
+    G.configure(10, 1.4318)
+    for name, preset in cf.PRESETS.items():
+        cam, r, u, f, lens = G.camera(dict(preset, zoom=1.0, move='none'), 0.0, 16 / 9)
+        pts = np.concatenate([G.sheet_grid(G.N_SHEETS - 1, 'turn', 0, float(t), ny=4).reshape(-1, 3)
+                              for t in np.linspace(0, 1, 41)])
+        x, y, _ = cf.project(pts, cam, r, u, f, lens, 16 / 9)
+        assert np.abs(x).max() < 0.95 and np.abs(y).max() < 0.95, (name, np.abs(x).max(), np.abs(y).max())

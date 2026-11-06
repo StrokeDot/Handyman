@@ -1,5 +1,8 @@
 # Changes
 
+## 0.8.2
+- Fixed: the turning page went out of the top of the picture while it stood up mid-turn. The camera now frames the open book and the standing page together, centred, with a margin all round - on every camera preset, in the live view and the video alike. Zoom still works as before if you want it closer.
+
 ## 0.8.1
 - **Adjust images for you**: if an image is not the size a cover, spine, paper or page needs, Handyman offers to adjust it - crop to fill (drag to choose what shows, wheel to zoom), fit inside (edges filled with the image's own colour) or stretch. It saves an adjusted copy; your original file is never changed. When adding several page images, "Adjust all" crops them all at once.
 - The button is now called **Change book design...**

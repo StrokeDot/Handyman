@@ -331,11 +331,55 @@ def cover_angle(opening):
     return float(THETA_EASE(opening)) * THETA_OPEN
 
 
+_TURN_PTS = {}
+
+
+def turn_points():
+    """Points of a page mid-turn (the real journal motion), for framing: the camera keeps the
+    whole standing page in the picture, not just the flat book."""
+    key = (N_SHEETS, H, PITCH)
+    if key not in _TURN_PTS:
+        pts = []
+        for u in np.linspace(0.1, 0.9, 17):
+            g = sheet_grid(N_SHEETS - 1, 'turn', 0, float(u), ny=2)
+            cols = sorted(set(list(range(0, g.shape[1], 6)) + [g.shape[1] - 1]))   # include the outer edge
+            pts.append(g[:, cols].reshape(-1, 3))
+        _TURN_PTS[key] = np.concatenate(pts)
+    return _TURN_PTS[key]
+
+
 def camera(cam_settings, frac, aspect):
     """The app's camera settings applied to this book: (position, right, up, forward, lens).
-    Same framing rule as the classic book, so presets, zoom, shift and slow moves all work."""
+    Same controls as the classic book (presets, zoom, shift, slow moves). The framing keeps the
+    open book AND the page standing up mid-turn inside the picture, aiming a little above the
+    book so the rising page has room."""
     import camera_fit as cf
+    c = cam_settings
+    tilt, turn, roll, lens, zoom = c['tilt'], c['turn'], c['roll'], c['lens'], c['zoom']
+    a = frac * frac * (3 - 2 * frac)
+    move = c.get('move', 'none')
+    if move == 'push':
+        zoom *= 1.0 + 0.15 * a
+    elif move == 'pull':
+        zoom *= 1.15 - 0.15 * a
+    elif move == 'drift':
+        turn += -5.0 + 10.0 * a
     top = ZJ
-    pts = cf.book_points(W, H, COVER_MARGIN, top)
-    return cf.shot(cam_settings, frac, (0.0, 0.0, top), 2 * (W + COVER_MARGIN), H + 2 * COVER_MARGIN,
-                   pts, aspect)
+    corners = cf.book_points(W, H, COVER_MARGIN, top)[:cf.BOOK_CORNERS]
+    pts = np.concatenate([corners, turn_points()])
+    # Centre the open book and the standing page together in the picture, then fit them with a
+    # margin all round: no cut-off page tip, no wasted empty band under the book.
+    base = np.array([0.0, 0.0, top])
+    th = cf.SENSOR / 2 / lens
+    tv = th / aspect
+    for _ in range(5):
+        dist = cf.fit_distance(pts, tilt, turn, roll, lens, aspect, base, fill=0.86)
+        cam, r, u, f = cf.pose(tilt, turn, roll, dist, base)
+        x, y, _d = cf.project(pts, cam, r, u, f, lens, aspect)
+        xs, ys = (x.max() + x.min()) / 2, (y.max() + y.min()) / 2
+        base = base + (r * xs * th + u * ys * tv) * dist
+    dist /= zoom
+    target = base + np.array([c.get('shift_x', 0.0) * (W + COVER_MARGIN),
+                              c.get('shift_y', 0.0) * (H / 2 + COVER_MARGIN), 0.0])
+    cam, r, u, f = cf.pose(tilt, turn, roll, dist, target)
+    return cam, r, u, f, lens
