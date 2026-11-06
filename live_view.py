@@ -5,6 +5,7 @@ the page images on the pages, lighting, cover opening and page turns. Play, paus
 change speed; drag with the mouse to move the camera. Blender is only needed for the final video.
 """
 import math
+import os
 
 import numpy as np
 from PySide6.QtCore import QRectF, Qt, QTimer, Signal
@@ -29,6 +30,24 @@ except Exception as exc:  # PyOpenGL missing or no OpenGL driver
 
 NX, NY = 40, 24
 TEX_W = 512
+
+
+def _image_stamps(book, images):
+    """Modification times of every image the book uses, so a replaced file (same name) reloads."""
+    out = []
+    for k, v in sorted(book.items()):
+        if k.endswith('_image') and v:
+            p = _resolve_texture(book, k)
+            try:
+                out.append((k, os.path.getmtime(p)) if p else (k, None))
+            except OSError:
+                out.append((k, None))
+    for p in images:
+        try:
+            out.append(os.path.getmtime(p) if p else None)
+        except (OSError, TypeError):
+            out.append(None)
+    return tuple(out)
 
 
 def log_problem(msg):
@@ -238,7 +257,7 @@ class LiveView(QOpenGLWidget):
     def set_content(self, book, images, values):
         """book: template dict; images: page paths (None = blank); values: the app's settings."""
         key_tex = (book.get('folder'), tuple(sorted((k, str(v)) for k, v in book.items())), tuple(images),
-                   values.get('blend'))
+                   values.get('blend'), _image_stamps(book, images))
         if key_tex != getattr(self, '_key_tex', None):
             self._key_tex = key_tex
             self._dirty_textures = True
@@ -659,6 +678,13 @@ class LiveView(QOpenGLWidget):
         gl.glLightfv(gl.GL_LIGHT1, gl.GL_POSITION, (0.6, -0.4, 0.5, 0.0))
         gl.glEnable(gl.GL_LIGHTING)
         gl.glLightModeli(gl.GL_LIGHT_MODEL_TWO_SIDE, gl.GL_TRUE)   # page backs lit too, as in the render
+        # Neutral light, like the render: a soft warm-white key, a grey fill, no shine. (Coloured
+        # key + bluish fill tinted white paper yellow-green-orange on curved pages.)
+        gl.glLightModelfv(gl.GL_LIGHT_MODEL_AMBIENT, (0.42, 0.42, 0.42, 1.0))
+        gl.glLightfv(gl.GL_LIGHT0, gl.GL_DIFFUSE, (0.66, 0.64, 0.61, 1.0))
+        gl.glLightfv(gl.GL_LIGHT0, gl.GL_SPECULAR, (0.0, 0.0, 0.0, 1.0))
+        gl.glLightfv(gl.GL_LIGHT1, gl.GL_DIFFUSE, (0.16, 0.16, 0.16, 1.0))
+        gl.glMaterialfv(gl.GL_FRONT_AND_BACK, gl.GL_SPECULAR, (0.0, 0.0, 0.0, 1.0))
         tf = self.values.get('transform') or {}
         pos = tf.get('pos', (0.0, 0.0, 0.0))
         rot = tf.get('rot', (0.0, 0.0, 0.0))

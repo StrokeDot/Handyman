@@ -1,5 +1,11 @@
 # Changes
 
+## 0.8.1
+- **Adjust images for you**: if an image is not the size a cover, spine, paper or page needs, Handyman offers to adjust it - crop to fill (drag to choose what shows, wheel to zoom), fit inside (edges filled with the image's own colour) or stretch. It saves an adjusted copy; your original file is never changed. When adding several page images, "Adjust all" crops them all at once.
+- The button is now called **Change book design...**
+- Fixed: after saving a new design, the live view only updated later (when something else changed). It now updates right away - and also when you replace an image with a file of the same name.
+- Live view lighting is neutral now: white paper stays white instead of turning yellow-green-orange on curved pages.
+
 ## 0.8.0 - easier to use
 - New, simpler window laid out in the order you work: **1 Your book** and **2 Pages** on the left, the preview in the middle, and tabs for **Camera**, **Animation**, **Export** and **Settings** on the right. **Render video** is the big amber button at the top.
 - **Change covers & paper...** is now a big button right under the book choice.

@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QFileDialog, QFormLayo
 
 import paths
 import templates
+from image_fit import ImageFitDialog
 
 # field, caption, file name in the bundled template, what to know when making it
 SLOTS = [
@@ -66,7 +67,7 @@ def bundled_original(field):
 class JournalDialog(QDialog):
     def __init__(self, book, parent=None):
         super().__init__(parent)
-        self.setWindowTitle('Journal design')
+        self.setWindowTitle('Change book design')
         self.setMinimumWidth(900)
         self.book = dict(book)
         self.new_images = {}            # field -> source path chosen in this dialog
@@ -155,8 +156,19 @@ class JournalDialog(QDialog):
             return
         problem = check_size(self.book, field, path)
         if problem:
-            QMessageBox.warning(self, 'Wrong image size', f'{caption}\n\n{problem}')
-            return
+            if QImage(path).isNull() or not need:
+                QMessageBox.warning(self, 'Wrong image size', f'{caption}\n\n{problem}')
+                return
+            ask = QMessageBox.question(self, 'Different size',
+                                       f'{caption}\n\n{problem}\n\nAdjust it for you? You choose what part '
+                                       'shows; your original file is not changed.',
+                                       QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if ask != QMessageBox.StandardButton.Yes:
+                return
+            fit = ImageFitDialog(path, need, caption, self)
+            if fit.exec() != QDialog.DialogCode.Accepted or not fit.result_path:
+                return
+            path = fit.result_path
         self.new_images[field] = path
         self._show(field)
 

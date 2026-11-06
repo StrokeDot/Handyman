@@ -30,6 +30,7 @@ import templates
 import updater
 from book_dialog import BookDialog
 from journal_dialog import JournalDialog, check_size, required_size
+from image_fit import ImageFitDialog, auto_adjust
 
 # Check for Qt WebEngine WITHOUT importing it: importing it early reconfigures Qt's OpenGL
 # setup and can leave the Live 3D view (a QOpenGLWidget) black.
@@ -327,9 +328,9 @@ class Studio(QMainWindow):
         self.book_combo.currentIndexChanged.connect(self._update_engine_ui)
         self.book_combo.activated.connect(self._template_chosen)
         bl.addWidget(self.book_combo)
-        design = QPushButton('Change covers && paper…')
+        design = QPushButton('Change book design…')
         design.setObjectName('accent')
-        design.setToolTip('Swap the front and back covers, the inside covers, the spine and the paper')
+        design.setToolTip('Change the covers (outside and inside), the spine and the paper')
         design.clicked.connect(self._edit_book)
         bl.addWidget(design)
         row = QHBoxLayout()
@@ -821,6 +822,8 @@ class Studio(QMainWindow):
             if dlg.exec() == QDialog.DialogCode.Accepted:
                 saved = templates.save(dlg.result_book(), None, dlg.new_images)
                 self._reload_books(saved['folder'])
+                self._update_summary()
+                self._refresh_live()          # show the new images right away
                 self.status.setText(f'Saved book "{saved["name"]}". The live view shows the new images.')
             return
         dlg = BookDialog(self._book(), self)
@@ -911,19 +914,35 @@ class Studio(QMainWindow):
         files, _ = QFileDialog.getOpenFileNames(self, 'Choose page images', self.settings.value('img_dir', ''),
                                                 'Images (*.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)')
         book = self._book() if self.books else {}
-        refused = []
+        need = required_size(book, 'page') if book else None
+        wrong = [p for p in files if need and check_size(book, 'page', p)]
+        choice = None
+        if wrong:
+            box = QMessageBox(self)
+            box.setWindowTitle('Page size')
+            box.setText(f'{len(wrong)} of the {len(files)} image(s) are not {need[0]} × {need[1]} px, '
+                        'the size of a page in this book.')
+            box.setInformativeText('Adjust them for you? Your original files are not changed.')
+            auto = box.addButton('Adjust all (crop to fill, centred)', QMessageBox.ButtonRole.AcceptRole)
+            each = box.addButton('Let me adjust each one', QMessageBox.ButtonRole.ActionRole)
+            skip = box.addButton('Skip them', QMessageBox.ButtonRole.RejectRole)
+            box.exec()
+            choice = {auto: 'auto', each: 'each', skip: 'skip'}.get(box.clickedButton(), 'skip')
         for path in files:
-            problem = check_size(book, 'page', path) if required_size(book, 'page') else None
-            if problem:
-                refused.append(problem)
-                continue
+            if path in wrong:
+                if choice == 'auto':
+                    path = auto_adjust(path, need)
+                elif choice == 'each':
+                    fit = ImageFitDialog(path, need, f'page {self.pages.count() + 1}', self)
+                    if fit.exec() != QDialog.DialogCode.Accepted or not fit.result_path:
+                        continue
+                    path = fit.result_path
+                else:
+                    continue
             self._add_page_item(path)
         if files:
             self.settings.setValue('img_dir', str(Path(files[0]).parent))
         self._pages_changed()
-        if refused:
-            QMessageBox.warning(self, APP_NAME, f'{len(refused)} image(s) were not added:\n\n'
-                                + '\n\n'.join(refused[:6]) + ('\n…' if len(refused) > 6 else ''))
 
     def _add_blank(self):
         self._add_page_item(None)
