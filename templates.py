@@ -35,6 +35,7 @@ DEFAULTS = {
     'paper_age': 0.55,          # blotches and yellowing, 0..1
     'burn': 0.6,                # darkened page edges, 0..1
     'page_aspect': 1.4,         # page height / width
+    'page_size_cm': None,       # journal: [width, height] of a page as the user set it (only the shape matters)
     'stitching': True,
     'thread_color': '#b08a5a',
     'spine_bands': 4,

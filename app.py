@@ -420,6 +420,13 @@ class Studio(QMainWindow):
             b.clicked.connect(fn)
             grid.addWidget(b, i // 2, i % 2)
         pl.addLayout(grid)
+        self.layers_btn = QPushButton('Pictures on this page…')
+        self.layers_btn.setObjectName('accent')
+        self.layers_btn.setToolTip('Place pictures on the selected page, with "Ink on the page" so they '
+                                   'look printed on the paper (or double-click a page)')
+        self.layers_btn.clicked.connect(self._edit_layers)
+        pl.addWidget(self.layers_btn)
+        self.pages.itemDoubleClicked.connect(lambda *_: self._edit_layers())
         row = QHBoxLayout()
         for text, fn in (('▲', lambda: self._move_page(-1)), ('▼', lambda: self._move_page(1))):
             b = QPushButton(text)
@@ -939,11 +946,14 @@ class Studio(QMainWindow):
         if self._book().get('engine') == 'journal':
             dlg = JournalDialog(self._book(), self)
             if dlg.exec() == QDialog.DialogCode.Accepted:
+                reshaped = dlg.shape_changed()
                 saved = templates.save(dlg.result_book(), None, dlg.new_images)
                 self._reload_books(saved['folder'])
-                self._update_summary()
+                if reshaped:
+                    self._refit_pages()
+                self._pages_changed()
                 self._refresh_live()          # show the new images right away
-                self.status.setText(f'Saved book "{saved["name"]}". The live view shows the new images.')
+                self.status.setText(f'Saved book "{saved["name"]}". The live view shows the new design.')
             return
         dlg = BookDialog(self._book(), self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
@@ -965,6 +975,18 @@ class Studio(QMainWindow):
     # ---------------------------------------------------------------- pages
     TEXT_ROLE = Qt.ItemDataRole.UserRole + 1
     FIT_ROLE = Qt.ItemDataRole.UserRole + 2
+    LAYERS_ROLE = Qt.ItemDataRole.UserRole + 3
+
+    def _page_layers(self, i):
+        return list(self.pages.item(i).data(self.LAYERS_ROLE) or [])
+
+    def _page_size(self):
+        """Pixel size of one page of the current book (what page pictures are made at)."""
+        book = self._book() if self.books else {}
+        need = required_size(book, 'page') if book else None
+        if need:
+            return need
+        return (982, round(982 * float(book.get('page_aspect', 1.4318))))
 
     def _page_content(self):
         """Content sides in reading order: None (blank), or a {'kind': 'image'|'text', ...} dict."""
@@ -973,19 +995,63 @@ class Studio(QMainWindow):
             item = self.pages.item(i)
             path = item.data(Qt.ItemDataRole.UserRole) or None
             text = item.data(self.TEXT_ROLE) or None
+            layers = self._page_layers(i)
             if text:
-                out.append({'kind': 'text', 'text': text})
+                side = {'kind': 'text', 'text': text}
             elif path:
-                out.append({'kind': 'image', 'image': path})
+                side = {'kind': 'image', 'image': path}
             else:
-                out.append(None)
+                side = {'kind': 'blank'} if layers else None
+            if layers:
+                side['layers'] = layers
+            out.append(side)
         return out
 
     def _content_images(self):
         """Rasterise text sides to PNGs and return plain image paths for the renderers."""
         from page_text import sides_to_images
-        return sides_to_images(self._page_content(), paths.cache_dir('pages'),
-                               float(self._book().get('page_aspect', 1.4)))
+        sides = self._page_content()
+        images = sides_to_images(sides, paths.cache_dir('pages'), float(self._book().get('page_aspect', 1.4)))
+        return self._with_layers(sides, images)
+
+    def _with_layers(self, sides, images):
+        """Flatten each side's pictures (with Ink on the page) onto its page image."""
+        import page_layers
+        size = self._page_size()
+        out = list(images)
+        for i, side in enumerate(sides):
+            layers = side.get('layers') if isinstance(side, dict) else None
+            if layers:
+                try:
+                    out[i] = page_layers.compose_to_file(images[i], layers, size, paths.cache_dir('pages'))
+                except Exception as exc:  # a missing or broken picture must not stop the preview
+                    self.status.setText(f'Page {i + 1}: a picture could not be used ({exc}).')
+        return out
+
+    def _edit_layers(self):
+        from layer_dialog import LayerDialog
+        from page_text import sides_to_images
+        row = self.pages.currentRow()
+        if row < 0:
+            if self.pages.count() == 0:
+                self._add_blank()
+            row = 0 if self.pages.count() else -1
+            if row < 0:
+                return
+            self.pages.setCurrentRow(row)
+        book = self._book()
+        sides = self._page_content()
+        base = sides_to_images(sides, paths.cache_dir('pages'), float(book.get('page_aspect', 1.4)))[row]
+        paper_field = 'paper_odd_image' if row % 2 == 0 else 'paper_even_image'
+        paper = templates._texture_path(book, book.get(paper_field) or book.get('paper_image'))
+        side = 'right' if row % 2 == 0 else 'left'
+        dlg = LayerDialog(f'page {row + 1} ({side}-hand page)', self._page_size(), paper, base,
+                          self._page_layers(row), self, self.settings.value('img_dir', ''))
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self.pages.item(row).setData(self.LAYERS_ROLE, dlg.result_layers())
+            self.settings.setValue('img_dir', dlg.start_dir)
+            self._pages_changed()
+            self._refresh_live()
 
     def _page_fits(self):
         """Per-side artwork framing: a dict per page side, or None for the default fit."""
@@ -1018,7 +1084,7 @@ class Studio(QMainWindow):
     def _page_paths(self):
         return [self.pages.item(i).data(Qt.ItemDataRole.UserRole) or None for i in range(self.pages.count())]
 
-    def _add_page_item(self, path, text=''):
+    def _add_page_item(self, path, text='', layers=None):
         if path:
             item = QListWidgetItem(QIcon(QPixmap(path).scaled(64, 64, Qt.AspectRatioMode.KeepAspectRatio,
                                                               Qt.TransformationMode.SmoothTransformation)), '')
@@ -1027,7 +1093,47 @@ class Studio(QMainWindow):
         item.setData(Qt.ItemDataRole.UserRole, path or '')
         item.setData(self.TEXT_ROLE, text or '')
         item.setData(self.FIT_ROLE, {'mode': 'fit', 'scale': 1.0, 'x': 0.0, 'y': 0.0})
+        item.setData(self.LAYERS_ROLE, list(layers or []))
         self.pages.addItem(item)
+
+    def _ask_adjust(self, n_wrong, n_all, need, keep_label='Skip them'):
+        box = QMessageBox(self)
+        box.setWindowTitle('Page size')
+        box.setText(f'{n_wrong} of the {n_all} image(s) are not {need[0]} × {need[1]} px, '
+                    'the size of a page in this book.')
+        box.setInformativeText('Adjust them for you? Your original files are not changed.')
+        auto = box.addButton('Adjust all (crop to fill, centred)', QMessageBox.ButtonRole.AcceptRole)
+        each = box.addButton('Let me adjust each one', QMessageBox.ButtonRole.ActionRole)
+        skip = box.addButton(keep_label, QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        return {auto: 'auto', each: 'each', skip: 'skip'}.get(box.clickedButton(), 'skip')
+
+    def _refit_pages(self):
+        """After the book changed shape: offer to fit page images that are not the new page size."""
+        book = self._book()
+        need = required_size(book, 'page')
+        rows = [i for i in range(self.pages.count())
+                if self.pages.item(i).data(Qt.ItemDataRole.UserRole)
+                and check_size(book, 'page', self.pages.item(i).data(Qt.ItemDataRole.UserRole))]
+        if not need or not rows:
+            return
+        choice = self._ask_adjust(len(rows), sum(1 for p in self._page_paths() if p), need,
+                                  'Keep them (stretched to the new shape)')
+        for i in rows:
+            item = self.pages.item(i)
+            path = item.data(Qt.ItemDataRole.UserRole)
+            if choice == 'auto':
+                new = auto_adjust(path, need)
+            elif choice == 'each':
+                fit = ImageFitDialog(path, need, f'page {i + 1}', self)
+                if fit.exec() != QDialog.DialogCode.Accepted or not fit.result_path:
+                    continue
+                new = fit.result_path
+            else:
+                return
+            item.setData(Qt.ItemDataRole.UserRole, new)
+            item.setIcon(QIcon(QPixmap(new).scaled(64, 64, Qt.AspectRatioMode.KeepAspectRatio,
+                                                   Qt.TransformationMode.SmoothTransformation)))
 
     def _add_images(self):
         files, _ = QFileDialog.getOpenFileNames(self, 'Choose page images', self.settings.value('img_dir', ''),
@@ -1037,16 +1143,7 @@ class Studio(QMainWindow):
         wrong = [p for p in files if need and check_size(book, 'page', p)]
         choice = None
         if wrong:
-            box = QMessageBox(self)
-            box.setWindowTitle('Page size')
-            box.setText(f'{len(wrong)} of the {len(files)} image(s) are not {need[0]} × {need[1]} px, '
-                        'the size of a page in this book.')
-            box.setInformativeText('Adjust them for you? Your original files are not changed.')
-            auto = box.addButton('Adjust all (crop to fill, centred)', QMessageBox.ButtonRole.AcceptRole)
-            each = box.addButton('Let me adjust each one', QMessageBox.ButtonRole.ActionRole)
-            skip = box.addButton('Skip them', QMessageBox.ButtonRole.RejectRole)
-            box.exec()
-            choice = {auto: 'auto', each: 'each', skip: 'skip'}.get(box.clickedButton(), 'skip')
+            choice = self._ask_adjust(len(wrong), len(files), need)
         for path in files:
             if path in wrong:
                 if choice == 'auto':
@@ -1101,6 +1198,15 @@ class Studio(QMainWindow):
                 name = Path(path).name
             else:
                 name = '(blank paper)'
+            layers = item.data(self.LAYERS_ROLE) or []
+            if layers:
+                name += f'  + {len(layers)} picture{"s" if len(layers) > 1 else ""}'
+                if not path and not text:
+                    first = layers[0].get('image', '')
+                    item.setIcon(QIcon(QPixmap(first).scaled(48, 48, Qt.AspectRatioMode.KeepAspectRatio,
+                                                             Qt.TransformationMode.SmoothTransformation)))
+            elif not path:
+                item.setIcon(QIcon())
             side = 'right' if i % 2 == 0 else 'left'
             item.setText(f'{i + 1}. {name}  —  {side}')
         turns = layout_pages(n)[0]
@@ -1118,7 +1224,9 @@ class Studio(QMainWindow):
             if p is None:
                 self._add_page_item(None)
             elif isinstance(p, dict):
-                self._add_page_item(p.get('image'), p.get('text', ''))
+                layers = [l for l in (p.get('layers') or []) if Path(l.get('image', '')).exists()]
+                missing += len(p.get('layers') or []) - len(layers)
+                self._add_page_item(p.get('image'), p.get('text', ''), layers)
             elif not p or Path(p).exists():
                 self._add_page_item(p)
             else:

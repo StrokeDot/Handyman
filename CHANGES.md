@@ -1,5 +1,12 @@
 # Changes
 
+## 0.10.0
+- **Pictures on a page, like layers in After Effects**: select a page and press "Pictures on this page..." (or double-click the page). Add as many pictures as you like, drag each one to move it, mouse wheel to make it bigger or smaller, Shift + wheel to turn it. Each picture also has size, turn, opacity and mirror settings, plus Centre / Fit page width / Straight buttons. Pictures can sit on blank, image or text pages.
+- **Ink on the page** (the same as in StrokeScribe): the picture's own paper disappears and its lines become ink, so it looks printed on the page with the paper's grain showing through and no square around it. Ink colour (dark grey, black, sepia, brown, or the picture's own colours), paper removal and ink strength. Edges: soft edges, oval fade or no fading, with an edge size (also works with ink off).
+- **Change the book's size and shape**: in "Change book design..." pick a shape (A5, pocket, tall, square, wide/landscape) or type the page width and height. A preview shows the closed and open book in the new shape, with the current shape as a dashed gold line, before anything is saved. Your cover, spine and paper images can be stretched, cropped to fill, or adjusted one by one; the required image sizes follow the new shape.
+- After a shape change, page images that no longer fit the page can be adjusted for you (crop all, or one by one) or kept stretched.
+- Checked: every page shape, turn style and 10 / 25 / 50 sheets with wide, square and tall books (no page touches another), in the live view and the render.
+
 ## 0.9.4
 - **The curve travels with the visible pages** (Curved / Very curved): only the two pages you can see are curved; every page under them is flat. The first spread, just opened, is flat. As a page turns, it and the page it reveals on the right curve up together; the page it lands on goes flat again. Checked through every turn (and fast flips) for every turn style - no page touches another - in the live view and the render.
 
