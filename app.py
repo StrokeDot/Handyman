@@ -411,7 +411,7 @@ class Studio(QMainWindow):
         pl.addWidget(self.pages, 1)
         grid = QGridLayout()
         for i, (text, fn, tip) in enumerate((
-                ('+ Images…', self._add_images, 'Add one page per image'),
+                ('+ Full-page images…', self._add_images, 'Adds NEW pages at the end of the book: each image becomes a whole page. To put a picture ON a page, use "Pictures on the pages…"'),
                 ('+ Text page…', self._add_text, 'Type a page of text'),
                 ('+ Blank page', self._add_blank, 'Add an empty page'),
                 ('Fill with blank', self._fill_blank, 'Add blank pages until every page of the book turns'))):
@@ -420,19 +420,13 @@ class Studio(QMainWindow):
             b.clicked.connect(fn)
             grid.addWidget(b, i // 2, i % 2)
         pl.addLayout(grid)
-        self.layers_btn = QPushButton('Pictures on this page…')
+        self.layers_btn = QPushButton('Pictures on the pages…')
         self.layers_btn.setObjectName('accent')
-        self.layers_btn.setToolTip('Place pictures on the selected page, with "Ink on the page" so they '
-                                   'look printed on the paper (or double-click a page)')
+        self.layers_btn.setToolTip('Place pictures on the open pages of the book, two pages at a time, with '
+                                   '"Ink on the page" so they look printed on the paper (or double-click a page). '
+                                   'A picture over the middle goes across both pages.')
         self.layers_btn.clicked.connect(self._edit_layers)
-        self.spread_btn = QPushButton('Picture across two pages…')
-        self.spread_btn.setToolTip('One picture over the whole open spread (left and right page). Each half '
-                                   'stays on its own page and turns with it, like a printed double page.')
-        self.spread_btn.clicked.connect(lambda: self._edit_layers(spread=True))
-        row2 = QHBoxLayout()
-        row2.addWidget(self.layers_btn)
-        row2.addWidget(self.spread_btn)
-        pl.addLayout(row2)
+        pl.addWidget(self.layers_btn)
         self.pages.itemDoubleClicked.connect(lambda *_: self._edit_layers())
         row = QHBoxLayout()
         for text, fn in (('▲', lambda: self._move_page(-1)), ('▼', lambda: self._move_page(1))):
@@ -1048,54 +1042,46 @@ class Studio(QMainWindow):
                 self.status.setText(f'Pages {i + 1}-{i + 2}: a picture could not be used ({exc}).')
         return out
 
-    def _edit_layers(self, spread=False):
-        from layer_dialog import LayerDialog
+    def _edit_layers(self):
+        """Open the picture window on the open spread of the selected page."""
+        from layer_dialog import PicturesDialog
         from page_text import sides_to_images
         import page_layers
-        row = self.pages.currentRow()
-        if row < 0:
-            if self.pages.count() == 0:
-                self._add_blank()
-            row = 0 if self.pages.count() else -1
-            if row < 0:
-                return
-            self.pages.setCurrentRow(row)
+        if self.pages.count() == 0:
+            self._add_blank()
+        row = max(0, self.pages.currentRow())
         book = self._book()
         sides = self._page_content()
-        base = sides_to_images(sides, paths.cache_dir('pages'), float(book.get('page_aspect', 1.4)))[row]
-        def paper(r):
-            field = 'paper_odd_image' if r % 2 == 0 else 'paper_even_image'
-            return templates._texture_path(book, book.get(field) or book.get('paper_image'))
-        margin = float(self.settings.value('picture_margin', 0.08))
-        if spread:
-            left = row if row % 2 == 1 else row - 1
-            if left < 1:
-                QMessageBox.information(self, 'Picture across two pages',
-                                        'Page 1 is on the right with the inside of the cover on its left, so '
-                                        'it has no page beside it. Select page 2 or 3 (or any later pair).')
-                return
-            if left + 1 >= self.pages.count():
-                self._add_page_item(None)          # the right-hand page of this spread
-                self._pages_changed()
-                sides = self._page_content()
-            bases = sides_to_images(sides, paths.cache_dir('pages'), float(book.get('page_aspect', 1.4)))
-            own_l, spread_layers = page_layers.split(self._page_layers(left))
-            # each page shown with its own pictures already on it
-            shown = self._with_layers([dict(sd, layers=page_layers.split(sd.get('layers'))[0]) if isinstance(sd, dict)
-                                       else sd for sd in sides], bases)
-            dlg = LayerDialog(f'pages {left + 1} and {left + 2} (across the spread)', self._page_size(), None, None,
-                              spread_layers, self, self.settings.value('img_dir', ''),
-                              spread=((paper(left), shown[left]), (paper(left + 1), shown[left + 1])), margin=margin)
-            if dlg.exec() == QDialog.DialogCode.Accepted:
-                self.pages.item(left).setData(self.LAYERS_ROLE, own_l + [dict(l, spread=True) for l in dlg.result_layers()])
-        else:
-            own, spread_layers = page_layers.split(self._page_layers(row))
-            side = 'right' if row % 2 == 0 else 'left'
-            dlg = LayerDialog(f'page {row + 1} ({side}-hand page)', self._page_size(), paper(row), base,
-                              own, self, self.settings.value('img_dir', ''), margin=margin)
-            if dlg.exec() == QDialog.DialogCode.Accepted:
-                self.pages.item(row).setData(self.LAYERS_ROLE, dlg.result_layers() + spread_layers)
-        if dlg.result() == QDialog.DialogCode.Accepted:
+        bases = sides_to_images([dict(sd, layers=None) if isinstance(sd, dict) else sd for sd in sides],
+                                paths.cache_dir('pages'), float(book.get('page_aspect', 1.4)))
+        app = self
+
+        class BookPages:
+            page_size = self._page_size()
+
+            @staticmethod
+            def count():
+                return app.pages.count()
+
+            @staticmethod
+            def paper(r):
+                field = 'paper_odd_image' if r % 2 == 0 else 'paper_even_image'
+                return templates._texture_path(book, book.get(field) or book.get('paper_image'))
+
+            @staticmethod
+            def base(r):
+                return bases[r] if r < len(bases) else None
+
+            @staticmethod
+            def layers(r):
+                return app._page_layers(r)
+
+        dlg = PicturesDialog(BookPages, row, self, self.settings.value('img_dir', ''),
+                             float(self.settings.value('picture_margin', 0.08)))
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            for r, layers in dlg.result().items():
+                if r < self.pages.count():
+                    self.pages.item(r).setData(self.LAYERS_ROLE, [dict(l) for l in layers])
             self.settings.setValue('img_dir', dlg.start_dir)
             self.settings.setValue('picture_margin', dlg.margin_value())
             self._pages_changed()
@@ -1251,7 +1237,7 @@ class Studio(QMainWindow):
             if n_own:
                 name += f'  + {n_own} picture{"s" if n_own > 1 else ""}'
             if len(layers) > n_own:
-                name += f'  + two-page picture (with page {i + 2})'
+                name += f'  + picture across pages {i + 1}-{i + 2}'
                 if not path and not text:
                     first = layers[0].get('image', '')
                     item.setIcon(QIcon(QPixmap(first).scaled(48, 48, Qt.AspectRatioMode.KeepAspectRatio,

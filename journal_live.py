@@ -69,7 +69,8 @@ class JournalPreview:
 
     # ------------------------------------------------------------------ meshes
     def sheet(self, k, t, curve=1.0):
-        key = (k, round(float(t), 4), round(G.OPEN_W, 4), round(G.OPEN_B, 4), round(float(curve), 4))
+        key = (k, round(float(t), 4), round(G.OPEN_W, 4), round(G.OPEN_B, 4), round(float(curve), 4),
+               round(G.TURNED, 4))
         if key not in self._cache:
             v = G.solid_from_grid(G.sheet_state(k, t, curve)).astype(np.float32)
             n = _normals(v, np.concatenate([self.top, self.bottom]))
@@ -98,6 +99,7 @@ class JournalPreview:
         prog = pose['sheet_progress']
         ts = [float(prog[k]) if k < len(prog) else 0.0 for k in range(G.N_SHEETS)]
         cw = G.curve_weights(ts)          # only the visible spread is curved; pages under it are flat
+        G.set_turned(ts)                  # the spine's crest sits between the turned and unturned pages
         for k in range(G.N_SHEETS):
             front = tex.get(('page', 2 * k)) or tex.get('paper_odd')
             back = tex.get(('page', 2 * k + 1)) or tex.get('paper_even')

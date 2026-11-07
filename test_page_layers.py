@@ -96,7 +96,7 @@ def test_a_picture_across_two_pages_is_cut_down_the_middle(tmp_path):
     l, r = np.asarray(left), np.asarray(right)
     assert l.shape == r.shape == (700, 500, 4)
     assert l[350, 200, 3] > 200 and r[350, 300, 3] > 200        # the line runs over both pages
-    assert l[350, 499, 3] < 40 and r[350, 0, 3] < 40            # and fades at the spine (the gutter)
+    assert l[350, 499, 3] < 70 and r[350, 0, 3] < 70            # and fades at the spine (the gutter)
     own, spread = PL.split([PL.new_layer(src), layer])
     assert len(own) == 1 and spread == [layer]
 

@@ -194,43 +194,56 @@ def test_open_book_is_level_left_and_right():
 
 
 def test_pages_stay_sewn_to_the_spine_while_they_turn():
-    """A page is sewn on the right half of the hump while it lies on the right and on the left half
-    once turned; while it turns its seam slides along the hump between the two (never off it)."""
+    """A page turns about its own seam; the seam only follows the spine's crest as it travels."""
     G.configure(10, 1.4318)
     G.set_opening(G.THETA_OPEN)
     n = G.N_SHEETS
     for k in (0, 4, 9):
-        right, left = G.binding(n - 1 - k), G.binding_left(k)
-        assert left[0] < right[0]
-        for u in (0.0, 0.3, 0.7, 1.0):
-            g = G.sheet_grid(n - 1 - k, 'turn', k, u, ny=2)
-            seam = g[len(g) // 2][0, [0, 2]]
-            w = float(G.E(u))
-            assert np.allclose(seam, (1 - w) * right + w * left, atol=1e-6), (k, u)
+        assert np.allclose(G.binding_left(k), G.binding(n - 1 - k))
+        prev = None
+        for u in np.linspace(0, 1, 11):
+            prog = [1.0] * k + [float(u)] + [0.0] * (n - k - 1)
+            G.set_turned(prog)
+            seam = G.sheet_state(k, float(u), 0.0)[12][0, [0, 2]]
+            if prev is not None:
+                assert np.linalg.norm(seam - prev) < 0.004          # glides, never jumps
+            prev = seam
+    G.set_turned([0.0] * n)
 
 
-def test_each_stack_is_sewn_above_the_pages_under_it():
-    """In each stack the top page is sewn nearest the crest of the hump, so it is sewn above the
-    pages under it and never cuts through them at the gutter (the lower page's ink showed there)."""
+def test_the_two_open_pages_meet_at_the_crest_and_each_stack_is_sewn_above_the_pages_under_it():
     G.configure(10, 1.4318)
     G.set_opening(G.THETA_OPEN)
     n = G.N_SHEETS
-    right = np.array([G.binding(n - 1 - k) for k in range(n)])      # k = 0 is the top of the right stack
-    left = np.array([G.binding_left(k) for k in range(n)])          # k = n - 1 is the top once all turned
-    assert np.all(np.diff(right[:, 1]) < 0) and np.all(np.diff(right[:, 0]) > 0)
-    assert np.all(np.diff(left[:, 1]) > 0) and np.all(np.diff(left[:, 0]) > 0)
-    assert right[:, 0].min() > left[:, 0].max()
-    # the first spread just opened: page 1 stays above page 3 right out of the gutter
-    a = G.sheet_state(0, 0.0, 0.0)[12]
-    b = G.sheet_state(1, 0.0, 0.0)[12]
-    xs = np.linspace(max(a[0, 0], b[0, 0]), 0.5, 400)
-    gap = np.interp(xs, a[:, 0], a[:, 2]) - np.interp(xs, b[:, 0], b[:, 2])
-    assert gap.min() > 0.0
+    for turned in range(n + 1):
+        seams = np.array([G.open_seam(k, turned) for k in range(n)])
+        assert np.all(np.diff(seams[:, 0]) > 0)                       # in book order along the spine
+        left, right = seams[:turned], seams[turned:]
+        assert np.all(np.diff(left[:, 1]) > -1e-9) and np.all(np.diff(right[:, 1]) < 1e-9)
+        if 0 < turned < n:                                           # the pages you see are side by side
+            assert np.linalg.norm(seams[turned] - seams[turned - 1]) < 0.012
+    # no page cuts through the page under it, in any resting state
+    for turned in (0, 1, 5, 9, 10):
+        prog = [1.0] * turned + [0.0] * (n - turned)
+        G.set_turned(prog)
+        cw = G.curve_weights(prog)
+        sh = [G.sheet_state(k, prog[k], cw[k]) for k in range(n)]
+        for k in range(n - 1):
+            if prog[k] != prog[k + 1]:
+                continue
+            up, lo = (sh[k], sh[k + 1]) if prog[k] == 0 else (sh[k + 1], sh[k])
+            a, b = up[12], lo[12]
+            if a[-1, 0] < a[0, 0]:
+                a, b = a[::-1], b[::-1]
+            xs = np.linspace(max(a[0, 0], b[0, 0]), min(a[-1, 0], b[-1, 0]), 600)
+            assert (np.interp(xs, a[:, 0], a[:, 2]) - np.interp(xs, b[:, 0], b[:, 2])).min() > 0, (turned, k)
+    G.set_turned([0.0] * n)
 
 
 def test_open_spine_is_a_hump_between_the_covers_with_pages_sewn_along_it():
     G.configure(10, 1.4318)
     G.set_opening(G.THETA_OPEN)
+    G.set_turned([1.0] * 5 + [0.0] * 5)
     seams = np.array([G.core_seam(j) for j in range(G.N_SHEETS)])
     assert seams[:, 0].min() >= G.J_OPEN[0] - 1e-9 and seams[:, 0].max() <= G.XB + 1e-9   # between the covers
     assert seams[:, 1].max() > G.TB + 0.5 * G.spine_hump_height()                          # a real hump
@@ -240,6 +253,7 @@ def test_open_spine_is_a_hump_between_the_covers_with_pages_sewn_along_it():
     closed = np.array([G.binding(j) for j in range(G.N_SHEETS)])
     assert np.allclose(closed[:, 0], 0.0)                                                   # closed: a column
     G.set_opening(G.THETA_OPEN)
+    G.set_turned([0.0] * G.N_SHEETS)
 
 
 def test_only_the_visible_spread_is_curved():
@@ -267,8 +281,8 @@ def test_travelling_curve_never_makes_pages_touch():
         for u in np.linspace(0, 1, 9):
             prog = [1.0] * landed + [float(u)] + [0.0] * (n - landed - 1)
             cw = G.curve_weights(prog)
-            sh = [G.sheet_grid(n - 1 - k, 'right' if p <= 0 else ('left' if p >= 1 else 'turn'), k, float(p),
-                               ny=2, curve=cw[k])[:, :, [0, 2]] for k, p in enumerate(prog)]
+            G.set_turned(prog)
+            sh = [G.sheet_state(k, float(p), cw[k])[::12][:, :, [0, 2]] for k, p in enumerate(prog)]
             for a in range(max(0, landed - 2), min(n - 1, landed + 2)):
                 assert mind(sh[a], sh[a + 1]) >= G.SHEET_T - 1e-4, (landed, u, a)
     G.configure(10, 1.4318, page_shape='flat')

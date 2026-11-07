@@ -616,6 +616,7 @@ def main():
     last_key, last_path = None, None
     base_loc = tuple(root.location)
     last_theta = None
+    last_core = None
     started = time.time()
     log(f'TOTAL {len(frames)}')
     for i, f in enumerate(frames):
@@ -630,16 +631,19 @@ def main():
         pivot.rotation_euler = (0.0, -theta, 0.0)
         pv = G.cover_pivot(theta)
         pivot.location = (float(pv[0]), 0.0, float(pv[1]))
-        if theta != last_theta:
-            set_coords(sp.data, spine_coords(theta))
-            set_coords(core.data, core_coords(theta))
-            last_theta = theta
-        place_camera(cam, job, pose['camera_frac'])
         prog = pose['sheet_progress']
         ts = [float(prog[k]) if k < len(prog) else 0.0 for k in range(len(obs))]
+        turned = round(G.set_turned(ts), 6)   # the spine's crest sits between turned and unturned pages
+        if theta != last_theta:
+            set_coords(sp.data, spine_coords(theta))
+            last_theta = theta
+        if (theta, turned) != last_core:
+            set_coords(core.data, core_coords(theta))
+            last_core = (theta, turned)
+        place_camera(cam, job, pose['camera_frac'])
         cw = G.curve_weights(ts)          # only the visible spread is curved; pages under it are flat
         for k, ob in enumerate(obs):
-            state = (ts[k], round(cw[k], 6))
+            state = (ts[k], round(cw[k], 6), turned)
             if state != last[k]:
                 set_coords(ob.data, sheet_coords(k, ts[k], cw[k]))
                 last[k] = state

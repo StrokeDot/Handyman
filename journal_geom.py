@@ -130,46 +130,67 @@ def spine_hump_height():
     return 0.35 * T + 0.004
 
 
-def _hump_point(frac):
-    """A point on the hump of the spine between the open covers (0 = front cover end, 1 = back)."""
+TURNED = 0.0      # how many pages are turned (sum of every page's turn progress), set per frame
+_LAYOUT = 0.0     # the turned count the seams are laid out for while a shape is worked out
+
+
+def set_turned(progress):
+    """Tell the spine how far through the book we are (each page's turn progress, 0..1)."""
+    global TURNED
+    TURNED = float(min(max(sum(float(p) for p in progress), 0.0), N_SHEETS))
+    return TURNED
+
+
+def _hump_pieces(n):
+    """The open spine's hump with its crest between the pages turned and the pages not turned:
+    (rising piece from the front cover to the crest, falling piece from the crest to the back
+    cover), each as points along it. Like a real rounded spine, the crest travels through the
+    book as you read it."""
     lp = np.array([J_OPEN[0], TB + 0.0006])
     rp = np.array([XB, TB + 0.0006])
-    ch = 4.0 / 3.0 * spine_hump_height()
-    c = bezier(lp, lp + np.array([0.0, ch]), rp + np.array([0.0, ch]), rp, 64)
+    h = spine_hump_height()
+    xp = lp[0] + float(n) / N_SHEETS * (rp[0] - lp[0])
+    top = np.array([xp, lp[1] + h])
+    up = bezier(lp, lp + np.array([0.0, h]), top - np.array([0.5 * (xp - lp[0]), 0.0]), top, 48)
+    down = bezier(top, top + np.array([0.5 * (rp[0] - xp), 0.0]), rp + np.array([0.0, h]), rp, 48)
+    return up, down
+
+
+def _along(c, frac):
     L = np.concatenate([[0.0], np.cumsum(np.linalg.norm(np.diff(c, axis=0), axis=1))])
-    target = float(frac) * L[-1]
-    return np.array([np.interp(target, L, c[:, 0]), np.interp(target, L, c[:, 1])])
+    t = float(frac) * L[-1]
+    return np.array([np.interp(t, L, c[:, 0]), np.interp(t, L, c[:, 1])])
 
 
-def open_seam(k, side='right'):
-    """Where sheet k (0 = first sheet) is sewn on the hump of the open spine. The pages lying on
-    the right are sewn down the right half of the hump, the top page nearest the crest; the pages
-    lying on the left down the left half, the last one turned nearest the crest. So in each stack
-    a page is sewn above the pages under it and never has to cut through them (when every seam had
-    one fixed spot, the first pages were sewn below their neighbours and crossed them at the gutter).
-    A turning page slides from its right-hand seam to its left-hand one (a few tenths of a mm)."""
-    if side == 'right':
-        return _hump_point(0.5 + 0.5 * (k + 0.5) / N_SHEETS)
-    return _hump_point(0.5 * (k + 0.5) / N_SHEETS)
+def open_seam(k, n=None):
+    """Where sheet k (0 = first sheet) is sewn on the open spine when n pages are turned. Seams sit
+    side by side along the hump in book order, and the crest is between the last page turned and
+    the first page not turned: so the top page of each stack is sewn highest, above the pages
+    under it, and the two pages you see meet at the crest. (With the crest fixed in the middle,
+    the first pages were sewn below their neighbours and cut through them at the gutter.)"""
+    n = _LAYOUT if n is None else n
+    up, down = _hump_pieces(n)
+    if k + 0.5 < n:                                    # turned: on the rising piece, last one at the top
+        return _along(up, (k + 0.5) / max(n, 1e-6))
+    return _along(down, (k + 0.5 - n) / max(N_SHEETS - n, 1e-6))
 
 
 def binding(j):
     """Binding point (seam) of sheet j (0 = bottom, next to the back board). Closed book: a
     column at the back of the text block. As the book opens the spine rolls into the hump
-    between the covers, carrying every seam to its fixed open spot."""
+    between the covers, carrying every seam to its spot on the hump."""
     closed = closed_binding(j)
     if OPEN_B <= 0.0:
         return closed
-    return closed + (open_seam(N_SHEETS - 1 - j, 'right') - closed) * OPEN_B
+    return closed + (open_seam(N_SHEETS - 1 - j) - closed) * OPEN_B
 
 
 def core_seam(j):
-    """The top of the block's back between the covers, for the filler under the seams: spread
-    over the whole hump (all the pages are sewn somewhere along it)."""
+    """The top of the block's back between the covers (the filler under the seams), now."""
     closed = closed_binding(j)
     if OPEN_B <= 0.0:
         return closed
-    return closed + (_hump_point((N_SHEETS - 1 - j + 0.5) / N_SHEETS) - closed) * OPEN_B
+    return closed + (open_seam(N_SHEETS - 1 - j, TURNED) - closed) * OPEN_B
 
 
 def closed_binding(j):
@@ -186,12 +207,9 @@ UP_LEFT = np.array([0.5, 0.866])     # each turned page binds just above the one
 
 
 def binding_left(layer):
-    """Seam of the sheet that landed on the left as `layer` (0 = first turned = sheet 0)."""
-    j = N_SHEETS - 1 - layer
-    closed = closed_binding(j)
-    if OPEN_B <= 0.0:
-        return closed
-    return closed + (open_seam(layer, 'left') - closed) * OPEN_B
+    """Seam of the sheet that landed on the left as `layer` (0 = first turned): the same seam -
+    a page turns about its own seam."""
+    return binding(N_SHEETS - 1 - layer)
 
 
 CURVE = 0.0        # page "pillow": 0 = flat pages; ~0.15 gentle, ~0.26 strong (radians at the spine)
@@ -490,9 +508,39 @@ def sheet_uvs(n_mid, nx=None):
     return np.array([(k / (nx - 1) * smax(v) / W, v) for v in vv for k in range(nx)], dtype=float)
 
 
+_STATES = {}
+
+
 def sheet_state(k, t, curve=1.0):
     """(mid-surface grid) of sheet k (0 = first sheet inside the cover) at turn progress t,
-    with `curve` of the page-shape curve (see curve_weights)."""
+    with `curve` of the page-shape curve (see curve_weights), for the current TURNED count.
+    Shapes are worked out with the seams laid out for whole numbers of turned pages and blended
+    between the two nearest, so a page turning only costs its own shape plus a blend."""
+    global _LAYOUT
+    lo = int(math.floor(TURNED))
+    hi = min(lo + 1, N_SHEETS)
+    f = TURNED - lo
+    out = None
+    for n, w in ((lo, 1.0 - f), (hi, f)):
+        if w <= 1e-9 and out is not None:
+            continue
+        if w <= 1e-9:
+            continue
+        key = (k, round(float(t), 5), round(float(curve), 5), n, round(OPEN_W, 6), round(OPEN_B, 6),
+               N_SHEETS, H, PITCH, SHEET_T, CURVE, LEAD, SIG, id(E), id(B), round(float(THETA_OPEN), 6))
+        if key not in _STATES:
+            if len(_STATES) > 3000:
+                _STATES.clear()
+            saved, _LAYOUT = _LAYOUT, n
+            try:
+                _STATES[key] = _sheet_state_at(k, t, curve)
+            finally:
+                _LAYOUT = saved
+        out = _STATES[key] * w if out is None else out + _STATES[key] * w
+    return out
+
+
+def _sheet_state_at(k, t, curve=1.0):
     j = N_SHEETS - 1 - k
     if t <= 0.0:
         return sheet_grid(j, 'right', ny=NY, curve=curve)
@@ -519,15 +567,17 @@ def turn_points():
     key = (N_SHEETS, H, PITCH, CURVE, LEAD, SIG)
     if key not in _TURN_PTS:
         global OPEN_B
+        global _LAYOUT
         saved, OPEN_W = OPEN_W, 1.0
         saved_b, OPEN_B = OPEN_B, 1.0
+        saved_l, _LAYOUT = _LAYOUT, 0.5
         pts = []
         for u in np.linspace(0.1, 0.9, 17):
             g = sheet_grid(N_SHEETS - 1, 'turn', 0, float(u), ny=2)
             cols = sorted(set(list(range(0, g.shape[1], 6)) + [g.shape[1] - 1]))   # include the outer edge
             pts.append(g[:, cols].reshape(-1, 3))
         _TURN_PTS[key] = np.concatenate(pts)
-        OPEN_W, OPEN_B = saved, saved_b
+        OPEN_W, OPEN_B, _LAYOUT = saved, saved_b, saved_l
     return _TURN_PTS[key]
 
 

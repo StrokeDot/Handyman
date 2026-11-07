@@ -1,5 +1,11 @@
 # Changes
 
+## 0.11.1
+- **The pages meet in the middle again**: 0.11.0 sewed the left and right pages on separate halves of the spine, which opened a dark gap in the middle of the book. Now the spine's crest travels through the book as you read, always between the two pages you see, so they meet at the middle, and the pages under them still never cut through each other (checked for every page turn).
+- **One picture window for the whole book**: "Pictures on the pages..." (or double-click a page) shows the two open pages side by side, like the book. "Previous pages" / "Next pages" (or Page Up / Page Down) go through the book, and the title says which pages you are on. Pictures already on a page show up here and can be moved: a picture over the middle becomes a picture across both pages, and moving it back onto one side makes it that page's picture again. The list says which page each picture is on.
+- **Copy, paste and undo**: Ctrl+C / Ctrl+V copy a picture, also onto other pages; Ctrl+Z undo, Ctrl+Y redo; Delete removes the selected picture.
+- "+ Images..." is now "+ Full-page images..." (it adds new pages at the end of the book, each image a whole page).
+
 ## 0.11.0
 - **Cover size apart from the page size**: in Change book design, untick "Cover follows the pages" and set the cover width and height yourself. The cover can never be smaller than the pages; the preview, the 3D book, the camera framing and the required image sizes all follow.
 - **A picture across two pages**: select a page and press "Picture across two pages...". One picture covers the whole open spread; the left half stays on the left page and the right half on the right page, so each half turns with its own page, like a printed double page. It fades out a hair at the spine (the gutter).

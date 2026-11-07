@@ -184,7 +184,7 @@ def split(layers):
     return own, [l for l in layers or [] if l.get('spread')]
 
 
-GUTTER = 0.015        # a picture across two pages fades out this close to the spine (share of page width)
+GUTTER = 0.006        # a picture across two pages fades out this close to the spine (share of page width)
 
 
 def compose_spread(left_base, right_base, layers, size):
@@ -239,3 +239,49 @@ def fit_in_margins(layer, src_size, canvas_size, page_w, margin):
     w = min(box_w, box_h * aspect)
     layer.update(w=round(w / cw, 4), x=0.5, y=0.5, rot=0.0)
     return layer
+
+
+# ---------------------------------------------------------------- editing a whole open spread
+def to_spread(layer, side):
+    """A layer of one page ('left' or 'right') in the coordinates of the open spread."""
+    d = dict(layer)
+    d.pop('spread', None)
+    d['x'] = float(layer_get(layer, 'x')) / 2 + (0.5 if side == 'right' else 0.0)
+    d['w'] = float(layer_get(layer, 'w')) / 2
+    return d
+
+
+def picture_size(path, _cache={}):
+    try:
+        st = Path(path).stat().st_mtime_ns
+    except OSError:
+        return (1, 1)
+    key = (str(path), st)
+    if key not in _cache:
+        try:
+            with Image.open(path) as im:
+                _cache[key] = im.size
+        except Exception:
+            _cache[key] = (1, 1)
+    return _cache[key]
+
+
+def from_spread(layers, spread_size):
+    """Sort layers placed on the open spread back onto the pages: (left page's own, right page's
+    own, across both). A picture wholly on one side belongs to that page; one over the spine is
+    a two-page picture."""
+    cw = spread_size[0]
+    left, right, both = [], [], []
+    for layer in layers:
+        xs = [c[0] for c in layer_corners(layer, picture_size(layer_get(layer, 'image')), spread_size)]
+        if max(xs) <= cw / 2 + 0.5:
+            d = dict(layer, x=float(layer['x']) * 2, w=float(layer['w']) * 2)
+            d.pop('spread', None)
+            left.append(d)
+        elif min(xs) >= cw / 2 - 0.5:
+            d = dict(layer, x=float(layer['x']) * 2 - 1.0, w=float(layer['w']) * 2)
+            d.pop('spread', None)
+            right.append(d)
+        else:
+            both.append(dict(layer, spread=True))
+    return left, right, both
