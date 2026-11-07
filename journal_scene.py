@@ -421,7 +421,7 @@ def surface(name, path, fallback_rgb, **kw):
 def build(job):
     book = job['book']
     sheets = int(job.get('page_count') or book.get('page_count') or 10)
-    G.configure(sheets, float(book.get('page_aspect', 1.4318)), cover=G.cover_of(book), page_shape=job.get('page_shape', 'flat'),
+    G.configure(sheets, float(book.get('page_aspect', 1.4318)), **G.book_dims(book), page_shape=job.get('page_shape', 'flat'),
                 turn_style=job.get('turn_style', 'natural'))
     images = list(job.get('images') or [])
     leather_rgb = book.get('leather_color', (0.12, 0.05, 0.02))
@@ -430,10 +430,12 @@ def build(job):
     m_back = surface('BackExterior', book.get('back_exterior_image'), leather_rgb, roughness=0.62, bump=0.35, spec=0.3)
     m_pd_f = surface('PastedownFront', book.get('front_interior_image'), leather_rgb, roughness=0.62, bump=0.3, spec=0.3)
     m_pd_b = surface('PastedownBack', book.get('back_interior_image'), leather_rgb, roughness=0.62, bump=0.3, spec=0.3)
-    m_leather = surface('LeatherPlain', book.get('leather_image'), leather_rgb, roughness=0.6, bump=0.3, spec=0.3)
+    # the boards' edges (and the inside of the spine) in the cover's own colour when asked ('match')
+    edge_img = book.get('edge_image') or book.get('leather_image')
+    m_leather = surface('LeatherPlain', edge_img, leather_rgb, roughness=0.6, bump=0.3, spec=0.3)
     m_spine = surface('Spine', book.get('spine_exterior_image'), leather_rgb, roughness=0.55, bump=0.4, spec=0.35)
-    m_spine_in = surface('SpineInside', book.get('leather_image'), leather_rgb, roughness=0.75, bump=0.2, spec=0.2)
-    if book.get('leather_image'):
+    m_spine_in = surface('SpineInside', edge_img, leather_rgb, roughness=0.75, bump=0.2, spec=0.2)
+    if edge_img:
         _darken(m_spine_in, 0.45)
     m_edge = page_edge_material()
     m_core = color_material('TextBlockBack', (0.16, 0.09, 0.05), 0.75, noise=0.3)

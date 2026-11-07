@@ -446,17 +446,35 @@ def cover_of(book):
         return None
 
 
+MAX_BLOCK = 0.15                   # thickest page block, in page widths (checked: no page touches another)
+BOARD_MM, PAPER_MM = 4.2, 0.45     # the Leather Journal: cover board and one sheet of paper (15 cm page)
+
+
+def book_dims(book):
+    """configure() arguments for a book's own sizes: cover board, board and paper thickness.
+    Thicknesses are kept in mm and turned into page widths with the page's real width."""
+    book = book or {}
+    try:
+        page_cm = float((book.get('page_size_cm') or [15.0])[0])
+    except (TypeError, ValueError, IndexError):
+        page_cm = 15.0
+    board = float(book.get('board_mm') or BOARD_MM)
+    paper = min(1.0, float(book.get('paper_mm') or PAPER_MM))       # thicker paper: pages touched in the turns
+    pitch = paper / (10.0 * page_cm)
+    return dict(cover=cover_of(book), board_t=board / (10.0 * page_cm), pitch=pitch, sheet_t=0.8 * pitch)
+
+
 def min_cover(page_aspect):
     """The smallest board (width, height) in page widths: it must still cover the pages."""
     return (W - XB + 0.005, float(page_aspect) * W + 0.02)
 
 
 def configure(page_count=None, page_aspect=None, pitch=None, sheet_t=None, page_shape=None, turn_style=None,
-              cover=None):
+              cover=None, board_t=None):
     """Set the book's sheet count and page shape, and recompute everything derived from them.
     cover: (board width, board height) in page widths; None = the default cover for the page."""
     global N_SHEETS, H, PITCH, SHEET_T, T, ZJ, THETA_OPEN, BETA, J, J_OPEN, SPINE_GAP, BSTEP, HC, WC, CURVE, E, B
-    global LEAD, SIG, COVER_MARGIN
+    global LEAD, SIG, COVER_MARGIN, TB
     if page_shape is not None:
         CURVE = PAGE_SHAPES.get(str(page_shape), 0.0) if isinstance(page_shape, str) else float(page_shape)
     if turn_style is not None:
@@ -472,10 +490,17 @@ def configure(page_count=None, page_aspect=None, pitch=None, sheet_t=None, page_
         WC, HC = max(float(cover[0]), lo_w), max(float(cover[1]), lo_h)
     # the camera keeps the cover's overhang (whichever side sticks out more) in the picture
     COVER_MARGIN = max(XB + WC - W, (HC - H) / 2) + 0.005
+    if board_t:
+        TB = float(board_t)
     if pitch:
         PITCH = float(pitch)
     if sheet_t:
         SHEET_T = float(sheet_t)
+    # a page block thicker than 15% of the page width lets the turning pages touch: very thick
+    # books (many pages of thick paper) are kept to that
+    if N_SHEETS * PITCH > MAX_BLOCK:
+        SHEET_T *= MAX_BLOCK / (N_SHEETS * PITCH)
+        PITCH = MAX_BLOCK / N_SHEETS
     T = N_SHEETS * PITCH
     ZJ = TB + T
     J = np.array([XB, ZJ])

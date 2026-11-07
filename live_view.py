@@ -30,6 +30,7 @@ except Exception as exc:  # PyOpenGL missing or no OpenGL driver
 
 NX, NY = 40, 24
 TEX_W = 512
+JPAGE_W = 1600         # journal pages in the live view: sharp enough for pictures and text
 
 
 def _image_stamps(book, images):
@@ -392,6 +393,17 @@ class LiveView(QOpenGLWidget):
             self.zoomed.emit(steps)
 
     # -------------------------------------------------------------- textures
+    def _max_anisotropy(self):
+        if not hasattr(self, '_aniso'):
+            try:
+                self._aniso = min(16.0, float(gl.glGetFloatv(0x84FF)))  # GL_MAX_TEXTURE_MAX_ANISOTROPY
+            except Exception:  # not supported: plain mipmaps
+                self._aniso = 1.0
+                for _ in range(4):
+                    if gl.glGetError() == gl.GL_NO_ERROR:
+                        break
+        return self._aniso
+
     def _upload(self, key, img, clamp=True):
         img = _flip_v(img.convertToFormat(QImage.Format.Format_RGBA8888))
         tid = self._textures.get(key) or gl.glGenTextures(1)
@@ -402,6 +414,11 @@ class LiveView(QOpenGLWidget):
         gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_S, wrap)
         gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_T, wrap)
         gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_GENERATE_MIPMAP, gl.GL_TRUE)
+        # Anisotropic filtering: a page or cover seen at a slant stays sharp (plain mipmaps blur
+        # it more the flatter the angle). Every graphics card from the last 15 years has it.
+        aniso = self._max_anisotropy()
+        if aniso > 1.0:
+            gl.glTexParameterf(gl.GL_TEXTURE_2D, 0x84FE, aniso)       # GL_TEXTURE_MAX_ANISOTROPY
         ptr = img.constBits()
         data = bytes(ptr) if not isinstance(ptr, (bytes, bytearray)) else ptr
         gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGBA, img.width(), img.height(), 0, gl.GL_RGBA,
@@ -421,14 +438,14 @@ class LiveView(QOpenGLWidget):
                 p = cover_shape.filled(p, paths.cache_dir('covers'))
             img = QImage(str(p)) if p else QImage()
             if not img.isNull():
-                tex[key] = self._upload(('j', key), img.scaled(1024, 1024, Qt.AspectRatioMode.KeepAspectRatio,
+                tex[key] = self._upload(('j', key), img.scaled(2048, 2048, Qt.AspectRatioMode.KeepAspectRatio,
                                                                Qt.TransformationMode.SmoothTransformation))
         papers = {}
         for key in ('paper_odd', 'paper_even'):
             p = _resolve_texture(book, f'{key}_image') or _resolve_texture(book, 'paper_image')
             img = QImage(str(p)) if p else QImage()
             if not img.isNull():
-                papers[key] = img.scaled(TEX_W * 2, int(TEX_W * 2 * float(book.get('page_aspect', 1.4))),
+                papers[key] = img.scaled(JPAGE_W, int(JPAGE_W * float(book.get('page_aspect', 1.4))),
                                          Qt.AspectRatioMode.IgnoreAspectRatio,
                                          Qt.TransformationMode.SmoothTransformation).convertToFormat(
                                              QImage.Format.Format_RGBA8888)
@@ -736,7 +753,7 @@ class LiveView(QOpenGLWidget):
     def _paint_journal(self, pose, frac, x0, y0, w, h):
         """Journal-engine book: shapes and camera from journal_geom, exactly as the render."""
         journal_geom.configure(journal_geom.N_SHEETS, float(self.book.get('page_aspect', 1.4318)),
-                              cover=journal_geom.cover_of(self.book))
+                              **journal_geom.book_dims(self.book))
         cam, r, u, fw, lens = journal_geom.camera(self.cam, frac, self.aspect, journal_geom.real_size(self.book))
         gl.glViewport(x0, y0, w, h)
         gl.glMatrixMode(gl.GL_PROJECTION)

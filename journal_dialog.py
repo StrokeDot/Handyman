@@ -275,6 +275,42 @@ class JournalDialog(QDialog):
         row.addWidget(self.preview, 3)
         lay.addWidget(g)
 
+        g = QGroupBox('Thickness and edges')
+        f = QFormLayout(g)
+        self.board_mm = QDoubleSpinBox()
+        self.board_mm.setRange(1.0, 10.0)
+        self.board_mm.setSingleStep(0.2)
+        self.board_mm.setDecimals(1)
+        self.board_mm.setSuffix(' mm')
+        self.board_mm.setValue(float(book.get('board_mm') or 4.2))
+        self.board_mm.setToolTip('How thick each cover board is (the Leather Journal: 4.2 mm)')
+        f.addRow('Cover thickness', self.board_mm)
+        self.paper_mm = QDoubleSpinBox()
+        self.paper_mm.setRange(0.15, 1.0)
+        self.paper_mm.setSingleStep(0.05)
+        self.paper_mm.setDecimals(2)
+        self.paper_mm.setSuffix(' mm')
+        self.paper_mm.setValue(float(book.get('paper_mm') or 0.45))
+        self.paper_mm.setToolTip('How thick one sheet of paper is (the Leather Journal: 0.45 mm). '
+                                 'Thicker paper makes a thicker book with the same number of pages.')
+        f.addRow('Paper thickness (one sheet)', self.paper_mm)
+        note = QLabel('The number of pages ("Pages in the book" in the main window) also changes how thick '
+                      'the book is: pages x paper thickness. A very thick book is limited so that the turning '
+                      'pages never touch.')
+        note.setObjectName('hint')
+        note.setWordWrap(True)
+        f.addRow(note)
+        self.edge_mode = QComboBox()
+        self.edge_mode.addItem('Match the cover picture', 'match')
+        self.edge_mode.addItem('Use the leather image as it is', 'leather')
+        self.edge_mode.setToolTip('The colour of the cover boards\' edges (the thickness of the cover) and of '
+                                  'the inside of the spine. "Match" takes the colour from the edge of your cover '
+                                  'picture, so a blue cover gets blue edges.')
+        i = self.edge_mode.findData(book.get('edge_mode') or 'match')
+        self.edge_mode.setCurrentIndex(max(0, i))
+        f.addRow('Cover edges', self.edge_mode)
+        lay.addWidget(g)
+
         g = QGroupBox('Images (each must be exactly the size shown)')
         grid = QGridLayout(g)
         for r, (field, caption, _, hint) in enumerate(SLOTS):
@@ -426,7 +462,7 @@ class JournalDialog(QDialog):
         from PySide6.QtWidgets import QApplication
         from compare_view import CompareDialog
         images, values = self.preview_content
-        new_book = dict(self.book)
+        new_book = self.result_book()
         mode = RESHAPE[self.reshape.currentText()]
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
@@ -533,4 +569,7 @@ class JournalDialog(QDialog):
     def result_book(self):
         b = dict(self.book)
         b['name'] = self.name.text().strip() or 'Journal'
+        b['board_mm'] = None if abs(self.board_mm.value() - 4.2) < 1e-6 else round(self.board_mm.value(), 2)
+        b['paper_mm'] = None if abs(self.paper_mm.value() - 0.45) < 1e-6 else round(self.paper_mm.value(), 3)
+        b['edge_mode'] = self.edge_mode.currentData()
         return b

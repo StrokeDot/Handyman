@@ -50,7 +50,7 @@ class JournalPreview:
 
     def __init__(self, book, page_count, page_shape='flat', turn_style='natural'):
         G.configure(int(page_count or book.get('page_count') or 10), float(book.get('page_aspect', 1.4318)),
-                    cover=G.cover_of(book),
+                    **G.book_dims(book),
                     page_shape=page_shape, turn_style=turn_style)
         self.rows = len(G.rows(G.NY))
         self.cols = G.NX
@@ -65,6 +65,7 @@ class JournalPreview:
         # the boards' fore-edge corners are cut as round as the cover picture's own corners
         import templates
         self.corner = cover_shape.corner_radius(templates._texture_path(book, book.get('front_exterior_image')))
+        self.edge_rgb = templates._edge_rgb(book)          # board edges in the cover's colour (or None)
         # which winding faces outwards: the top face's first triangle against the sheet's up direction
         v = G.solid_from_grid(G.sheet_state(0, 0.0, 0.0))
         t = self.top[:3]
@@ -154,7 +155,7 @@ class JournalPreview:
                 gl.glVertex3f(x, y, z)
             gl.glEnd()
         gl.glDisable(gl.GL_TEXTURE_2D)
-        gl.glColor3f(*(np.array(colour) * 0.8))
+        gl.glColor3f(*(np.array(self.edge_rgb if self.edge_rgb else colour) * 0.8))
         gl.glBegin(gl.GL_QUADS)
         for (xa, ya), (xb, yb) in zip(pts, pts[1:] + pts[:1]):
             nx_, ny_ = yb - ya, -(xb - xa)

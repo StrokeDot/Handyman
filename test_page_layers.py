@@ -153,3 +153,15 @@ def test_cover_corner_is_read_from_the_art_and_transparent_pixels_are_filled(tmp
     Image.new('RGB', (100, 150), (1, 2, 3)).save(opaque)
     assert abs(C.corner_radius(str(opaque)) - C.DEFAULT_CORNER) < 1e-12
     assert C.filled(str(opaque), tmp_path / 'out') == str(opaque)
+
+
+def test_board_and_paper_thickness_follow_the_book_and_stay_in_safe_limits():
+    import journal_geom as G
+    d = G.book_dims({})
+    assert abs(d['board_t'] - 0.028) < 1e-9 and abs(d['pitch'] - 0.003) < 1e-9      # the Leather Journal
+    thick = G.book_dims({'board_mm': 8.4, 'paper_mm': 0.9, 'page_size_cm': [15, 21.48]})
+    assert abs(thick['board_t'] - 0.056) < 1e-9 and abs(thick['pitch'] - 0.006) < 1e-9
+    G.configure(50, 1.4318, **G.book_dims({'paper_mm': 1.0}))
+    assert G.N_SHEETS * G.PITCH <= G.MAX_BLOCK + 1e-9                                # very thick books are kept in limits
+    G.configure(10, 1.4318, **G.book_dims({}))
+    assert abs(G.TB - 0.028) < 1e-9 and abs(G.PITCH - 0.003) < 1e-9

@@ -35,8 +35,11 @@ DEFAULTS = {
     'paper_age': 0.55,          # blotches and yellowing, 0..1
     'burn': 0.6,                # darkened page edges, 0..1
     'page_aspect': 1.4,         # page height / width
-    'page_size_cm': None,
-    'cover_size_cm': None,      # journal: [width, height] of the cover board; None = follows the page       # journal: [width, height] of a page as the user set it (only the shape matters)
+    'page_size_cm': None,       # journal: [width, height] of a page as the user set it (only the shape matters)
+    'cover_size_cm': None,      # journal: [width, height] of the cover board; None = follows the page
+    'board_mm': None,           # journal: cover board thickness in mm (None = 4.2)
+    'paper_mm': None,           # journal: one sheet of paper in mm (None = 0.45)
+    'edge_mode': 'match',       # journal: cover edges 'match' the cover picture, or use the 'leather' image
     'stitching': True,
     'thread_color': '#b08a5a',
     'spine_bands': 4,
@@ -239,6 +242,23 @@ def _cover(book, field):
     return cover_shape.filled(p, paths.cache_dir('covers')) if p else p
 
 
+def _edge_rgb(book):
+    """Colour of the cover boards' edges: the cover picture's own edge colour ('match'), or None
+    to keep the leather image as it is."""
+    import cover_shape
+    if (book.get('edge_mode') or 'match') != 'match':
+        return None
+    return cover_shape.edge_colour(_texture_path(book, book.get('front_exterior_image')))
+
+
+def _edge_image(book):
+    """The leather for the board edges (and inside the spine), recoloured to the cover's edge."""
+    import cover_shape
+    leather = _texture_path(book, book.get('leather_image'))
+    rgb = _edge_rgb(book)
+    return cover_shape.tinted_leather(leather, rgb, paths.cache_dir('covers')) if rgb else leather
+
+
 def _board_corner(book):
     """Fore-edge corner radius of the boards (share of the board width), read from the front cover art."""
     import cover_shape
@@ -254,7 +274,9 @@ def for_scene(book):
     return dict(
         engine=book.get('engine') or 'classic',
         page_size_cm=book.get('page_size_cm'),
-        cover_size_cm=book.get('cover_size_cm'),       # real size: the camera frames the Leather Journal's size
+        cover_size_cm=book.get('cover_size_cm'),
+        board_mm=book.get('board_mm'), paper_mm=book.get('paper_mm'),
+        edge_image=_edge_image(book), edge_rgb=_edge_rgb(book),       # real size: the camera frames the Leather Journal's size
         page_count=book.get('page_count'),
         paper_odd_image=_texture_path(book, book.get('paper_odd_image')),
         paper_even_image=_texture_path(book, book.get('paper_even_image')),

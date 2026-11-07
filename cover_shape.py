@@ -97,3 +97,54 @@ def filled(path, out_dir):
         return str(out)
     except Exception:
         return str(path)
+
+
+def edge_colour(path):
+    """The cover's colour near its edge (0..1 RGB), for the board's edges: the leather band just
+    inside the outer rim of the cover picture. None when the picture can't be read."""
+    if not path or not Path(path).exists():
+        return None
+    try:
+        key = ('e', str(path), Path(path).stat().st_mtime_ns)
+        if key in _CACHE:
+            return _CACHE[key]
+        from PIL import Image
+        with Image.open(path) as im:
+            im = im.convert('RGBA')
+            im.thumbnail((400, 400))
+            a = np.asarray(im).astype(np.float32)
+        h, w = a.shape[:2]
+        m = np.zeros((h, w), bool)
+        o, i = max(1, int(0.008 * w)), max(2, int(0.03 * w))      # skip the very rim, take a thin band
+        m[o:i, :] = m[h - i:h - o, :] = True
+        m[:, w - i:w - o] = True                                  # top, bottom and fore edge (not the spine)
+        m &= a[..., 3] > 200
+        if not m.any():
+            return None
+        rgb = np.median(a[..., :3][m], axis=0) / 255.0
+        _CACHE[key] = tuple(float(c) for c in rgb)
+        return _CACHE[key]
+    except Exception:
+        return None
+
+
+def tinted_leather(leather_path, rgb, out_dir, size=1024):
+    """A leather texture recoloured to rgb (keeps the grain, takes the colour), as a PNG path."""
+    try:
+        from PIL import Image
+        tag = hashlib.sha1(f'{leather_path}|{rgb}'.encode()).hexdigest()[:16]
+        out = Path(out_dir) / f'edge_{tag}.png'
+        if out.exists():
+            return str(out)
+        if leather_path and Path(leather_path).exists():
+            with Image.open(leather_path) as im:
+                g = np.asarray(im.convert('L').resize((size, size))).astype(np.float32)
+            g = g / max(1.0, g.mean())
+        else:
+            g = np.ones((size, size), np.float32)
+        col = np.asarray(rgb, np.float32)[None, None, :] * 255.0 * g[..., None]
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
+        Image.fromarray(np.clip(col, 0, 255).astype(np.uint8), 'RGB').save(out)
+        return str(out)
+    except Exception:
+        return leather_path

@@ -1,5 +1,10 @@
 # Changes
 
+## 0.11.4
+- **Sharp at any angle**: the live view now uses anisotropic filtering, so covers and pages seen at a slant stay sharp instead of blurring, and covers and pages are loaded at a higher resolution. (The final render was always sharp.)
+- **Cover edges match the cover**: the edges of the cover boards (the thickness of the cover) and the inside of the spine now take their colour from the edge of your cover picture, so a blue cover gets blue edges. In Change book design, "Cover edges" can switch back to the leather image as it is.
+- **Thickness**: in Change book design, "Cover thickness" (the boards, 4.2 mm on the Leather Journal) and "Paper thickness" (one sheet, 0.45 mm). The number of pages also changes how thick the book is. A very thick book is limited so the turning pages never touch (checked for every turn with thin and thick covers and paper).
+
 ## 0.11.3
 - **The cover follows your picture's shape**: the 3D cover's corners are now cut as round as the corners of your cover picture (read from its transparent pixels), in the live view as well as the render. Before, the live view drew the cover as a square box and the picture's transparent corners showed as a black square.
 - Where the cover still sits under a transparent pixel (for example the corners on the spine side), it shows the colour next to it instead of black.
