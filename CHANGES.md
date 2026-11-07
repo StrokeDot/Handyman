@@ -1,5 +1,10 @@
 # Changes
 
+## 0.10.1
+- **The book's size now shows in the video**: a smaller book looks smaller in the picture, compared with the Leather Journal (15 x 21.5 cm), in the live view and the render. Before, the camera always zoomed to fill the picture, so only the shape changed. A book bigger than the Leather Journal is still kept whole in the picture. Use the camera zoom to bring a small book closer.
+- **Compare in the video view...** (in Change book design, Size and shape): the book as it is now and the new size side by side, animated, with your camera and pages, exactly as the video shows them. Play / pause and a scrub bar move both together.
+- Changing the width or height no longer makes the window lag: the small preview now works from small copies of the images.
+
 ## 0.10.0
 - **Pictures on a page, like layers in After Effects**: select a page and press "Pictures on this page..." (or double-click the page). Add as many pictures as you like, drag each one to move it, mouse wheel to make it bigger or smaller, Shift + wheel to turn it. Each picture also has size, turn, opacity and mirror settings, plus Centre / Fit page width / Straight buttons. Pictures can sit on blank, image or text pages.
 - **Ink on the page** (the same as in StrokeScribe): the picture's own paper disappears and its lines become ink, so it looks printed on the page with the paper's grain showing through and no square around it. Ink colour (dark grey, black, sepia, brown, or the picture's own colours), paper removal and ink strength. Edges: soft edges, oval fade or no fading, with an edge size (also works with ink off).

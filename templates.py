@@ -239,6 +239,7 @@ def for_scene(book):
         emblem = str(p) if p.exists() else None
     return dict(
         engine=book.get('engine') or 'classic',
+        page_size_cm=book.get('page_size_cm'),       # real size: the camera frames the Leather Journal's size
         page_count=book.get('page_count'),
         paper_odd_image=_texture_path(book, book.get('paper_odd_image')),
         paper_even_image=_texture_path(book, book.get('paper_even_image')),

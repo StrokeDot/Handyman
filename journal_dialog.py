@@ -162,8 +162,10 @@ def bundled_original(field):
 
 
 class JournalDialog(QDialog):
-    def __init__(self, book, parent=None):
+    def __init__(self, book, parent=None, preview=None):
         super().__init__(parent)
+        self.orig_book = dict(book)
+        self.preview_content = preview          # (page images, app values) for the 3D comparison
         self.setWindowTitle('Change book design')
         self.setMinimumWidth(900)
         self.book = dict(book)
@@ -220,6 +222,13 @@ class JournalDialog(QDialog):
         self.shape_note.setWordWrap(True)
         self.shape_note.setObjectName('hint')
         form.addRow(self.shape_note)
+        self.compare_btn = QPushButton('Compare in the video view…')
+        self.compare_btn.setObjectName('accent')
+        self.compare_btn.setToolTip('See the book now and the new size side by side, animated, '
+                                    'exactly as the video shows them')
+        self.compare_btn.clicked.connect(self._compare)
+        self.compare_btn.setEnabled(preview is not None)
+        form.addRow(self.compare_btn)
         row.addLayout(form, 2)
         self.preview = ShapePreview()
         row.addWidget(self.preview, 3)
@@ -326,12 +335,44 @@ class JournalDialog(QDialog):
         self.preview.set_state(images, self.orig_aspect, aspect, RESHAPE[self.reshape.currentText()])
 
     def _qimage(self, path):
+        """A small copy of the image for the 2D preview (full-size images made it lag)."""
         if not path or not Path(path).exists():
             return None
         cache = self.__dict__.setdefault('_qimages', {})
         key = (str(path), Path(path).stat().st_mtime_ns)
         if key not in cache:
-            cache[key] = QImage(str(path))
+            img = QImage(str(path))
+            if not img.isNull() and max(img.width(), img.height()) > 420:
+                img = img.scaled(420, 420, Qt.AspectRatioMode.KeepAspectRatio,
+                                 Qt.TransformationMode.SmoothTransformation)
+            cache[key] = img
+        return cache[key]
+
+    def _compare(self):
+        """Open the side-by-side 3D comparison of the book now and with the new size."""
+        from PySide6.QtWidgets import QApplication
+        from compare_view import CompareDialog
+        images, values = self.preview_content
+        new_book = dict(self.book)
+        mode = RESHAPE[self.reshape.currentText()]
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            for field, *_ in SLOTS:
+                p = self.current_path(field)
+                if p and p.exists():
+                    new_book[field] = str(p)
+                    need = required_size(new_book, field)
+                    if mode == 'fill' and need and image_size(p) != tuple(need):
+                        new_book[field] = self._cropped(p, need)
+        finally:
+            QApplication.restoreOverrideCursor()
+        CompareDialog(self.orig_book, new_book, images, values, self).exec()
+
+    def _cropped(self, path, need):
+        cache = self.__dict__.setdefault('_crops', {})
+        key = (str(path), tuple(need))
+        if key not in cache:
+            cache[key] = save_adjusted(QImage(str(path)), need, 'fill', name=Path(path).name)
         return cache[key]
 
     def _save(self):

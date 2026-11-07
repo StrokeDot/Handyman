@@ -70,3 +70,20 @@ def test_new_shape_sizes_keep_widths_and_follow_the_page_and_cover():
     assert wide['page'] == [982, round(1406 * (15 / 21) / 1.4318)]
     assert wide['joint_image'][1] == wide['page'][1]
     assert wide['front_exterior_image'] == [1080, round(1602 * (15 / 21 + 0.17) / (1.4318 + 0.17))]
+
+
+def test_a_smaller_book_looks_smaller_in_the_picture_and_the_journal_is_unchanged():
+    import camera_fit as cf
+    import journal_geom as G
+    cam = dict(cf.PRESETS['Eye level (reading at a desk)'], zoom=1.0, move='none')
+    G.configure(10, 1.4318)
+    base = G.camera(cam, 0.5, 16 / 9)
+    same = G.camera(cam, 0.5, 16 / 9, G.real_size({'page_size_cm': [15.0, 21.48]}))
+    assert abs(np.linalg.norm(base[0]) - np.linalg.norm(same[0])) < 2e-3
+    G.configure(10, 7.0 / 5.5)
+    fit = G.camera(cam, 0.5, 16 / 9)
+    small = G.camera(cam, 0.5, 16 / 9, G.real_size({'page_size_cm': [5.5, 7.0]}))
+    assert np.linalg.norm(small[0]) > 2 * np.linalg.norm(fit[0])     # camera much farther away
+    big = G.camera(cam, 0.5, 16 / 9, G.real_size({'page_size_cm': [30.0, 40.0]}))
+    assert abs(np.linalg.norm(big[0]) - np.linalg.norm(fit[0])) < 1e-6   # a big book stays whole
+    G.configure(10, 1.4318)

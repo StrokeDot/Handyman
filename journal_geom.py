@@ -484,7 +484,20 @@ def turn_points():
     return _TURN_PTS[key]
 
 
-def camera(cam_settings, frac, aspect):
+REF_PAGE_CM = (15.0, 21.48)     # the shipped Leather Journal's page: the camera frames this size
+
+
+def real_size(book):
+    """How big this book's page is compared with the Leather Journal's (by width), or None when
+    the book has no real size set. A smaller book then looks smaller in the picture."""
+    cm = (book or {}).get('page_size_cm')
+    try:
+        return float(cm[0]) / REF_PAGE_CM[0] if cm else None
+    except (TypeError, ValueError, IndexError):
+        return None
+
+
+def camera(cam_settings, frac, aspect, real=None):
     """The app's camera settings applied to this book: (position, right, up, forward, lens).
     Same controls as the classic book (presets, zoom, shift, slow moves). The framing keeps the
     open book AND the page standing up mid-turn inside the picture, aiming a little above the
@@ -514,6 +527,12 @@ def camera(cam_settings, frac, aspect):
         x, y, _d = cf.project(pts, cam, r, u, f, lens, aspect)
         xs, ys = (x.max() + x.min()) / 2, (y.max() + y.min()) / 2
         base = base + (r * xs * th + u * ys * tv) * dist
+    if real:
+        # Real size: frame the Leather Journal's size (and shape) instead of this book, so a smaller
+        # book looks smaller. A bigger book is still kept whole in the picture.
+        ref_h = REF_PAGE_CM[1] / REF_PAGE_CM[0]
+        k = np.array([1.0, ref_h / H, 1.0]) / float(real)
+        dist = max(dist, cf.fit_distance(base + (pts - base) * k, tilt, turn, roll, lens, aspect, base, fill=0.86))
     dist /= zoom
     target = base + np.array([c.get('shift_x', 0.0) * (W + COVER_MARGIN),
                               c.get('shift_y', 0.0) * (H / 2 + COVER_MARGIN), 0.0])

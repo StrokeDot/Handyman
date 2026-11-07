@@ -662,7 +662,7 @@ class LiveView(QOpenGLWidget):
     def _paint_journal(self, pose, frac, x0, y0, w, h):
         """Journal-engine book: shapes and camera from journal_geom, exactly as the render."""
         journal_geom.configure(journal_geom.N_SHEETS, float(self.book.get('page_aspect', 1.4318)))
-        cam, r, u, fw, lens = journal_geom.camera(self.cam, frac, self.aspect)
+        cam, r, u, fw, lens = journal_geom.camera(self.cam, frac, self.aspect, journal_geom.real_size(self.book))
         gl.glViewport(x0, y0, w, h)
         gl.glMatrixMode(gl.GL_PROJECTION)
         gl.glLoadIdentity()

@@ -944,7 +944,11 @@ class Studio(QMainWindow):
 
     def _edit_book(self):
         if self._book().get('engine') == 'journal':
-            dlg = JournalDialog(self._book(), self)
+            try:
+                preview = (self._content_images(), self._values())
+            except Exception:  # no pages yet or a broken setting: compare is just not offered
+                preview = None
+            dlg = JournalDialog(self._book(), self, preview=preview)
             if dlg.exec() == QDialog.DialogCode.Accepted:
                 reshaped = dlg.shape_changed()
                 saved = templates.save(dlg.result_book(), None, dlg.new_images)

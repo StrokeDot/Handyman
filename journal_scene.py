@@ -534,7 +534,7 @@ def add_shadow_catcher(root):
 
 def place_camera(cam, job, frac):
     """The app's camera settings (preset, zoom, shift, slow move), framed like the live preview."""
-    pos, r, u, f, lens = G.camera(job['cam'], frac, job['width'] / job['height'])
+    pos, r, u, f, lens = G.camera(job['cam'], frac, job['width'] / job['height'], G.real_size(job.get('book')))
     from mathutils import Matrix
     cam.matrix_world = Matrix([[r[i], u[i], -f[i], pos[i]] for i in range(3)] + [[0.0, 0.0, 0.0, 1.0]])
     cam.data.lens = float(lens)
