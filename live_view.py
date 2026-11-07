@@ -661,13 +661,18 @@ class LiveView(QOpenGLWidget):
 
     def _paint_journal(self, pose, frac, x0, y0, w, h):
         """Journal-engine book: shapes and camera from journal_geom, exactly as the render."""
-        journal_geom.configure(journal_geom.N_SHEETS, float(self.book.get('page_aspect', 1.4318)))
+        journal_geom.configure(journal_geom.N_SHEETS, float(self.book.get('page_aspect', 1.4318)),
+                              cover=journal_geom.cover_of(self.book))
         cam, r, u, fw, lens = journal_geom.camera(self.cam, frac, self.aspect, journal_geom.real_size(self.book))
         gl.glViewport(x0, y0, w, h)
         gl.glMatrixMode(gl.GL_PROJECTION)
         gl.glLoadIdentity()
         th = cf.SENSOR / 2 / lens
-        near, far = 0.05, 200.0
+        # Depth range around the book: sheets lie a fraction of a millimetre apart, so a near plane
+        # far closer than the book wastes the depth buffer and lower pages showed through at the spine.
+        d = float(np.dot(-np.asarray(cam, float), np.asarray(fw, float)))     # book centre along the view
+        near = max(0.05, 0.35 * (d - 2.5)) if d > 2.6 else 0.05
+        far = d + 30.0
         gl.glFrustum(-th * near, th * near, -th / self.aspect * near, th / self.aspect * near, near, far)
         gl.glMatrixMode(gl.GL_MODELVIEW)
         view = np.eye(4)

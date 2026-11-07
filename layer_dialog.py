@@ -30,11 +30,16 @@ class _PageCanvas(QWidget):
     """The page with its layers; the selected layer can be dragged, scaled and turned."""
     changed = Signal()          # the selected layer moved / resized / turned
 
-    def __init__(self, page_size, paper_path, base_path):
+    def __init__(self, page_size, parts):
+        """page_size: the canvas in pixels (one page, or two side by side for a spread).
+        parts: [(paper, page picture)] for each page shown, left to right."""
         super().__init__()
         self.page_size = page_size
-        self.paper = QImage(str(paper_path)) if paper_path else QImage()
-        self.base = QImage(str(base_path)) if base_path and Path(base_path).exists() else QImage()
+        self.parts = [(QImage(str(pp)) if pp else QImage(),
+                       QImage(str(bp)) if bp and Path(bp).exists() else QImage()) for pp, bp in parts]
+        self.page_w = page_size[0] / len(self.parts)
+        self.margin = 0.08
+        self.show_margins = True
         self.layers, self.current = [], -1
         self._pics = {}           # layer look -> (PIL picture, QImage) so dragging stays smooth
         self._drag = None
@@ -79,12 +84,15 @@ class _PageCanvas(QWidget):
         frame, s = self.page_rect()
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        if not self.paper.isNull():
-            p.drawImage(frame, self.paper)
-        else:
-            p.fillRect(frame, QColor('#e8cf9f'))
-        if not self.base.isNull():
-            p.drawImage(frame, self.base)
+        n = len(self.parts)
+        for i, (paper, base) in enumerate(self.parts):
+            sub = QRectF(frame.x() + i * frame.width() / n, frame.y(), frame.width() / n, frame.height())
+            if not paper.isNull():
+                p.drawImage(sub, paper)
+            else:
+                p.fillRect(sub, QColor('#e8cf9f'))
+            if not base.isNull():
+                p.drawImage(sub, base)
         p.save()
         p.setClipRect(frame)
         for layer in self.layers:
@@ -98,6 +106,13 @@ class _PageCanvas(QWidget):
             p.drawImage(QRectF(-w * s / 2, -h * s / 2, w * s, h * s), q)
             p.restore()
         p.restore()
+        if n == 2:                                   # the spine: each half turns with its own page
+            p.setPen(QPen(QColor(90, 60, 30, 170), 2))
+            p.drawLine(QPointF(frame.center().x(), frame.top()), QPointF(frame.center().x(), frame.bottom()))
+        if self.show_margins and self.margin > 0:
+            m = self.margin * self.page_w * s
+            p.setPen(QPen(QColor(70, 130, 220, 200), 1, Qt.PenStyle.DashLine))
+            p.drawRect(frame.adjusted(m, m, -m, -m))
         if 0 <= self.current < len(self.layers):
             c = self.corners(self.layers[self.current])
             p.setPen(QPen(QColor(0, 0, 0, 150), 3))
@@ -160,25 +175,58 @@ class _PageCanvas(QWidget):
 class LayerDialog(QDialog):
     """Edit the pictures on one page side. `layers` is a list of page_layers dicts."""
 
-    def __init__(self, title, page_size, paper_path, base_path, layers, parent=None, start_dir=''):
+    def __init__(self, title, page_size, paper_path, base_path, layers, parent=None, start_dir='',
+                 spread=None, margin=0.08):
+        """spread: ((left paper, left page picture), (right paper, right page picture)) to place a
+        picture across both pages; page_size is still one page."""
         super().__init__(parent)
         self.setWindowTitle(f'Pictures on {title}')
         self.start_dir = start_dir
+        self.spread = spread is not None
         self.layers = copy.deepcopy(layers or [])
         self._loading = False
+        self.one_page = (int(page_size[0]), int(page_size[1]))
         lay = QHBoxLayout(self)
 
-        self.canvas = _PageCanvas(page_size, paper_path, base_path)
+        if self.spread:
+            size, parts = (2 * self.one_page[0], self.one_page[1]), list(spread)
+        else:
+            size, parts = self.one_page, [(paper_path, base_path)]
+        self.canvas = _PageCanvas(size, parts)
+        self.canvas.margin = margin
         self.canvas.layers = self.layers
         self.canvas.changed.connect(self._canvas_changed)
         lay.addWidget(self.canvas, 3)
 
         side = QVBoxLayout()
         lay.addLayout(side, 2)
-        intro = QLabel('Put pictures on this page. <b>Ink on the page</b> makes a picture look printed on the '
+        where = ('across these two pages. The left half stays on the left page and the right half on the '
+                 'right page, so each half turns with its own page, like a printed double page'
+                 if self.spread else 'on this page')
+        intro = QLabel(f'Put pictures {where}. <b>Ink on the page</b> makes a picture look printed on the '
                        'paper: its own background disappears and its lines become ink.')
         intro.setWordWrap(True)
         side.addWidget(intro)
+        mrow = QHBoxLayout()
+        mrow.addWidget(QLabel('Margins'))
+        self.margin = QDoubleSpinBox()
+        self.margin.setRange(0, 30)
+        self.margin.setSuffix(' %')
+        self.margin.setDecimals(0)
+        self.margin.setValue(round(margin * 100))
+        self.margin.setToolTip('Space kept clear around the pictures, as a share of the page width (blue dashed line)')
+        self.margin.valueChanged.connect(self._margin_changed)
+        mrow.addWidget(self.margin)
+        self.show_margins = QCheckBox('Show')
+        self.show_margins.setChecked(True)
+        self.show_margins.toggled.connect(self._margin_changed)
+        mrow.addWidget(self.show_margins)
+        mrow.addStretch(1)
+        side.addLayout(mrow)
+        self.best = QLabel()
+        self.best.setObjectName('hint')
+        self.best.setWordWrap(True)
+        side.addWidget(self.best)
 
         self.list = QListWidget()
         self.list.setIconSize(QPixmap(40, 40).size())
@@ -217,7 +265,8 @@ class LayerDialog(QDialog):
         self.flip.toggled.connect(self._controls_changed)
         f.addRow('', self.flip)
         quick = QHBoxLayout()
-        for text, slot in (('Centre', self._centre), ('Fit page width', self._fit_width), ('Straight', self._straight)):
+        for text, slot in (('Fit inside the margins', self._fit_margins), ('Centre', self._centre),
+                           ('Straight', self._straight)):
             b = QPushButton(text)
             b.clicked.connect(slot)
             quick.addWidget(b)
@@ -267,7 +316,8 @@ class LayerDialog(QDialog):
         self._fill_list()
         self.list.setCurrentRow(len(self.layers) - 1)
         self._select(self.list.currentRow())
-        self.resize(1100, 760)
+        self._margin_changed()
+        self.resize(1400 if self.spread else 1100, 760)
 
     # --------------------------------------------------------------- helpers
     def _slider(self, lo, hi, val):
@@ -334,6 +384,30 @@ class LayerDialog(QDialog):
             self._fill_list()
         self._timer.start()
 
+    def margin_value(self):
+        return self.margin.value() / 100
+
+    def _box(self):
+        """Pixel size of the area inside the margins (for one page or the whole spread)."""
+        cw, ch = self.canvas.page_size
+        m = self.margin_value() * self.one_page[0]
+        return round(cw - 2 * m), round(ch - 2 * m)
+
+    def _margin_changed(self, *_):
+        self.canvas.margin = self.margin_value()
+        self.canvas.show_margins = self.show_margins.isChecked()
+        bw, bh = self._box()
+        self.best.setText(f'To draw a picture that fills the area inside the margins, make it <b>{bw} × {bh} px</b> '
+                          '(or the same shape, bigger).')
+        self.canvas.update()
+
+    def _fit_margins(self):
+        layer = self._layer()
+        if layer:
+            pil, _ = self.canvas.picture(layer)
+            PL.fit_in_margins(layer, pil.size, self.canvas.page_size, self.one_page[0], self.margin_value())
+            self._select(self.list.currentRow())
+
     def _canvas_changed(self):
         if self.canvas.current != self.list.currentRow():
             self.list.setCurrentRow(self.canvas.current)
@@ -345,8 +419,15 @@ class LayerDialog(QDialog):
         files, _ = QFileDialog.getOpenFileNames(self, 'Pictures to put on this page', self.start_dir,
                                                 'Images (*.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)')
         for k, path in enumerate(files):
-            off = 0.04 * k
-            self.layers.append(PL.new_layer(path, x=0.5 + off, y=0.5 + off))
+            layer = PL.new_layer(path, spread=True) if self.spread else PL.new_layer(path)
+            try:
+                with Image.open(path) as im:
+                    PL.fit_in_margins(layer, im.size, self.canvas.page_size, self.one_page[0], self.margin_value())
+            except Exception:  # unreadable: keep the default place, it shows as empty
+                pass
+            off = 0.03 * k
+            layer['x'], layer['y'] = layer['x'] + off, layer['y'] + off
+            self.layers.append(layer)
         if files:
             self.start_dir = str(Path(files[0]).parent)
             self._fill_list()
@@ -381,12 +462,6 @@ class LayerDialog(QDialog):
         if layer:
             layer['x'], layer['y'] = 0.5, 0.5
             self.canvas.update()
-
-    def _fit_width(self):
-        layer = self._layer()
-        if layer:
-            layer.update(w=0.84, x=0.5)
-            self._select(self.list.currentRow())
 
     def _straight(self):
         layer = self._layer()

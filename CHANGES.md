@@ -1,5 +1,12 @@
 # Changes
 
+## 0.11.0
+- **Cover size apart from the page size**: in Change book design, untick "Cover follows the pages" and set the cover width and height yourself. The cover can never be smaller than the pages; the preview, the 3D book, the camera framing and the required image sizes all follow.
+- **A picture across two pages**: select a page and press "Picture across two pages...". One picture covers the whole open spread; the left half stays on the left page and the right half on the right page, so each half turns with its own page, like a printed double page. It fades out a hair at the spine (the gutter).
+- **Margins** in the picture window: a blue dashed line shows the area kept clear around the page, "Fit inside the margins" sizes a picture to it, new pictures start fitted inside it, and the window tells you the pixel size to draw a picture that fills it.
+- **Pages no longer cut through each other at the spine**: each stack is now sewn on its own half of the spine's hump, with the top page nearest the crest. Before, the first pages were sewn below their neighbours and crossed them at the gutter, so a lower page's drawing showed through as dots near the spine.
+- Opening Change book design and saving without changing the size no longer resizes your images by a pixel.
+
 ## 0.10.2
 - **The last page goes flat as it lands**, the same rule as the first page: once the last page is turned there is nothing left on the right to make a spread with, so it lies flat on the stack.
 - **Zoom works like a real camera lens**: the camera stays where it is and the lens gets longer. Before, zooming moved the camera closer, and with a strong perspective a small book looked huge and bent, with the cover cut off. Zoom now only makes the book bigger, never distorted.

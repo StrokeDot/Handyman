@@ -49,6 +49,7 @@ class JournalPreview:
 
     def __init__(self, book, page_count, page_shape='flat', turn_style='natural'):
         G.configure(int(page_count or book.get('page_count') or 10), float(book.get('page_aspect', 1.4318)),
+                    cover=G.cover_of(book),
                     page_shape=page_shape, turn_style=turn_style)
         self.rows = len(G.rows(G.NY))
         self.cols = G.NX
@@ -60,6 +61,11 @@ class JournalPreview:
         self.uv_front = np.concatenate([uv, pad]).astype(np.float32)
         self.uv_back = np.concatenate([pad, uv_back]).astype(np.float32)
         self._cache = {}
+        # which winding faces outwards: the top face's first triangle against the sheet's up direction
+        v = G.solid_from_grid(G.sheet_state(0, 0.0, 0.0))
+        t = self.top[:3]
+        n = np.cross(v[t[1]] - v[t[0]], v[t[2]] - v[t[0]])
+        self.front_face = gl.GL_CCW if (gl is None or n[2] > 0) else gl.GL_CW
 
     # ------------------------------------------------------------------ meshes
     def sheet(self, k, t, curve=1.0):
@@ -161,6 +167,11 @@ class JournalPreview:
         gl.glVertexPointer(3, gl.GL_FLOAT, 0, v)
         gl.glNormalPointer(gl.GL_FLOAT, 0, n)
         gl.glEnableClientState(gl.GL_TEXTURE_COORD_ARRAY)
+        # A sheet is thinner than the depth buffer can tell apart from far away, so its two faces
+        # fought and the back page's ink showed through the front. Draw only the face turned to us.
+        gl.glEnable(gl.GL_CULL_FACE)
+        gl.glCullFace(gl.GL_BACK)
+        gl.glFrontFace(self.front_face)
         for tris, tex, uv in ((self.top, tex_front, self.uv_front), (self.bottom, tex_back, self.uv_back)):
             if tex:
                 gl.glEnable(gl.GL_TEXTURE_2D)
@@ -172,6 +183,8 @@ class JournalPreview:
             gl.glTexCoordPointer(2, gl.GL_FLOAT, 0, uv)
             gl.glDrawElements(gl.GL_TRIANGLES, len(tris), gl.GL_UNSIGNED_INT, tris)
         gl.glDisableClientState(gl.GL_TEXTURE_COORD_ARRAY)
+        gl.glDisable(gl.GL_CULL_FACE)
+        gl.glFrontFace(gl.GL_CCW)
         gl.glDisable(gl.GL_TEXTURE_2D)
         gl.glColor3f(*edge)
         gl.glDrawElements(gl.GL_TRIANGLES, len(self.rim), gl.GL_UNSIGNED_INT, self.rim)

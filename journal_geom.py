@@ -130,17 +130,27 @@ def spine_hump_height():
     return 0.35 * T + 0.004
 
 
-def open_seam(k):
-    """Where sheet k (0 = first sheet, the first one turned) is sewn when the book is open:
-    a fixed spot along the hump of the spine between the two covers - first sheets on the
-    left end, last sheets on the right end. A sheet's seam never moves while it turns."""
+def _hump_point(frac):
+    """A point on the hump of the spine between the open covers (0 = front cover end, 1 = back)."""
     lp = np.array([J_OPEN[0], TB + 0.0006])
     rp = np.array([XB, TB + 0.0006])
     ch = 4.0 / 3.0 * spine_hump_height()
     c = bezier(lp, lp + np.array([0.0, ch]), rp + np.array([0.0, ch]), rp, 64)
     L = np.concatenate([[0.0], np.cumsum(np.linalg.norm(np.diff(c, axis=0), axis=1))])
-    target = (k + 0.5) / N_SHEETS * L[-1]
+    target = float(frac) * L[-1]
     return np.array([np.interp(target, L, c[:, 0]), np.interp(target, L, c[:, 1])])
+
+
+def open_seam(k, side='right'):
+    """Where sheet k (0 = first sheet) is sewn on the hump of the open spine. The pages lying on
+    the right are sewn down the right half of the hump, the top page nearest the crest; the pages
+    lying on the left down the left half, the last one turned nearest the crest. So in each stack
+    a page is sewn above the pages under it and never has to cut through them (when every seam had
+    one fixed spot, the first pages were sewn below their neighbours and crossed them at the gutter).
+    A turning page slides from its right-hand seam to its left-hand one (a few tenths of a mm)."""
+    if side == 'right':
+        return _hump_point(0.5 + 0.5 * (k + 0.5) / N_SHEETS)
+    return _hump_point(0.5 * (k + 0.5) / N_SHEETS)
 
 
 def binding(j):
@@ -150,7 +160,16 @@ def binding(j):
     closed = closed_binding(j)
     if OPEN_B <= 0.0:
         return closed
-    return closed + (open_seam(N_SHEETS - 1 - j) - closed) * OPEN_B
+    return closed + (open_seam(N_SHEETS - 1 - j, 'right') - closed) * OPEN_B
+
+
+def core_seam(j):
+    """The top of the block's back between the covers, for the filler under the seams: spread
+    over the whole hump (all the pages are sewn somewhere along it)."""
+    closed = closed_binding(j)
+    if OPEN_B <= 0.0:
+        return closed
+    return closed + (_hump_point((N_SHEETS - 1 - j + 0.5) / N_SHEETS) - closed) * OPEN_B
 
 
 def closed_binding(j):
@@ -167,9 +186,12 @@ UP_LEFT = np.array([0.5, 0.866])     # each turned page binds just above the one
 
 
 def binding_left(layer):
-    """Seam of the sheet that landed on the left as `layer` (0 = first turned): the same fixed
-    spot on the spine it was sewn at - a page turns about its seam, the seam does not move."""
-    return binding(N_SHEETS - 1 - layer)
+    """Seam of the sheet that landed on the left as `layer` (0 = first turned = sheet 0)."""
+    j = N_SHEETS - 1 - layer
+    closed = closed_binding(j)
+    if OPEN_B <= 0.0:
+        return closed
+    return closed + (open_seam(layer, 'left') - closed) * OPEN_B
 
 
 CURVE = 0.0        # page "pillow": 0 = flat pages; ~0.15 gentle, ~0.26 strong (radians at the spine)
@@ -396,9 +418,27 @@ SPINE_LEN = _arclen(bezier(np.array([XB, 0.0]), np.array([XB - 4 / 3 * SPINE_BUL
 
 
 # ---- reconfigure for a template ------------------------------------------------------------
-def configure(page_count=None, page_aspect=None, pitch=None, sheet_t=None, page_shape=None, turn_style=None):
-    """Set the book's sheet count and page shape, and recompute everything derived from them."""
-    global N_SHEETS, H, PITCH, SHEET_T, T, ZJ, THETA_OPEN, BETA, J, J_OPEN, SPINE_GAP, BSTEP, HC, CURVE, E, B, LEAD, SIG
+def cover_of(book):
+    """(board width, board height) in page widths when the book has its own cover size, else None
+    (then the cover follows the page: 1.08 wide, 0.17 taller)."""
+    cm, page = (book or {}).get('cover_size_cm'), (book or {}).get('page_size_cm')
+    try:
+        return (float(cm[0]) / float(page[0]), float(cm[1]) / float(page[0])) if cm and page else None
+    except (TypeError, ValueError, IndexError, ZeroDivisionError):
+        return None
+
+
+def min_cover(page_aspect):
+    """The smallest board (width, height) in page widths: it must still cover the pages."""
+    return (W - XB + 0.005, float(page_aspect) * W + 0.02)
+
+
+def configure(page_count=None, page_aspect=None, pitch=None, sheet_t=None, page_shape=None, turn_style=None,
+              cover=None):
+    """Set the book's sheet count and page shape, and recompute everything derived from them.
+    cover: (board width, board height) in page widths; None = the default cover for the page."""
+    global N_SHEETS, H, PITCH, SHEET_T, T, ZJ, THETA_OPEN, BETA, J, J_OPEN, SPINE_GAP, BSTEP, HC, WC, CURVE, E, B
+    global LEAD, SIG, COVER_MARGIN
     if page_shape is not None:
         CURVE = PAGE_SHAPES.get(str(page_shape), 0.0) if isinstance(page_shape, str) else float(page_shape)
     if turn_style is not None:
@@ -408,7 +448,12 @@ def configure(page_count=None, page_aspect=None, pitch=None, sheet_t=None, page_
         N_SHEETS = int(page_count)
     if page_aspect:
         H = float(page_aspect) * W
-        HC = H + 0.17
+        WC, HC = 1.08, H + 0.17
+    if cover:
+        lo_w, lo_h = min_cover(H / W)
+        WC, HC = max(float(cover[0]), lo_w), max(float(cover[1]), lo_h)
+    # the camera keeps the cover's overhang (whichever side sticks out more) in the picture
+    COVER_MARGIN = max(XB + WC - W, (HC - H) / 2) + 0.005
     if pitch:
         PITCH = float(pitch)
     if sheet_t:

@@ -175,3 +175,67 @@ def compose_to_file(base, layers, size, out_dir):
         compose(base, layers, size).save(tmp)
         tmp.replace(out)
     return str(out)
+
+
+# ---------------------------------------------------------------- pictures across two pages
+def split(layers):
+    """(this page's own layers, layers of a picture across the spread) from one page's list."""
+    own = [l for l in layers or [] if not l.get('spread')]
+    return own, [l for l in layers or [] if l.get('spread')]
+
+
+GUTTER = 0.015        # a picture across two pages fades out this close to the spine (share of page width)
+
+
+def compose_spread(left_base, right_base, layers, size):
+    """A picture across the open spread, cut down the middle like a printed double page: the left
+    half belongs to the left page and turns with it, the right half to the right page.
+    Layers are placed on a canvas two pages wide (x and w are fractions of the whole spread)."""
+    pw, ph = int(size[0]), int(size[1])
+    canvas = Image.new('RGBA', (2 * pw, ph), (0, 0, 0, 0))
+    for layer in layers or []:
+        if layer_get(layer, 'image') and Path(layer_get(layer, 'image')).exists():
+            place(canvas, layer_picture(layer), layer)
+    # The gutter: right at the spine the sheet folds into the binding and a hair of each page's back
+    # shows there, so the picture fades out over the last bit of each page, as in a printed book.
+    g = max(2, round(GUTTER * pw))
+    a = np.asarray(canvas, np.float32)
+    ramp = np.abs(np.arange(2 * pw, dtype=np.float32) + 0.5 - pw) / g
+    a[..., 3] *= np.clip(ramp, 0, 1)[None, :]
+    canvas = Image.fromarray(np.ascontiguousarray(a.astype(np.uint8)), 'RGBA')
+    out = []
+    for base, x0 in ((left_base, 0), (right_base, pw)):
+        page = Image.new('RGBA', (pw, ph), (0, 0, 0, 0))
+        if base and Path(base).exists():
+            b = Image.open(base).convert('RGBA')
+            page.alpha_composite(b if b.size == page.size else b.resize(page.size, Image.LANCZOS))
+        page.alpha_composite(canvas.crop((x0, 0, x0 + pw, ph)))
+        out.append(page)
+    return out
+
+
+def compose_spread_to_files(left_base, right_base, layers, size, out_dir):
+    key = json.dumps(['spread', _stamp(left_base) if left_base else None, _stamp(right_base) if right_base else None,
+                      [int(size[0]), int(size[1])],
+                      [dict(l, _src=_stamp(layer_get(l, 'image'))) for l in layers]], sort_keys=True)
+    tag = hashlib.sha1(key.encode()).hexdigest()[:16]
+    paths = [Path(out_dir) / f'spread_{tag}_{side}.png' for side in ('left', 'right')]
+    if not all(p.exists() for p in paths):
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
+        for img, p in zip(compose_spread(left_base, right_base, layers, size), paths):
+            tmp = p.with_suffix('.tmp.png')
+            img.save(tmp)
+            tmp.replace(p)
+    return [str(p) for p in paths]
+
+
+def fit_in_margins(layer, src_size, canvas_size, page_w, margin):
+    """Size and centre the layer so the picture fits inside the margins (margin = fraction of the
+    page width kept clear on every side). canvas_size is one page, or two pages for a spread."""
+    cw, ch = canvas_size
+    m = margin * page_w
+    box_w, box_h = cw - 2 * m, ch - 2 * m
+    aspect = src_size[0] / max(1, src_size[1])
+    w = min(box_w, box_h * aspect)
+    layer.update(w=round(w / cw, 4), x=0.5, y=0.5, rot=0.0)
+    return layer

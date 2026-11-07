@@ -8,7 +8,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap
-from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout,
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout,
                                QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
                                QPushButton, QScrollArea, QVBoxLayout, QWidget)
 
@@ -52,17 +52,40 @@ COVER_W = 1.08
 PAGE_FIELDS = ('page', 'paper_odd_image', 'paper_even_image', 'paper_image', 'joint_image')
 
 
-def sizes_for(sizes, old_aspect, new_aspect):
-    """Pixel sizes for every image of a journal whose page shape changes from old to new aspect
-    (height / width). Widths stay; page-high images follow the page, the rest follow the cover."""
+COVER_FIELDS = ('front_exterior_image', 'back_exterior_image', 'front_interior_image', 'back_interior_image')
+PAGE_X = 0.03               # the pages start this far from the spine edge of a board (journal_geom.XB)
+
+
+def _shape(v):
+    """(page aspect, board width, board height) in page widths; a bare aspect = the default cover."""
+    if isinstance(v, (int, float)):
+        return float(v), COVER_W, float(v) + COVER_EXTRA
+    return tuple(float(x) for x in v)
+
+
+def sizes_for(sizes, old, new):
+    """Pixel sizes for every image of a journal whose shape changes from old to new (each a page
+    aspect, or (aspect, board width, board height) in page widths). Page-high images follow the
+    page; covers follow the board's width and height; spine and leather follow its height."""
+    (oa, ow, oh), (na, nw, nh) = _shape(old), _shape(new)
     out = {}
     for field, (w, h) in (sizes or {}).items():
         if field in PAGE_FIELDS:
-            r = new_aspect / old_aspect
+            w2, h2 = w, h * na / oa
+        elif field in COVER_FIELDS:
+            w2, h2 = w * nw / ow, h * nh / oh
         else:
-            r = (new_aspect + COVER_EXTRA) / (old_aspect + COVER_EXTRA)
-        out[field] = [int(w), max(8, int(round(h * r)))]
+            w2, h2 = w, h * nh / oh
+        out[field] = [max(8, int(round(w2))), max(8, int(round(h2)))]
     return out
+
+
+def journal_cover(book):
+    """(board width, board height) in page widths for a book (its own cover or the default)."""
+    import journal_geom as G
+    c = G.cover_of(book)
+    a = float(book.get('page_aspect', 1.4318))
+    return c if c else (COVER_W, a + COVER_EXTRA)
 
 
 def image_size(path):
@@ -77,13 +100,13 @@ class ShapePreview(QWidget):
     def __init__(self):
         super().__init__()
         self.setMinimumHeight(250)
-        self.old_aspect = self.new_aspect = 1.4318
+        self.old = self.new = _shape(1.4318)
         self.mode = 'stretch'
         self.images = {}            # field -> QImage
         self._cache = {}
 
-    def set_state(self, images, old_aspect, new_aspect, mode):
-        self.images, self.old_aspect, self.new_aspect = images, old_aspect, new_aspect
+    def set_state(self, images, old, new, mode):
+        self.images, self.old, self.new = images, _shape(old), _shape(new)
         self.mode = 'stretch' if mode == 'each' else mode
         self.update()
 
@@ -110,31 +133,37 @@ class ShapePreview(QWidget):
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.fillRect(self.rect(), QColor('#1b1b20'))
-        hc_new, hc_old = self.new_aspect + COVER_EXTRA, self.old_aspect + COVER_EXTRA
-        gap = 0.25
-        total_w = COVER_W + gap + 2 * COVER_W + 0.06
-        total_h = max(hc_new, hc_old)
+        (na, nw, nh), (oa, ow, oh) = self.new, self.old
+        cw, gap, mid = max(nw, ow), 0.25, 0.06
+        total_w = cw + gap + 2 * cw + mid
+        total_h = max(nh, oh)
         s = min((self.width() - 30) / total_w, (self.height() - 40) / total_h)
         x0 = (self.width() - total_w * s) / 2
-        base = (self.height() - 30 + total_h * s) / 2     # the line both books stand on
+        cy = (self.height() - 30) / 2 + 4                 # books centred on one line, like on the table
 
-        def cover_rect(x, hc):
-            return QRectF(x0 + x * s, base - hc * s, COVER_W * s, hc * s)
-        self._draw(p, 'front_exterior_image', cover_rect(0, hc_new), '#5a3018')        # closed book
-        xl = COVER_W + gap                                # open book: inside covers + first page
-        left = cover_rect(xl, hc_new)
-        right = cover_rect(xl + COVER_W + 0.06, hc_new)
+        def board(x, w, h, spine_right=False):
+            left = x + (cw - w) if spine_right else x     # boards grow away from the spine
+            return QRectF(x0 + left * s, cy - h * s / 2, w * s, h * s)
+
+        def page_on(rect, aspect, spine_right=False):
+            ph = aspect * s
+            x = rect.right() - PAGE_X * s - s if spine_right else rect.x() + PAGE_X * s
+            return QRectF(x, rect.center().y() - ph / 2, s, ph)
+        closed = board(0, nw, nh)                         # closed book (spine on its left)
+        self._draw(p, 'front_exterior_image', closed, '#5a3018')
+        xl, xr = cw + gap, cw + gap + cw + mid            # open book: spine in the middle
+        left, right = board(xl, nw, nh, True), board(xr, nw, nh)
         self._draw(p, 'front_interior_image', left, '#5a3018')
         self._draw(p, 'back_interior_image', right, '#5a3018')
-        page_h = self.new_aspect * s
-        page = QRectF(right.x() + 0.02 * s, right.y() + (right.height() - page_h) / 2, 1.0 * s, page_h)
-        self._draw(p, 'paper_odd_image', page, '#e8cf9f')
+        self._draw(p, 'paper_odd_image', page_on(right, na), '#e8cf9f')
+        p.setPen(QPen(QColor(255, 255, 255, 90), 1, Qt.PenStyle.DotLine))
+        p.drawRect(page_on(closed, na))                   # where the pages sit under the cover
         p.setPen(QPen(QColor('#f0b94a'), 1.5, Qt.PenStyle.DashLine))
-        for x in (0, xl, xl + COVER_W + 0.06):
-            p.drawRect(cover_rect(x, hc_old))
+        for r in (board(0, ow, oh), board(xl, ow, oh, True), board(xr, ow, oh)):
+            p.drawRect(r)
         p.setPen(QColor('#cfcfd6'))
         p.drawText(QRectF(0, self.height() - 22, self.width(), 18), Qt.AlignmentFlag.AlignCenter,
-                   'Dashed gold line = the shape the book has now')
+                   'Dashed gold line = the book now  ·  dotted line = where the pages sit')
 
 
 def required_size(book, field):
@@ -174,6 +203,7 @@ class JournalDialog(QDialog):
         lay = QVBoxLayout(self)
 
         self.orig_aspect = float(book.get('page_aspect', 1.4318))
+        self.orig_cover = journal_cover(book)
         self.orig_sizes = dict(book.get('image_sizes') or {})
         self._sizes = {}
 
@@ -204,15 +234,26 @@ class JournalDialog(QDialog):
         form.addRow('Shape', self.preset)
         cm = book.get('page_size_cm') or [15.0, round(15.0 * self.orig_aspect, 2)]
         self.page_w, self.page_h = QDoubleSpinBox(), QDoubleSpinBox()
-        for spin, val in ((self.page_w, cm[0]), (self.page_h, cm[1])):
-            spin.setRange(5.0, 60.0)
-            spin.setDecimals(1)
+        self.cover_w, self.cover_h = QDoubleSpinBox(), QDoubleSpinBox()
+        cover = [self.orig_cover[0] * cm[0], self.orig_cover[1] * cm[0]]
+        for spin, val in ((self.page_w, cm[0]), (self.page_h, cm[1]), (self.cover_w, cover[0]),
+                          (self.cover_h, cover[1])):
+            spin.setRange(3.0, 80.0)
+            spin.setDecimals(2)
             spin.setSingleStep(0.5)
             spin.setSuffix(' cm')
-            spin.setValue(float(val))
+            spin.setValue(round(float(val), 2))
             spin.valueChanged.connect(self._size_changed)
         form.addRow('Page width', self.page_w)
         form.addRow('Page height', self.page_h)
+        self.follow = QCheckBox('Cover follows the pages')
+        self.follow.setToolTip('On: the cover is always a little bigger than the pages.\n'
+                               'Off: set the cover size yourself (it can never be smaller than the pages).')
+        self.follow.setChecked(not book.get('cover_size_cm'))
+        self.follow.toggled.connect(self._size_changed)
+        form.addRow('', self.follow)
+        form.addRow('Cover width', self.cover_w)
+        form.addRow('Cover height', self.cover_h)
         self.reshape = QComboBox()
         self.reshape.addItems(list(RESHAPE))
         self.reshape.setToolTip('What happens to the cover, spine and paper images when the shape changes')
@@ -291,8 +332,31 @@ class JournalDialog(QDialog):
     def new_aspect(self):
         return round(self.page_h.value() / max(0.1, self.page_w.value()), 4)
 
+    def new_shape(self):
+        """(page aspect, board width, board height) in page widths, as now set."""
+        pw = max(0.1, self.page_w.value())
+        return self.new_aspect(), self.cover_w.value() / pw, self.cover_h.value() / pw
+
+    def orig_shape(self):
+        return (self.orig_aspect,) + tuple(self.orig_cover)
+
     def shape_changed(self):
-        return abs(self.new_aspect() - self.orig_aspect) > 1e-3
+        return any(abs(a - b) > 3e-3 for a, b in zip(self.new_shape(), self.orig_shape()))
+
+    def _fix_cover(self):
+        """Cover follows the pages, or at least covers them (the smallest board allowed)."""
+        import journal_geom as G
+        pw, aspect = self.page_w.value(), self.new_aspect()
+        if self.follow.isChecked():
+            w, h = pw * COVER_W, pw * (aspect + COVER_EXTRA)
+        else:
+            lo = G.min_cover(aspect)
+            w, h = max(self.cover_w.value(), pw * lo[0]), max(self.cover_h.value(), pw * lo[1])
+        for spin, v in ((self.cover_w, w), (self.cover_h, h)):
+            spin.blockSignals(True)
+            spin.setValue(round(v, 2))
+            spin.setEnabled(not self.follow.isChecked())
+            spin.blockSignals(False)
 
     def _match_preset(self):
         w, h = self.page_w.value(), self.page_h.value()
@@ -312,11 +376,20 @@ class JournalDialog(QDialog):
 
     def _size_changed(self, *_):
         self._match_preset()
+        self._fix_cover()
         aspect = self.new_aspect()
         self.book['page_aspect'] = aspect
         self.book['page_size_cm'] = [round(self.page_w.value(), 2), round(self.page_h.value(), 2)]
-        if self.orig_sizes:
-            self.book['image_sizes'] = sizes_for(self.orig_sizes, self.orig_aspect, aspect)
+        self.book['cover_size_cm'] = (None if self.follow.isChecked() else
+                                      [round(self.cover_w.value(), 2), round(self.cover_h.value(), 2)])
+        if not self.shape_changed():          # unchanged (or only rounded): keep everything exactly as it was
+            for key in ('page_aspect', 'page_size_cm', 'cover_size_cm'):
+                self.book[key] = self.orig_book.get(key)
+            self.book['page_aspect'] = self.orig_aspect
+            if self.orig_sizes:
+                self.book['image_sizes'] = dict(self.orig_sizes)
+        elif self.orig_sizes:
+            self.book['image_sizes'] = sizes_for(self.orig_sizes, self.orig_shape(), self.new_shape())
         for field, label in self._sizes.items():
             need = required_size(self.book, field)
             label.setText(f'{need[0]} × {need[1]} px' if need else 'any size')
@@ -332,7 +405,7 @@ class JournalDialog(QDialog):
             self.shape_note.setText('Change the width or height to make the book taller, shorter, wider or '
                                     'narrower. The preview shows the result before anything is saved.')
         images = {field: self._qimage(self.current_path(field)) for field, *_ in SLOTS}
-        self.preview.set_state(images, self.orig_aspect, aspect, RESHAPE[self.reshape.currentText()])
+        self.preview.set_state(images, self.orig_shape(), self.new_shape(), RESHAPE[self.reshape.currentText()])
 
     def _qimage(self, path):
         """A small copy of the image for the 2D preview (full-size images made it lag)."""

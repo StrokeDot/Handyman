@@ -349,7 +349,7 @@ def core_coords(theta):
     tang /= np.linalg.norm(tang, axis=1, keepdims=True)
     ci = c + np.c_[tang[:, 1], -tang[:, 0]] * (SPINE_LEATHER + 0.001)
     # the other side of the filler follows the seams (a column when closed, the hump when open)
-    seams = np.array([G.binding(jj) for jj in range(G.N_SHEETS)]) - np.array([0.0, 0.0012])
+    seams = np.array([G.core_seam(jj) for jj in range(G.N_SHEETS)]) - np.array([0.0, 0.0012])
     tt = np.linspace(0, 1, SPINE_N)
     ts = np.linspace(0, 1, len(seams))
     line = np.c_[np.interp(tt, ts, seams[:, 0]), np.interp(tt, ts, seams[:, 1])]
@@ -421,7 +421,7 @@ def surface(name, path, fallback_rgb, **kw):
 def build(job):
     book = job['book']
     sheets = int(job.get('page_count') or book.get('page_count') or 10)
-    G.configure(sheets, float(book.get('page_aspect', 1.4318)), page_shape=job.get('page_shape', 'flat'),
+    G.configure(sheets, float(book.get('page_aspect', 1.4318)), cover=G.cover_of(book), page_shape=job.get('page_shape', 'flat'),
                 turn_style=job.get('turn_style', 'natural'))
     images = list(job.get('images') or [])
     leather_rgb = book.get('leather_color', (0.12, 0.05, 0.02))
@@ -471,7 +471,7 @@ def build(job):
 
     # joint ribbon: covers the groove between the open cover and the first page
     jr_me = bpy.data.meshes.new('Joint')
-    zb = G.binding(G.N_SHEETS - 1)
+    zb = G.core_seam(G.N_SHEETS - 1)
     ts = np.linspace(0, 1, 8)
     jo = G.J_OPEN    # from the open cover's hinge up to the top of the text block, in the gutter
     prof = [(jo[0] + (zb[0] + 0.002 - jo[0]) * t, jo[1] - 0.002 + (zb[1] - jo[1]) * t - 0.006 * math.sin(math.pi * t)) for t in ts]

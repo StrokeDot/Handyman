@@ -87,3 +87,35 @@ def test_a_smaller_book_looks_smaller_in_the_picture_and_the_journal_is_unchange
     big = G.camera(cam, 0.5, 16 / 9, G.real_size({'page_size_cm': [30.0, 40.0]}))
     assert abs(np.linalg.norm(big[0]) - np.linalg.norm(fit[0])) < 1e-6   # a big book stays whole
     G.configure(10, 1.4318)
+
+
+def test_a_picture_across_two_pages_is_cut_down_the_middle(tmp_path):
+    src = _sketch(tmp_path / 's.png', (800, 300))
+    layer = PL.new_layer(src, spread=True, x=0.5, y=0.5, w=0.9, ink_edges='No fading')
+    left, right = PL.compose_spread(None, None, [layer], (500, 700))
+    l, r = np.asarray(left), np.asarray(right)
+    assert l.shape == r.shape == (700, 500, 4)
+    assert l[350, 200, 3] > 200 and r[350, 300, 3] > 200        # the line runs over both pages
+    assert l[350, 499, 3] < 40 and r[350, 0, 3] < 40            # and fades at the spine (the gutter)
+    own, spread = PL.split([PL.new_layer(src), layer])
+    assert len(own) == 1 and spread == [layer]
+
+
+def test_fit_inside_the_margins(tmp_path):
+    layer = PL.new_layer(_sketch(tmp_path / 's.png', (400, 300)))
+    PL.fit_in_margins(layer, (400, 300), (1000, 1400), 1000, 0.1)
+    assert abs(layer['w'] - 0.8) < 1e-6 and layer['x'] == 0.5 and layer['y'] == 0.5
+    PL.fit_in_margins(layer, (400, 300), (2000, 1400), 1000, 0.1)     # across two pages: limited by height
+    assert abs(layer['w'] * 2000 - 1200 * 4 / 3) < 1
+
+
+def test_the_cover_can_be_sized_apart_from_the_pages_but_always_covers_them():
+    import journal_geom as G
+    G.configure(10, 1.4318)
+    assert abs(G.WC - 1.08) < 1e-9 and abs(G.HC - (1.4318 + 0.17)) < 1e-9
+    G.configure(10, 1.4318, cover=G.cover_of({'page_size_cm': [15, 21.48], 'cover_size_cm': [19, 26]}))
+    assert abs(G.WC - 19 / 15) < 1e-9 and abs(G.HC - 26 / 15) < 1e-9
+    assert G.COVER_MARGIN > (G.HC - G.H) / 2
+    G.configure(10, 1.4318, cover=(0.5, 0.5))                         # too small: grows to cover the pages
+    assert G.WC >= G.W - G.XB and G.HC >= G.H
+    G.configure(10, 1.4318)

@@ -35,7 +35,8 @@ DEFAULTS = {
     'paper_age': 0.55,          # blotches and yellowing, 0..1
     'burn': 0.6,                # darkened page edges, 0..1
     'page_aspect': 1.4,         # page height / width
-    'page_size_cm': None,       # journal: [width, height] of a page as the user set it (only the shape matters)
+    'page_size_cm': None,
+    'cover_size_cm': None,      # journal: [width, height] of the cover board; None = follows the page       # journal: [width, height] of a page as the user set it (only the shape matters)
     'stitching': True,
     'thread_color': '#b08a5a',
     'spine_bands': 4,
@@ -239,7 +240,8 @@ def for_scene(book):
         emblem = str(p) if p.exists() else None
     return dict(
         engine=book.get('engine') or 'classic',
-        page_size_cm=book.get('page_size_cm'),       # real size: the camera frames the Leather Journal's size
+        page_size_cm=book.get('page_size_cm'),
+        cover_size_cm=book.get('cover_size_cm'),       # real size: the camera frames the Leather Journal's size
         page_count=book.get('page_count'),
         paper_odd_image=_texture_path(book, book.get('paper_odd_image')),
         paper_even_image=_texture_path(book, book.get('paper_even_image')),
