@@ -1,5 +1,9 @@
 # Changes
 
+## 0.10.2
+- **The last page goes flat as it lands**, the same rule as the first page: once the last page is turned there is nothing left on the right to make a spread with, so it lies flat on the stack.
+- **Zoom works like a real camera lens**: the camera stays where it is and the lens gets longer. Before, zooming moved the camera closer, and with a strong perspective a small book looked huge and bent, with the cover cut off. Zoom now only makes the book bigger, never distorted.
+
 ## 0.10.1
 - **The book's size now shows in the video**: a smaller book looks smaller in the picture, compared with the Leather Journal (15 x 21.5 cm), in the live view and the render. Before, the camera always zoomed to fill the picture, so only the shape changed. A book bigger than the Leather Journal is still kept whole in the picture. Use the camera zoom to bring a small book closer.
 - **Compare in the video view...** (in Change book design, Size and shape): the book as it is now and the new size side by side, animated, with your camera and pages, exactly as the video shows them. Play / pause and a scrub bar move both together.

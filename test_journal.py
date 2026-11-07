@@ -227,7 +227,9 @@ def test_only_the_visible_spread_is_curved():
     mid = w([1, 0.4, 0, 0])
     assert abs(mid[0] - 0.6) < 1e-9 and mid[1] == 1 and abs(mid[2] - 0.4) < 1e-9
     assert w([1, 1, 0, 0]) == [0, 1, 1, 0]                       # page 1 now covered: flat
-    assert w([1, 1, 1, 1]) == [0, 0, 0, 1]
+    assert w([1, 1, 1, 0]) == [0, 0, 1, 1]                       # last spread: curved
+    assert w([1, 1, 1, 0.5])[2:] == [0.5, 0.5]                   # last page turning: both relax
+    assert w([1, 1, 1, 1]) == [0, 0, 0, 0]                       # last page landed: flat, like the first
 
 
 def test_travelling_curve_never_makes_pages_touch():
@@ -236,7 +238,7 @@ def test_travelling_curve_never_makes_pages_touch():
     G.configure(10, 1.4318, page_shape='very curved')
     G.set_opening(G.THETA_OPEN)
     n = G.N_SHEETS
-    for landed in (0, 1, 4):
+    for landed in (0, 1, 4, n - 2, n - 1):
         for u in np.linspace(0, 1, 9):
             prog = [1.0] * landed + [float(u)] + [0.0] * (n - landed - 1)
             cw = G.curve_weights(prog)

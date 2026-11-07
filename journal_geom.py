@@ -192,14 +192,16 @@ def curve_weights(progress):
     Only the two pages you can see are curved; every page under them is flat:
       * a page curves while the page before it turns away (it is being revealed) or while it
         turns itself - so the first spread, just opened, is still flat;
-      * it goes flat again while the next page lands on top of it.
-    w[k] = max(p[k-1], p[k]) * (1 - p[k+1])"""
+      * it goes flat again while the next page lands on top of it;
+      * the last page goes flat as it lands, as the first page started flat (nothing is left on
+        the right to make a spread with, so it lies like a page under the stack).
+    w[k] = max(p[k-1], p[k]) * (1 - p[k+1]), with p[n] = p[n-1] for the last page."""
     p = [float(x) for x in progress]
     n = len(p)
     out = []
     for k in range(n):
         before = p[k - 1] if k > 0 else 0.0
-        after = p[k + 1] if k + 1 < n else 0.0
+        after = p[k + 1] if k + 1 < n else p[k]
         out.append(max(before, p[k]) * (1.0 - after))
     return out
 
@@ -533,7 +535,9 @@ def camera(cam_settings, frac, aspect, real=None):
         ref_h = REF_PAGE_CM[1] / REF_PAGE_CM[0]
         k = np.array([1.0, ref_h / H, 1.0]) / float(real)
         dist = max(dist, cf.fit_distance(base + (pts - base) * k, tilt, turn, roll, lens, aspect, base, fill=0.86))
-    dist /= zoom
+    # Zoom like a real camera lens: the camera stays where it is and the lens gets longer, so zooming
+    # in does not bend the book (moving the camera closer made a near book look stretched).
+    lens = lens * zoom
     target = base + np.array([c.get('shift_x', 0.0) * (W + COVER_MARGIN),
                               c.get('shift_y', 0.0) * (H / 2 + COVER_MARGIN), 0.0])
     cam, r, u, f = cf.pose(tilt, turn, roll, dist, target)
