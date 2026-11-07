@@ -1,5 +1,11 @@
 # Changes
 
+## 0.11.2
+- **Fixed: the book disappearing from the live view.** A small memory of page shapes sometimes emptied itself right after storing a page; the drawing then stopped halfway, and each failed frame left the graphics one step deeper until it overflowed and nothing could be drawn. The memory is fixed, and any failed frame now cleans up after itself so the view always recovers. The live view log no longer grows without end (it had reached 79 MB).
+- **True shape** button (above the live view): the book seen flat from straight above, with no perspective - its real proportions. Only for checking the shape; the video still uses your camera.
+- **Save my camera...** (Camera tab): keep a camera under your own name; it appears in "Start from" (marked with a star) for every book. Delete removes it.
+- **Zoom by** (Camera tab): "Lens" (the book keeps its look, only its size changes) or "Move the camera closer" (stronger 3D, the near end looks bigger - the look before 0.10.2).
+
 ## 0.11.1
 - **The pages meet in the middle again**: 0.11.0 sewed the left and right pages on separate halves of the spine, which opened a dark gap in the middle of the book. Now the spine's crest travels through the book as you read, always between the two pages you see, so they meet at the middle, and the pages under them still never cut through each other (checked for every page turn).
 - **One picture window for the whole book**: "Pictures on the pages..." (or double-click a page) shows the two open pages side by side, like the book. "Previous pages" / "Next pages" (or Page Up / Page Down) go through the book, and the title says which pages you are on. Pictures already on a page show up here and can be moved: a picture over the middle becomes a picture across both pages, and moving it back onto one side makes it that page's picture again. The list says which page each picture is on.

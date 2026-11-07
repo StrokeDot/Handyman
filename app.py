@@ -508,6 +508,13 @@ class Studio(QMainWindow):
             b.setObjectName('tab')
             b.clicked.connect(lambda _=False, i=i: self._show_view(i))
             row.addWidget(b)
+        self.true_btn = QPushButton('True shape')
+        self.true_btn.setCheckable(True)
+        self.true_btn.setToolTip('Look at the book flat from straight above, with no perspective: its real '
+                                 'proportions. Only for checking the shape - the video still uses your camera.')
+        self.true_btn.toggled.connect(self._true_shape)
+        self.true_btn.setEnabled(self.live is not None)
+        row.addWidget(self.true_btn)
         row.addStretch(1)
         self.still_btn = QPushButton('Render a still')
         self.still_btn.setToolTip('Blender renders one picture of the open book - the real look, in about a minute')
@@ -601,8 +608,20 @@ class Studio(QMainWindow):
         g = QGroupBox('Camera')
         f = QFormLayout(g)
         self.shot = self._combo(cf.PRESETS)
+        self._add_my_cameras()
         self.shot.currentTextChanged.connect(self._apply_preset)
         f.addRow('Start from', self.shot)
+        mine = QHBoxLayout()
+        b = QPushButton('Save my camera…')
+        b.setToolTip('Keep this camera under a name of your own. It appears in "Start from" for every book, '
+                     'so all your books can use the same shot.')
+        b.clicked.connect(self._save_my_camera)
+        mine.addWidget(b)
+        self.del_cam = QPushButton('Delete')
+        self.del_cam.setToolTip('Delete the selected camera of your own')
+        self.del_cam.clicked.connect(self._delete_my_camera)
+        mine.addWidget(self.del_cam)
+        f.addRow('', mine)
         self.tilt = self._slider(-89, 89, 50)
         self.turn = self._slider(-180, 180, 0)
         self.roll = self._slider(-180, 180, 0)
@@ -616,6 +635,14 @@ class Studio(QMainWindow):
                           ('Perspective', self.lens)):
             sl.valueChanged.connect(self._camera_changed)
             f.addRow(label, sl)
+        self.zoom_mode = QComboBox()
+        self.zoom_mode.addItem('Lens (the book keeps its look)', 'lens')
+        self.zoom_mode.addItem('Move the camera closer (stronger 3D)', 'closer')
+        self.zoom_mode.setToolTip('How Zoom brings the book closer.\nLens: like a zoom lens, only the size changes.\n'
+                                  'Move closer: the camera walks up to the book; the near end looks bigger '
+                                  '(the look before version 0.10.2).')
+        self.zoom_mode.currentIndexChanged.connect(self._camera_changed)
+        f.addRow('Zoom by', self.zoom_mode)
         self.move = self._combo(cf.MOVES)
         self.move.currentTextChanged.connect(self._camera_changed)
         f.addRow('Camera motion', self.move)
@@ -1333,7 +1360,8 @@ class Studio(QMainWindow):
         return dict(tilt=float(self.tilt.value()), turn=float(self.turn.value()), roll=float(self.roll.value()),
                     lens=float(self.lens.value()), zoom=self.zoom.value() / 100,
                     shift_x=self.shift_x.value() / 100, shift_y=self.shift_y.value() / 100,
-                    move=cf.MOVES[self.move.currentText()])
+                    move=cf.MOVES[self.move.currentText()],
+                    zoom_mode=self.zoom_mode.currentData() if hasattr(self, 'zoom_mode') else 'lens')
 
     def _set_cam(self, c):
         sliders = dict(tilt=self.tilt, turn=self.turn, roll=self.roll, lens=self.lens)
@@ -1350,6 +1378,11 @@ class Studio(QMainWindow):
         for label, value in cf.MOVES.items():
             if value == c.get('move'):
                 self.move.setCurrentText(label)
+        if hasattr(self, 'zoom_mode'):
+            i = self.zoom_mode.findData(c.get('zoom_mode', 'lens'))
+            self.zoom_mode.blockSignals(True)
+            self.zoom_mode.setCurrentIndex(max(0, i))
+            self.zoom_mode.blockSignals(False)
         self._camera_changed()
 
     def _transform(self):
@@ -1383,8 +1416,69 @@ class Studio(QMainWindow):
         self.shift_x.setValue(round(self.shift_x.value() - dx * k))
         self.shift_y.setValue(round(self.shift_y.value() + dy * k))
 
+    MY_CAM = '★ '
+
+    def _my_cameras(self):
+        try:
+            data = json.loads(self.settings.value('my_cameras', '{}') or '{}')
+            return data if isinstance(data, dict) else {}
+        except (TypeError, ValueError):
+            return {}
+
+    def _add_my_cameras(self, select=None):
+        self.shot.blockSignals(True)
+        current = select or self.shot.currentText()
+        for i in range(self.shot.count() - 1, -1, -1):
+            if self.shot.itemText(i).startswith(self.MY_CAM):
+                self.shot.removeItem(i)
+        for name in sorted(self._my_cameras()):
+            self.shot.addItem(self.MY_CAM + name)
+        if self.shot.findText(current) >= 0:
+            self.shot.setCurrentText(current)
+        self.shot.blockSignals(False)
+        if hasattr(self, 'del_cam'):
+            self.del_cam.setEnabled(self.shot.currentText().startswith(self.MY_CAM))
+
+    def _save_my_camera(self):
+        name, ok = QInputDialog.getText(self, 'Save my camera', 'Name for this camera:',
+                                        text=self.shot.currentText().removeprefix(self.MY_CAM))
+        name = (name or '').strip()
+        if not ok or not name:
+            return
+        cams = self._my_cameras()
+        cams[name] = self._cam()
+        self.settings.setValue('my_cameras', json.dumps(cams))
+        self._add_my_cameras(select=self.MY_CAM + name)
+        self.status.setText(f'Saved camera "{name}". Pick it in "Start from" for any book.')
+
+    def _delete_my_camera(self):
+        name = self.shot.currentText()
+        if not name.startswith(self.MY_CAM):
+            return
+        cams = self._my_cameras()
+        cams.pop(name[len(self.MY_CAM):], None)
+        self.settings.setValue('my_cameras', json.dumps(cams))
+        self._add_my_cameras(select=next(iter(cf.PRESETS)))
+
+    def _true_shape(self, on):
+        if self.live is not None:
+            self.live.true_shape = bool(on)
+            self.live.update()
+        if on:
+            cm = self._book().get('page_size_cm') if self.books else None
+            size = f' (page {float(cm[0]):g} × {float(cm[1]):g} cm)' if cm else ''
+            self.status.setText(f'True shape: the book seen flat from straight above{size}. '
+                                'The video still uses your camera - press again to go back.')
+            self._show_view(0)
+
     def _apply_preset(self, name):
-        if name in cf.PRESETS:
+        if hasattr(self, 'del_cam'):
+            self.del_cam.setEnabled(name.startswith(self.MY_CAM))
+        if name.startswith(self.MY_CAM):
+            cam = self._my_cameras().get(name[len(self.MY_CAM):])
+            if cam:
+                self._set_cam(cam)
+        elif name in cf.PRESETS:
             self._set_cam(dict(cf.PRESETS[name], zoom=1.0, shift_x=0.0, shift_y=0.0))
 
     def _camera_changed(self, *_):

@@ -630,9 +630,13 @@ def camera(cam_settings, frac, aspect, real=None):
         ref_h = REF_PAGE_CM[1] / REF_PAGE_CM[0]
         k = np.array([1.0, ref_h / H, 1.0]) / float(real)
         dist = max(dist, cf.fit_distance(base + (pts - base) * k, tilt, turn, roll, lens, aspect, base, fill=0.86))
-    # Zoom like a real camera lens: the camera stays where it is and the lens gets longer, so zooming
-    # in does not bend the book (moving the camera closer made a near book look stretched).
-    lens = lens * zoom
+    if c.get('zoom_mode', 'lens') == 'closer':
+        # the camera walks closer: stronger 3D, the near end of the book looks bigger (before 0.10.2)
+        dist /= zoom
+    else:
+        # zoom like a real camera lens: the camera stays where it is and the lens gets longer, so
+        # zooming in never changes how the book looks, only how big it is
+        lens = lens * zoom
     target = base + np.array([c.get('shift_x', 0.0) * (W + COVER_MARGIN),
                               c.get('shift_y', 0.0) * (H / 2 + COVER_MARGIN), 0.0])
     cam, r, u, f = cf.pose(tilt, turn, roll, dist, target)

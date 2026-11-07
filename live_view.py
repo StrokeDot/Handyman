@@ -50,14 +50,28 @@ def _image_stamps(book, images):
     return tuple(out)
 
 
+_LOGGED = {}
+LOG_MAX = 2_000_000        # bytes: the log starts over beyond this (it once grew to 79 MB)
+
+
 def log_problem(msg):
-    """Append a live-view error with its traceback to Handyman/logs/live_view.log."""
+    """Append a live-view error with its traceback to Handyman/logs/live_view.log. The same error
+    is written once a minute at most (a failing frame repeats 30 times a second)."""
     import datetime
+    import time
     import traceback
+    key = msg.split('(')[0][:120]
+    now = time.time()
+    if now - _LOGGED.get(key, 0.0) < 60.0:
+        return
+    _LOGGED[key] = now
     try:
         d = paths.user_dir() / 'logs'
         d.mkdir(parents=True, exist_ok=True)
-        with open(d / 'live_view.log', 'a', encoding='utf-8') as fh:
+        f = d / 'live_view.log'
+        if f.exists() and f.stat().st_size > LOG_MAX:
+            f.replace(d / 'live_view.old.log')
+        with open(f, 'a', encoding='utf-8') as fh:
             fh.write(f'--- {datetime.datetime.now():%Y-%m-%d %H:%M:%S}  {msg}\n{traceback.format_exc()}\n')
     except OSError:
         pass
@@ -228,6 +242,7 @@ class LiveView(QOpenGLWidget):
         self.playing = False
         self.loop = True
         self.broken = None
+        self.true_shape = False   # flat view from straight above (checking the shape only)
         self._textures = {}
         self._dirty_textures = True
         self._sheet_cache = {}
@@ -519,12 +534,37 @@ class LiveView(QOpenGLWidget):
         except Exception as exc:
             msg = f'{type(exc).__name__}: {exc}'
             log_problem(msg)
+            self._reset_gl_state()
             if getattr(self, '_painted_ok', False):
                 # The view has drawn before, so OpenGL works: skip this frame, keep the view.
                 self.problem.emit(msg)
                 return
             self.broken = msg
             self.failed.emit(self.broken)
+
+    def _reset_gl_state(self):
+        """After a failed frame: undo anything it left half done, so the next frame starts clean.
+        (A frame that stopped between a push and its pop left the matrix stack one deeper each
+        time, until it overflowed and nothing could be drawn any more.)"""
+        try:
+            for mode, depth in ((gl.GL_MODELVIEW, gl.GL_MODELVIEW_STACK_DEPTH),
+                                (gl.GL_PROJECTION, gl.GL_PROJECTION_STACK_DEPTH)):
+                gl.glMatrixMode(mode)
+                for _ in range(64):
+                    if int(gl.glGetIntegerv(depth)) <= 1:
+                        break
+                    gl.glPopMatrix()
+                gl.glLoadIdentity()
+            gl.glMatrixMode(gl.GL_MODELVIEW)
+            for state in (gl.GL_VERTEX_ARRAY, gl.GL_NORMAL_ARRAY, gl.GL_TEXTURE_COORD_ARRAY):
+                gl.glDisableClientState(state)
+            gl.glDisable(gl.GL_CULL_FACE)
+            gl.glFrontFace(gl.GL_CCW)
+            for _ in range(16):
+                if gl.glGetError() == gl.GL_NO_ERROR:
+                    break
+        except Exception:  # best effort: never let the clean-up itself break the view
+            pass
 
     def _frame_rect(self):
         dpr = self.devicePixelRatioF()
@@ -659,14 +699,8 @@ class LiveView(QOpenGLWidget):
         gl.glPopMatrix()
         gl.glPopMatrix()
 
-    def _paint_journal(self, pose, frac, x0, y0, w, h):
-        """Journal-engine book: shapes and camera from journal_geom, exactly as the render."""
-        journal_geom.configure(journal_geom.N_SHEETS, float(self.book.get('page_aspect', 1.4318)),
-                              cover=journal_geom.cover_of(self.book))
-        cam, r, u, fw, lens = journal_geom.camera(self.cam, frac, self.aspect, journal_geom.real_size(self.book))
-        gl.glViewport(x0, y0, w, h)
-        gl.glMatrixMode(gl.GL_PROJECTION)
-        gl.glLoadIdentity()
+    def _camera_view(self, cam, r, u, fw, lens):
+        """The video camera (perspective), exactly as the render frames the book."""
         th = cf.SENSOR / 2 / lens
         # Depth range around the book: sheets lie a fraction of a millimetre apart, so a near plane
         # far closer than the book wastes the depth buffer and lower pages showed through at the spine.
@@ -679,6 +713,35 @@ class LiveView(QOpenGLWidget):
         view[0, :3], view[1, :3], view[2, :3] = r, u, -np.asarray(fw)
         view[:3, 3] = -view[:3, :3] @ cam
         gl.glLoadMatrixd(view.T.ravel())
+
+    def _true_shape_view(self):
+        """Straight down and flat (no perspective): the book's real proportions, whatever the
+        camera. Only for checking the shape; the video still uses the camera."""
+        G = journal_geom
+        x_lo, x_hi = G.J_OPEN[0] - G.WC - 0.05, G.XB + G.WC + 0.05
+        hy = G.HC / 2 + 0.05
+        cx, half_w = (x_lo + x_hi) / 2, (x_hi - x_lo) / 2
+        half_h = hy
+        if half_w / half_h < self.aspect:
+            half_w = half_h * self.aspect
+        else:
+            half_h = half_w / self.aspect
+        gl.glOrtho(cx - half_w, cx + half_w, -half_h, half_h, -10.0, 10.0)
+        gl.glMatrixMode(gl.GL_MODELVIEW)
+        gl.glLoadIdentity()
+
+    def _paint_journal(self, pose, frac, x0, y0, w, h):
+        """Journal-engine book: shapes and camera from journal_geom, exactly as the render."""
+        journal_geom.configure(journal_geom.N_SHEETS, float(self.book.get('page_aspect', 1.4318)),
+                              cover=journal_geom.cover_of(self.book))
+        cam, r, u, fw, lens = journal_geom.camera(self.cam, frac, self.aspect, journal_geom.real_size(self.book))
+        gl.glViewport(x0, y0, w, h)
+        gl.glMatrixMode(gl.GL_PROJECTION)
+        gl.glLoadIdentity()
+        if self.true_shape:
+            self._true_shape_view()
+        else:
+            self._camera_view(cam, r, u, fw, lens)
         key = np.array([-2.3, -2.4, 3.8])       # the render's key light
         gl.glLightfv(gl.GL_LIGHT0, gl.GL_POSITION, (*(key / np.linalg.norm(key)), 0.0))
         gl.glLightfv(gl.GL_LIGHT1, gl.GL_POSITION, (0.6, -0.4, 0.5, 0.0))
@@ -804,9 +867,9 @@ class LiveView(QOpenGLWidget):
             v = sheet_vertices(t, L.page_w, L.page_h, NX, NY, zr, zl,
                                curl=self.values.get('curl', 0.9), gutter=L.gutter,
                                smoothness=smoothness).astype(np.float32)
-            self._sheet_cache[ck] = (v, grid_normals(v).astype(np.float32))
-            if len(self._sheet_cache) > 400:
+            if len(self._sheet_cache) > 400:      # make room first (clearing after storing lost it)
                 self._sheet_cache.clear()
+            self._sheet_cache[ck] = (v, grid_normals(v).astype(np.float32))
         v, n = self._sheet_cache[ck]
         gl.glEnable(gl.GL_TEXTURE_2D)
         gl.glColor3f(1, 1, 1)

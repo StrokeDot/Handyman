@@ -119,3 +119,15 @@ def test_the_cover_can_be_sized_apart_from_the_pages_but_always_covers_them():
     G.configure(10, 1.4318, cover=(0.5, 0.5))                         # too small: grows to cover the pages
     assert G.WC >= G.W - G.XB and G.HC >= G.H
     G.configure(10, 1.4318)
+
+
+def test_zoom_style_lens_keeps_the_camera_closer_moves_it():
+    import camera_fit as cf
+    import journal_geom as G
+    G.configure(10, 1.4318)
+    base = dict(cf.PRESETS['Eye level (reading at a desk)'], zoom=1.0, move='none')
+    c1 = G.camera(dict(base), 0.5, 16 / 9)
+    lens = G.camera(dict(base, zoom=2.0), 0.5, 16 / 9)
+    closer = G.camera(dict(base, zoom=2.0, zoom_mode='closer'), 0.5, 16 / 9)
+    assert np.allclose(lens[0], c1[0]) and abs(lens[4] - 2 * c1[4]) < 1e-9          # same spot, longer lens
+    assert np.linalg.norm(closer[0]) < np.linalg.norm(c1[0]) and abs(closer[4] - c1[4]) < 1e-9

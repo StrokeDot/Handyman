@@ -71,13 +71,14 @@ class JournalPreview:
     def sheet(self, k, t, curve=1.0):
         key = (k, round(float(t), 4), round(G.OPEN_W, 4), round(G.OPEN_B, 4), round(float(curve), 4),
                round(G.TURNED, 4))
-        if key not in self._cache:
+        hit = self._cache.get(key)
+        if hit is None:
+            if len(self._cache) > 600:      # make room first: clearing after storing lost this sheet
+                self._cache.clear()         # and stopped the drawing halfway (the book disappeared)
             v = G.solid_from_grid(G.sheet_state(k, t, curve)).astype(np.float32)
             n = _normals(v, np.concatenate([self.top, self.bottom]))
-            self._cache[key] = (v, n)
-            if len(self._cache) > 600:
-                self._cache.clear()
-        return self._cache[key]
+            hit = self._cache[key] = (v, n)
+        return hit
 
     # ------------------------------------------------------------------ drawing
     def draw(self, pose, tex, leather_rgb, paper_rgb):
@@ -86,6 +87,12 @@ class JournalPreview:
         G.set_opening(theta)          # pages flat while closed, curved once the cover lifts off them
         slide = float(pose.get('cover_slide', 0.0))
         gl.glPushMatrix()
+        try:
+            self._draw(theta, slide, pose, tex, leather_rgb, paper_rgb)
+        finally:
+            gl.glPopMatrix()
+
+    def _draw(self, theta, slide, pose, tex, leather_rgb, paper_rgb):
         gl.glTranslatef(slide, 0, 0)
         self._board(G.XB, tex.get('back_in'), tex.get('back_ext'), leather_rgb)
         gl.glPushMatrix()
@@ -104,7 +111,6 @@ class JournalPreview:
             front = tex.get(('page', 2 * k)) or tex.get('paper_odd')
             back = tex.get(('page', 2 * k + 1)) or tex.get('paper_even')
             self._sheet(k, ts[k], front, back, edge, cw[k])
-        gl.glPopMatrix()
 
     def _board(self, x0, tex_top, tex_bottom, colour):
         """A cover board in its own frame: x x0..x0+WC, y +-HC/2, z 0..TB.
