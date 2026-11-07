@@ -131,3 +131,25 @@ def test_zoom_style_lens_keeps_the_camera_closer_moves_it():
     closer = G.camera(dict(base, zoom=2.0, zoom_mode='closer'), 0.5, 16 / 9)
     assert np.allclose(lens[0], c1[0]) and abs(lens[4] - 2 * c1[4]) < 1e-9          # same spot, longer lens
     assert np.linalg.norm(closer[0]) < np.linalg.norm(c1[0]) and abs(closer[4] - c1[4]) < 1e-9
+
+
+def test_cover_corner_is_read_from_the_art_and_transparent_pixels_are_filled(tmp_path):
+    import cover_shape as C
+    w, h, r = 400, 600, 40
+    yy, xx = np.mgrid[0:h, 0:w] + 0.5
+    a = np.full((h, w), 255, np.uint8)
+    for cy in (r, h - r):                                   # round the two fore-edge corners
+        near = (xx > w - r) & (np.abs(yy - cy) <= r) & ((yy < r) | (yy > h - r))
+        a[near & ((xx - (w - r)) ** 2 + (yy - cy) ** 2 > r * r)] = 0
+    rgba = np.dstack([np.full((h, w), 30), np.full((h, w), 40), np.full((h, w), 120), a]).astype(np.uint8)
+    img = Image.fromarray(rgba, 'RGBA')
+    p = tmp_path / 'cover.png'
+    img.save(p)
+    share = C.corner_radius(str(p))
+    assert abs(share * w - r) < 4                           # about the radius drawn
+    f = Image.open(C.filled(str(p), tmp_path / 'out')).convert('RGBA')
+    assert f.getpixel((w - 1, 0))[3] == 255 and f.getpixel((w - 1, 0))[:3] == (30, 40, 120)
+    opaque = tmp_path / 'plain.png'
+    Image.new('RGB', (100, 150), (1, 2, 3)).save(opaque)
+    assert abs(C.corner_radius(str(opaque)) - C.DEFAULT_CORNER) < 1e-12
+    assert C.filled(str(opaque), tmp_path / 'out') == str(opaque)

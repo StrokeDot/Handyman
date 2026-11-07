@@ -232,6 +232,19 @@ def _fit(book, slot):
             'y': float(book.get(f'{slot}_y', 0.0))}
 
 
+def _cover(book, field):
+    """A cover image for the render, its transparent pixels filled with the colour beside them."""
+    import cover_shape
+    p = _texture_path(book, book.get(field))
+    return cover_shape.filled(p, paths.cache_dir('covers')) if p else p
+
+
+def _board_corner(book):
+    """Fore-edge corner radius of the boards (share of the board width), read from the front cover art."""
+    import cover_shape
+    return cover_shape.corner_radius(_texture_path(book, book.get('front_exterior_image')))
+
+
 def for_scene(book):
     """The template in the form the Blender scene reads (absolute paths, linear colours)."""
     emblem = None
@@ -252,10 +265,11 @@ def for_scene(book):
         paper_color=hex_to_linear(book['paper_color']),
         leather_image=_texture_path(book, book.get('leather_image')),
         paper_image=_texture_path(book, book.get('paper_image')),
-        front_exterior_image=_texture_path(book, book.get('front_exterior_image')),
-        front_interior_image=_texture_path(book, book.get('front_interior_image')),
-        back_exterior_image=_texture_path(book, book.get('back_exterior_image')),
-        back_interior_image=_texture_path(book, book.get('back_interior_image')),
+        front_exterior_image=_cover(book, 'front_exterior_image'),
+        front_interior_image=_cover(book, 'front_interior_image'),
+        back_exterior_image=_cover(book, 'back_exterior_image'),
+        back_interior_image=_cover(book, 'back_interior_image'),
+        board_corner=_board_corner(book),
         spine_exterior_image=_texture_path(book, book.get('spine_exterior_image')),
         front_exterior_fit=_fit(book, 'front_exterior'),
         front_interior_fit=_fit(book, 'front_interior'),

@@ -8,6 +8,7 @@ import math
 
 import numpy as np
 
+import cover_shape
 import journal_geom as G
 
 try:
@@ -61,6 +62,9 @@ class JournalPreview:
         self.uv_front = np.concatenate([uv, pad]).astype(np.float32)
         self.uv_back = np.concatenate([pad, uv_back]).astype(np.float32)
         self._cache = {}
+        # the boards' fore-edge corners are cut as round as the cover picture's own corners
+        import templates
+        self.corner = cover_shape.corner_radius(templates._texture_path(book, book.get('front_exterior_image')))
         # which winding faces outwards: the top face's first triangle against the sheet's up direction
         v = G.solid_from_grid(G.sheet_state(0, 0.0, 0.0))
         t = self.top[:3]
@@ -112,10 +116,27 @@ class JournalPreview:
             back = tex.get(('page', 2 * k + 1)) or tex.get('paper_even')
             self._sheet(k, ts[k], front, back, edge, cw[k])
 
+    def _outline(self, x0):
+        """Board outline: straight along the spine (x0), fore-edge corners rounded like the art."""
+        x1, hy = x0 + G.WC, G.HC / 2
+        rad = min(self.corner * G.WC, 0.3)
+        pts = [(x0, -hy)]
+        for k in range(9):                         # bottom fore-edge corner
+            a = -math.pi / 2 + k * (math.pi / 2) / 8
+            pts.append((x1 - rad + rad * math.cos(a), -hy + rad + rad * math.sin(a)))
+        for k in range(9):                         # top fore-edge corner
+            a = k * (math.pi / 2) / 8
+            pts.append((x1 - rad + rad * math.cos(a), hy - rad + rad * math.sin(a)))
+        pts.append((x0, hy))
+        return pts
+
     def _board(self, x0, tex_top, tex_bottom, colour):
-        """A cover board in its own frame: x x0..x0+WC, y +-HC/2, z 0..TB.
-        tex_top on z = TB, tex_bottom on z = 0 (as the Blender board's two caps)."""
-        x1, hy, z1 = x0 + G.WC, G.HC / 2, G.TB
+        """A cover board in its own frame: x x0..x0+WC, y +-HC/2, z 0..TB, with the cover art's
+        rounded fore-edge corners. tex_top on z = TB, tex_bottom on z = 0 (as the Blender board's
+        two caps; the bottom one mirrored, as it is seen from below)."""
+        hy, z1 = G.HC / 2, G.TB
+        pts = self._outline(x0)
+        cx = x0 + G.WC / 2
         for z, tex, nz in ((z1, tex_top, 1.0), (0.0, tex_bottom, -1.0)):
             if tex:
                 gl.glEnable(gl.GL_TEXTURE_2D)
@@ -125,24 +146,22 @@ class JournalPreview:
                 gl.glDisable(gl.GL_TEXTURE_2D)
                 gl.glColor3f(*colour)
             gl.glNormal3f(0, 0, nz)
-            gl.glBegin(gl.GL_QUADS)
-            corners = ((x0, -hy, 0, 0), (x1, -hy, 1, 0), (x1, hy, 1, 1), (x0, hy, 0, 1))
-            if nz < 0:      # bottom cap is seen from below: mirrored like the Blender UVs
-                corners = tuple((x, y, 1 - s, t) for x, y, s, t in reversed(corners))
-            for x, y, s, t in corners:
-                gl.glTexCoord2f(s, t)
+            ring = pts if nz > 0 else pts[::-1]
+            gl.glBegin(gl.GL_TRIANGLE_FAN)
+            for x, y in [(cx, 0.0)] + ring + [ring[0]]:
+                s_ = (x - x0) / G.WC
+                gl.glTexCoord2f(s_ if nz > 0 else 1 - s_, (y + hy) / (2 * hy))
                 gl.glVertex3f(x, y, z)
             gl.glEnd()
         gl.glDisable(gl.GL_TEXTURE_2D)
         gl.glColor3f(*(np.array(colour) * 0.8))
         gl.glBegin(gl.GL_QUADS)
-        for n, quad in (((0, -1, 0), ((x0, -hy, 0), (x1, -hy, 0), (x1, -hy, z1), (x0, -hy, z1))),
-                        ((0, 1, 0), ((x0, hy, 0), (x0, hy, z1), (x1, hy, z1), (x1, hy, 0))),
-                        ((1, 0, 0), ((x1, -hy, 0), (x1, hy, 0), (x1, hy, z1), (x1, -hy, z1))),
-                        ((-1, 0, 0), ((x0, -hy, 0), (x0, -hy, z1), (x0, hy, z1), (x0, hy, 0)))):
-            gl.glNormal3f(*n)
-            for p in quad:
-                gl.glVertex3f(*p)
+        for (xa, ya), (xb, yb) in zip(pts, pts[1:] + pts[:1]):
+            nx_, ny_ = yb - ya, -(xb - xa)
+            ln = math.hypot(nx_, ny_) or 1.0
+            gl.glNormal3f(nx_ / ln, ny_ / ln, 0.0)
+            for x, y, z in ((xa, ya, 0.0), (xb, yb, 0.0), (xb, yb, z1), (xa, ya, z1)):
+                gl.glVertex3f(x, y, z)
         gl.glEnd()
 
     def _spine(self, theta, tex, colour):

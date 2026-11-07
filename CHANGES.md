@@ -1,5 +1,9 @@
 # Changes
 
+## 0.11.3
+- **The cover follows your picture's shape**: the 3D cover's corners are now cut as round as the corners of your cover picture (read from its transparent pixels), in the live view as well as the render. Before, the live view drew the cover as a square box and the picture's transparent corners showed as a black square.
+- Where the cover still sits under a transparent pixel (for example the corners on the spine side), it shows the colour next to it instead of black.
+
 ## 0.11.2
 - **Fixed: the book disappearing from the live view.** A small memory of page shapes sometimes emptied itself right after storing a page; the drawing then stopped halfway, and each failed frame left the graphics one step deeper until it overflowed and nothing could be drawn. The memory is fixed, and any failed frame now cleans up after itself so the view always recovers. The live view log no longer grows without end (it had reached 79 MB).
 - **True shape** button (above the live view): the book seen flat from straight above, with no perspective - its real proportions. Only for checking the shape; the video still uses your camera.

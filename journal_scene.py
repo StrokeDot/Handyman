@@ -448,7 +448,8 @@ def build(job):
     root.rotation_euler = tuple(math.radians(float(v)) for v in tf.get('rot', (0.0, 0.0, 0.0)))
     root.scale = tuple(float(v) for v in tf.get('scale', (1.0, 1.0, 1.0)))
 
-    bb = new_object('BackBoard', board_mesh('BackBoard'), root)
+    corner = float(book.get('board_corner') or 0.035 / 1.08) * G.WC     # as round as the cover art's corners
+    bb = new_object('BackBoard', board_mesh('BackBoard', rad=corner), root)
     bb.location = (G.XB, 0, 0)
     for m in (m_pd_b, m_back, m_leather):
         bb.data.materials.append(m)
@@ -458,7 +459,7 @@ def build(job):
     pivot.parent = root
     pivot.location = (G.J[0], 0, G.J[1])
     pivot.rotation_mode = 'XYZ'
-    fb = new_object('FrontBoard', board_mesh('FrontBoard'), pivot)
+    fb = new_object('FrontBoard', board_mesh('FrontBoard', rad=corner), pivot)
     for m in (m_front, m_pd_f, m_leather):
         fb.data.materials.append(m)
     bevel(fb)

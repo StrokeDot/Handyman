@@ -416,6 +416,9 @@ class LiveView(QOpenGLWidget):
                            ('front_in', 'front_interior_image'), ('back_in', 'back_interior_image'),
                            ('spine', 'spine_exterior_image')):
             p = _resolve_texture(book, field)
+            if p and key != 'spine':      # transparent pixels show the leather beside them, not black
+                import cover_shape
+                p = cover_shape.filled(p, paths.cache_dir('covers'))
             img = QImage(str(p)) if p else QImage()
             if not img.isNull():
                 tex[key] = self._upload(('j', key), img.scaled(1024, 1024, Qt.AspectRatioMode.KeepAspectRatio,
