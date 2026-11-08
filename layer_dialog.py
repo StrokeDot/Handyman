@@ -266,9 +266,11 @@ class PicturesDialog(QDialog):
         self.list.setIconSize(QPixmap(40, 40).size())
         self.list.setMaximumHeight(150)
         self.list.currentRowChanged.connect(self._select)
+        self.list.itemDoubleClicked.connect(lambda *_: self._edit_text())
         side.addWidget(self.list)
         row = QHBoxLayout()
         for text, slot, tip in (('Add picture…', self._add, 'Add one or more pictures to these pages'),
+                                ('Add text…', self._add_text, 'Write text on these pages, in StrokeScribe\'s fonts'),
                                 ('Copy', self._duplicate, 'Make a copy of the selected picture here'),
                                 ('Remove', self._remove, 'Take the selected picture off the page'),
                                 ('▲', lambda: self._move(1), 'Bring forward (on top of the others)'),
@@ -297,6 +299,10 @@ class PicturesDialog(QDialog):
         self.flip = QCheckBox('Mirror the picture')
         self.flip.toggled.connect(self._controls_changed)
         f.addRow('', self.flip)
+        self.edit_text_btn = QPushButton('Edit the text…')
+        self.edit_text_btn.setObjectName('accent')
+        self.edit_text_btn.clicked.connect(self._edit_text)
+        f.addRow(self.edit_text_btn)
         quick = QHBoxLayout()
         for text, slot in (('Fit inside the margins', self._fit_margins), ('Centre', self._centre),
                            ('Straight', self._straight)):
@@ -513,12 +519,17 @@ class PicturesDialog(QDialog):
             icon = QIcon(pix.scaled(40, 40, Qt.AspectRatioMode.KeepAspectRatio,
                                     Qt.TransformationMode.SmoothTransformation)) if not pix.isNull() else QIcon()
             ink = ' · ink' if PL.layer_get(layer, 'ink_on') else ''
+            if layer.get('text'):
+                words = ' '.join(str(layer['text'].get('text', '')).split())
+                label_name = f'Text: “{words[:28]}{"…" if len(words) > 28 else ""}”'
+            else:
+                label_name = Path(layer['image']).name
             where = ''
             if len(self.canvas.parts) == 2 and self.view[0] is not None:
                 xs = [c[0] for c in PL.layer_corners(layer, PL.picture_size(layer['image']), self.canvas.page_size)]
                 where = ('  (page %d)' % (self.view[0] + 1) if max(xs) <= half + 0.5 else
                          '  (page %d)' % (self.view[1] + 1) if min(xs) >= half - 0.5 else '  (across both pages)')
-            self.list.addItem(QListWidgetItem(icon, f'{i + 1}. {Path(layer["image"]).name}{ink}{where}'))
+            self.list.addItem(QListWidgetItem(icon, f'{i + 1}. {label_name}{ink}{where}'))
         self._loading = False
         if self.layers:
             self.list.setCurrentRow(max(0, min(cur, len(self.layers) - 1)))
@@ -550,6 +561,7 @@ class PicturesDialog(QDialog):
             self.edge_size.setValue(round(float(PL.layer_get(layer, 'ink_edge_size'))))
             self.edge_size.setEnabled(self.edges.currentText() != 'No fading')
             self._loading = False
+        self.edit_text_btn.setVisible(bool(layer and layer.get('text')))
         self.canvas.update()
 
     def _controls_changed(self, *_):
@@ -622,6 +634,52 @@ class PicturesDialog(QDialog):
         self.start_dir = str(Path(files[0]).parent)
         self._fill_list()
         self.list.setCurrentRow(len(self.layers) - 1)
+
+    # --------------------------------------------------------------- text
+    def _text_paper(self):
+        left, right = self.view
+        row = right if right is not None else left
+        return self.pages.paper(row) if row is not None else None
+
+    def _text_image(self, t):
+        import fonts
+        import paths
+        return fonts.text_image_file(t, self.one_page[0], paths.cache_dir('text'),
+                                     getattr(self.pages, 'page_cm', 15.0))
+
+    def _add_text(self):
+        from text_dialog import TextDialog
+        dlg = TextDialog(None, self._text_paper(), self.one_page[0], self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        t = dlg.result_text()
+        self._snapshot()
+        img = self._text_image(t)
+        iw, ih = PL.picture_size(img)
+        pw, ph = self.one_page
+        layer = PL.new_layer(img, ink_on=False, ink_edges='No fading', text=t, w=float(t['width']), x=0.5)
+        placed_h = float(t['width']) * pw * ih / max(1, iw)
+        layer['y'] = min(0.5, (self.margin_value() * pw + placed_h / 2) / ph)     # starts at the top margin
+        if len(self.canvas.parts) == 2:
+            layer = PL.to_spread(layer, self._side_for_new())
+        self.layers.append(layer)
+        self._fill_list()
+        self.list.setCurrentRow(len(self.layers) - 1)
+
+    def _edit_text(self):
+        from text_dialog import TextDialog
+        layer = self._layer()
+        if not layer or not layer.get('text'):
+            return
+        dlg = TextDialog(layer['text'], self._text_paper(), self.one_page[0], self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._snapshot()
+        t = dlg.result_text()
+        layer['text'] = t
+        layer['image'] = self._text_image(t)
+        self._fill_list()
+        self._select(self.list.currentRow())
 
     def _side_for_new(self):
         """The emptier page of the spread gets a new picture (the left one first)."""

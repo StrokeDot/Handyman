@@ -1,5 +1,13 @@
 # Changes
 
+## 0.12.0
+- **A clearer Pages panel**: the book is shown as it opens, one row per open spread ("Inside cover - page 1", "Pages 2 - 3", ...), each with a small picture of both pages and what is on them. Double-click a row to put pictures or text on those pages; right-click (or "This page") to move a page earlier or later, make it blank or remove it.
+- **Add pages** menu, in plain words: 2 blank pages (one more sheet), pages from pictures (each picture fills a whole page), or a page of text. New pages go right after the last page that has something on it.
+- **The book always has all its pages**: "Sheets of paper" sets how many (2 pages per sheet), blank pages fill the rest, and the book grows by itself if you add more. ("Fill with blank" is gone - it is automatic now.)
+- **Page turns in the video**: choose how many pages turn (fewer = a shorter video); the book keeps all its pages.
+- **Text in StrokeScribe's fonts**: "Add text..." in the pictures window (and "A page of text..."). Pick a font from StrokeScribe's list - fonts you already downloaded in StrokeScribe are ready here, others download once with their licence and then work in both apps - or use a font file of your own. Size in points (12 pt reads like a printed book), colour, alignment and line spacing, with a preview on your paper. Text can be moved, turned and edited again like a picture (double-click it in the list).
+- **Page numbers in the live view**: a counter in the corner says which pages are open ("Pages 6-7", "Turning page 5 -> pages 6-7"), and the open spread is marked in the Pages list while it plays. It never appears in the video; "Page numbers" under the timeline turns it off.
+
 ## 0.11.4
 - **Sharp at any angle**: the live view now uses anisotropic filtering, so covers and pages seen at a slant stay sharp instead of blurring, and covers and pages are loaded at a higher resolution. (The final render was always sharp.)
 - **Cover edges match the cover**: the edges of the cover boards (the thickness of the cover) and the inside of the spine now take their colour from the edge of your cover picture, so a blue cover gets blue edges. In Change book design, "Cover edges" can switch back to the leather image as it is.

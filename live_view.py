@@ -307,6 +307,27 @@ class LiveView(QOpenGLWidget):
         self.playing = on
         self._clock = None
 
+    def where(self, frame=None):
+        """Which pages the book shows at a frame, in words (for the page counter)."""
+        try:
+            pose = self.scene.evaluate(int(self.frame if frame is None else frame))
+        except Exception:
+            return ''
+        cover = float(pose.get('cover_progress', 0.0))
+        prog = [float(p) for p in pose.get('sheet_progress', [])]
+        if cover <= 0.001:
+            return 'Closed book'
+        if cover < 0.999 and not any(p > 0 for p in prog):
+            return 'Opening the cover'
+        turning = [k for k, p in enumerate(prog) if 0.0 < p < 1.0]
+        done = sum(1 for p in prog if p >= 1.0)
+        if turning:
+            k = turning[-1]
+            return f'Turning page {2 * k + 1} → pages {2 * k + 2}–{2 * k + 3}'
+        if done == 0:
+            return 'Inside cover · page 1'
+        return f'Pages {2 * done}–{2 * done + 1}'
+
     def seek(self, frame):
         self.frame = float(max(0, min(frame, self.timeline.frames - 1)))
         self.frameChanged.emit(int(self.frame), self.timeline.frames)

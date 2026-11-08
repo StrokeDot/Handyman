@@ -165,3 +165,17 @@ def test_board_and_paper_thickness_follow_the_book_and_stay_in_safe_limits():
     assert G.N_SHEETS * G.PITCH <= G.MAX_BLOCK + 1e-9                                # very thick books are kept in limits
     G.configure(10, 1.4318, **G.book_dims({}))
     assert abs(G.TB - 0.028) < 1e-9 and abs(G.PITCH - 0.003) < 1e-9
+
+
+def test_text_is_drawn_with_the_chosen_size_and_wraps_inside_its_box(tmp_path):
+    import fonts
+    short = fonts.render_text(dict(text='Hello', size=12), 982)
+    big = fonts.render_text(dict(text='Hello', size=36), 982)
+    long = fonts.render_text(dict(text='word ' * 80, size=12), 982)
+    assert short.width == big.width == long.width                    # the box is the page width minus margins
+    assert big.height > 2.5 * short.height                           # bigger letters
+    assert long.height > 4 * short.height                            # wrapped onto many lines
+    assert np.asarray(short)[..., 3].max() == 255 and np.asarray(short)[..., 3].min() == 0
+    p = fonts.text_image_file(dict(text='Hi'), 982, tmp_path)
+    assert fonts.text_image_file(dict(text='Hi'), 982, tmp_path) == p
+    assert fonts.installed_font(fonts.BUILT_IN) is not None or fonts.built_in_font() is None

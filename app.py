@@ -13,11 +13,11 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, QThread, QTimer, Qt, Signal
+from PySide6.QtCore import QSettings, QSize, QThread, QTimer, Qt, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QFormLayout,
-    QGroupBox, QHBoxLayout, QInputDialog, QLabel, QListWidget, QListWidgetItem, QMainWindow,
+    QGroupBox, QHBoxLayout, QInputDialog, QLabel, QListWidget, QListWidgetItem, QMainWindow, QMenu,
     QGridLayout, QMessageBox, QProgressBar, QProgressDialog, QPushButton, QScrollArea, QSlider, QSpinBox,
     QSplitter, QStackedWidget, QTabWidget, QVBoxLayout, QWidget,
 )
@@ -365,13 +365,14 @@ class Studio(QMainWindow):
         design.clicked.connect(self._edit_book)
         bl.addWidget(design)
         row = QHBoxLayout()
-        row.addWidget(QLabel('Pages in the book'))
+        row.addWidget(QLabel('Sheets of paper'))
         self.page_count = QSpinBox()
         self.page_count.setRange(2, 2000)
         self.page_count.setValue(20)   # sheets; template overrides on load
         self.page_count.setSuffix(' sheets')
-        self.page_count.setToolTip('Each sheet is 2 pages (front and back). More sheets = thicker book.')
-        self.page_count.valueChanged.connect(self._update_summary)
+        self.page_count.setToolTip('Each sheet is 2 pages (front and back). More sheets = a thicker book '
+                                   'with more pages.')
+        self.page_count.valueChanged.connect(lambda *_: self._pages_changed())
         row.addWidget(self.page_count)
         bl.addLayout(row)
         row = QHBoxLayout()
@@ -402,47 +403,59 @@ class Studio(QMainWindow):
         bl.addWidget(self.blend_row)
         lv.addWidget(bookbox)
 
-        pagebox = QGroupBox('2  Pages (in reading order)')
+        pagebox = QGroupBox('2  Pages')
         pl = QVBoxLayout(pagebox)
-        self.pages = QListWidget()
-        self.pages.setIconSize(QPixmap(48, 48).size())
-        self.pages.setDragDropMode(QListWidget.DragDropMode.InternalMove)
+        self.pages = QListWidget()          # the pages themselves (the data); shown below as open spreads
+        self.pages.setVisible(False)
         self.pages.model().rowsMoved.connect(self._pages_changed)
-        pl.addWidget(self.pages, 1)
-        grid = QGridLayout()
-        for i, (text, fn, tip) in enumerate((
-                ('+ Full-page images…', self._add_images, 'Adds NEW pages at the end of the book: each image becomes a whole page. To put a picture ON a page, use "Pictures on the pages…"'),
-                ('+ Text page…', self._add_text, 'Type a page of text'),
-                ('+ Blank page', self._add_blank, 'Add an empty page'),
-                ('Fill with blank', self._fill_blank, 'Add blank pages until every page of the book turns'))):
-            b = QPushButton(text)
-            b.setToolTip(tip)
-            b.clicked.connect(fn)
-            grid.addWidget(b, i // 2, i % 2)
-        pl.addLayout(grid)
-        self.layers_btn = QPushButton('Pictures on the pages…')
+        self.page_summary = QLabel()
+        self.page_summary.setObjectName('summary')
+        pl.addWidget(self.page_summary)
+        self.spreads = QListWidget()
+        self.spreads.setIconSize(QSize(136, 92))
+        self.spreads.setSpacing(2)
+        self.spreads.setWordWrap(True)
+        self.spreads.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.spreads.setToolTip('The book as you see it when it is open, two pages at a time. '
+                                'Double-click to put pictures or text on them.')
+        self.spreads.currentRowChanged.connect(self._spread_selected)
+        self.spreads.itemDoubleClicked.connect(lambda *_: self._edit_layers())
+        self.spreads.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.spreads.customContextMenuRequested.connect(lambda pos: self._page_menu().exec(
+            self.spreads.viewport().mapToGlobal(pos)))
+        pl.addWidget(self.spreads, 1)
+        self.layers_btn = QPushButton('Pictures and text on these pages…')
         self.layers_btn.setObjectName('accent')
-        self.layers_btn.setToolTip('Place pictures on the open pages of the book, two pages at a time, with '
-                                   '"Ink on the page" so they look printed on the paper (or double-click a page). '
-                                   'A picture over the middle goes across both pages.')
+        self.layers_btn.setToolTip('Put pictures and text on the selected open pages (or double-click them). '
+                                   '"Ink on the page" makes a picture look printed on the paper.')
         self.layers_btn.clicked.connect(self._edit_layers)
         pl.addWidget(self.layers_btn)
-        self.pages.itemDoubleClicked.connect(lambda *_: self._edit_layers())
         row = QHBoxLayout()
-        for text, fn in (('▲', lambda: self._move_page(-1)), ('▼', lambda: self._move_page(1))):
-            b = QPushButton(text)
-            b.setObjectName('small')
-            b.setToolTip('Move the selected page up' if text == '▲' else 'Move the selected page down')
-            b.clicked.connect(fn)
-            row.addWidget(b)
-        b = QPushButton('Remove')
-        b.setObjectName('small')
-        b.clicked.connect(self._remove_page)
-        row.addWidget(b)
-        b = QPushButton('Clear all')
-        b.setObjectName('small')
-        b.clicked.connect(self._clear_pages)
-        row.addWidget(b)
+        add_btn = QPushButton('Add pages  ▾')
+        add_btn.setToolTip('Make the book longer')
+        add_menu = QMenu(add_btn)
+        add_menu.addAction('2 blank pages (one more sheet of paper)', self._add_blank)
+        add_menu.addAction('Pages from pictures (each picture fills a whole page)…', self._add_images)
+        add_menu.addAction('A page of text…', self._add_text)
+        add_btn.setMenu(add_menu)
+        row.addWidget(add_btn)
+        self.page_btn = QPushButton('This page  ▾')
+        self.page_btn.setToolTip('Move, empty or remove one of the selected pages')
+        self.page_btn.clicked.connect(lambda: self._page_menu().exec(
+            self.page_btn.mapToGlobal(self.page_btn.rect().bottomLeft())))
+        row.addWidget(self.page_btn)
+        pl.addLayout(row)
+        row = QHBoxLayout()
+        row.addWidget(QLabel('Page turns in the video'))
+        self.turn_limit = QSpinBox()
+        self.turn_limit.setRange(0, 2000)
+        self.turn_limit.setToolTip('How many times a page turns in the video. Each turn shows the next two pages. '
+                                   'Fewer turns = a shorter video; the book keeps all its pages.')
+        self.turn_limit.valueChanged.connect(self._turns_changed)
+        row.addWidget(self.turn_limit)
+        self.turn_of = QLabel()
+        row.addWidget(self.turn_of)
+        row.addStretch(1)
         pl.addLayout(row)
         self.layout_hint = QLabel()
         self.layout_hint.setObjectName('hint')
@@ -560,13 +573,17 @@ class Studio(QMainWindow):
         self.drag_pages.toggled.connect(lambda on: setattr(self.live, 'drag_pages', on) if self.live else None)
         self.record = QCheckBox('Record turns')
         self.record.setToolTip('While on, each page you turn by hand is added to the animation')
+        self.show_where = QCheckBox('Page numbers')
+        self.show_where.setToolTip('Show which pages are open, in the corner of the live view (never in the video)')
+        self.show_where.setChecked(True)
+        self.show_where.toggled.connect(lambda on: self._update_where())
         # row 1: play and the timeline bar (drag it to move through the animation); row 2: options
         self.scrub.setMinimumWidth(240)
         self.scrub.setToolTip('Drag to move through the animation frame by frame')
         for wdg in (self.play_btn, self.scrub, self.time_label):
             pb.addWidget(wdg, 1 if wdg is self.scrub else 0)
         pb2.addWidget(QLabel('Speed'))
-        for wdg in (self.speed, self.loop, self.drag_pages, self.record):
+        for wdg in (self.speed, self.loop, self.drag_pages, self.record, self.show_where):
             pb2.addWidget(wdg)
         pb2.addStretch(1)
         mv.addWidget(self.playbar)
@@ -1085,6 +1102,7 @@ class Studio(QMainWindow):
 
         class BookPages:
             page_size = self._page_size()
+            page_cm = float((book.get('page_size_cm') or [15.0])[0])
 
             @staticmethod
             def count():
@@ -1145,7 +1163,7 @@ class Studio(QMainWindow):
     def _page_paths(self):
         return [self.pages.item(i).data(Qt.ItemDataRole.UserRole) or None for i in range(self.pages.count())]
 
-    def _add_page_item(self, path, text='', layers=None):
+    def _add_page_item(self, path, text='', layers=None, at=None):
         if path:
             item = QListWidgetItem(QIcon(QPixmap(path).scaled(64, 64, Qt.AspectRatioMode.KeepAspectRatio,
                                                               Qt.TransformationMode.SmoothTransformation)), '')
@@ -1155,7 +1173,10 @@ class Studio(QMainWindow):
         item.setData(self.TEXT_ROLE, text or '')
         item.setData(self.FIT_ROLE, {'mode': 'fit', 'scale': 1.0, 'x': 0.0, 'y': 0.0})
         item.setData(self.LAYERS_ROLE, list(layers or []))
-        self.pages.addItem(item)
+        if at is None or at >= self.pages.count():
+            self.pages.addItem(item)
+        else:
+            self.pages.insertItem(max(0, at), item)
 
     def _ask_adjust(self, n_wrong, n_all, need, keep_label='Skip them'):
         box = QMessageBox(self)
@@ -1216,25 +1237,244 @@ class Studio(QMainWindow):
                     path = fit.result_path
                 else:
                     continue
-            self._add_page_item(path)
+            self._add_page_item(path, at=self._next_slot())     # the next empty page
         if files:
             self.settings.setValue('img_dir', str(Path(files[0]).parent))
         self._pages_changed()
 
     def _add_blank(self):
-        self._add_page_item(None)
-        self._pages_changed()
+        """One more sheet of paper: two blank pages at the end of the book."""
+        self.page_count.setValue(self.page_count.value() + 1)
+        self.status.setText(f'Added 2 blank pages: the book now has {self.pages.count()} pages.')
 
     def _add_text(self):
-        text, ok = QInputDialog.getMultiLineText(self, 'Add text page', 'Type the text for this page:')
-        if ok and text.strip():
-            self._add_page_item(None, text.strip())
-            self._pages_changed()
+        """A page of text, on the next empty page (StrokeScribe's fonts)."""
+        import fonts
+        import page_layers
+        from text_dialog import TextDialog
+        book = self._book()
+        at = self._next_slot()
+        field = 'paper_odd_image' if at % 2 == 0 else 'paper_even_image'
+        paper = templates._texture_path(book, book.get(field) or book.get('paper_image'))
+        pw, ph = self._page_size()
+        dlg = TextDialog(None, paper, pw, self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        t = dlg.result_text()
+        img = fonts.text_image_file(t, pw, paths.cache_dir('text'), float((book.get('page_size_cm') or [15.0])[0]))
+        iw, ih = page_layers.picture_size(img)
+        margin = float(self.settings.value('picture_margin', 0.08))
+        placed_h = float(t['width']) * pw * ih / max(1, iw)
+        layer = page_layers.new_layer(img, ink_on=False, ink_edges='No fading', text=t, w=float(t['width']), x=0.5,
+                                      y=min(0.5, (margin * pw + placed_h / 2) / ph))
+        if at < self.pages.count() and self._page_is_blank(at):
+            self.pages.item(at).setData(self.LAYERS_ROLE, [layer])
+        else:
+            self._add_page_item(None, layers=[layer], at=at)
+        self._pages_changed()
+        self.status.setText(f'Text put on page {at + 1}. Double-click the pages to move it or change it.')
+
+    # ------------------------------------------------------------------ pages as open spreads
+    def _page_is_blank(self, i):
+        item = self.pages.item(i)
+        return not (item.data(Qt.ItemDataRole.UserRole) or item.data(self.TEXT_ROLE)
+                    or item.data(self.LAYERS_ROLE))
+
+    def _next_slot(self):
+        """Where new pages go: right after the last page that has something on it."""
+        last = -1
+        for i in range(self.pages.count()):
+            if not self._page_is_blank(i):
+                last = i
+        return last + 1
+
+    def _sync_page_count(self):
+        """The book always has every page of its sheets (2 per sheet): blank pages fill the end,
+        and the book grows when more pages are added than it has."""
+        if getattr(self, '_syncing', False) or not hasattr(self, 'page_count'):
+            return
+        self._syncing = True
+        try:
+            target = self.page_count.value() * 2
+            n = self.pages.count()
+            while n > target and self._page_is_blank(n - 1):
+                self.pages.takeItem(n - 1)
+                n -= 1
+            if n > target:
+                self.page_count.blockSignals(True)
+                self.page_count.setValue((n + 1) // 2)
+                self.page_count.blockSignals(False)
+                target = self.page_count.value() * 2
+            while n < target:
+                self._add_page_item(None)
+                n += 1
+        finally:
+            self._syncing = False
+
+    def _spread_rows(self, s):
+        n = self.pages.count()
+        if s == 0:
+            return (None, 0 if n else None)
+        return (2 * s - 1 if 2 * s - 1 < n else None, 2 * s if 2 * s < n else None)
+
+    def _spread_selected(self, s):
+        left, right = self._spread_rows(max(0, s))
+        row = right if right is not None else left
+        if row is not None:
+            self.pages.setCurrentRow(row)
+
+    def _describe_page(self, i):
+        item = self.pages.item(i)
+        layers = item.data(self.LAYERS_ROLE) or []
+        bits = []
+        if item.data(self.TEXT_ROLE):
+            bits.append('text')
+        if item.data(Qt.ItemDataRole.UserRole):
+            bits.append('full-page picture')
+        texts = sum(1 for l in layers if l.get('text') and not l.get('spread'))
+        pics = sum(1 for l in layers if not l.get('text') and not l.get('spread'))
+        if texts:
+            bits.append('text' if texts == 1 else f'{texts} texts')
+        if pics:
+            bits.append('1 picture' if pics == 1 else f'{pics} pictures')
+        return ', '.join(bits) or 'blank'
+
+    def _spread_thumb(self, s, images, book):
+        """Small picture of an open spread: both pages with what is on them."""
+        W, H = 136, 92
+        pix = QPixmap(W, H)
+        pix.fill(QColor('#24242a'))
+        aspect = float(book.get('page_aspect', 1.43))
+        ph = H - 8
+        pw = min(int(ph / aspect), (W - 10) // 2)
+        ph = int(pw * aspect)
+        x0, y0 = (W - 2 * pw - 2) // 2, (H - ph) // 2
+        p = QPainter(pix)
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        left, right = self._spread_rows(s)
+        cache = self.__dict__.setdefault('_thumb_cache', {})
+
+        def img(path):
+            if not path or not Path(path).exists():
+                return None
+            key = (str(path), Path(path).stat().st_mtime_ns, pw, ph)
+            if key not in cache:
+                if len(cache) > 400:
+                    cache.clear()
+                q = QPixmap(str(path))
+                cache[key] = None if q.isNull() else q.scaled(pw, ph, Qt.AspectRatioMode.IgnoreAspectRatio,
+                                                              Qt.TransformationMode.SmoothTransformation)
+            return cache[key]
+        for k, row in enumerate((left, right)):
+            x = x0 + k * (pw + 2)
+            if row is None:
+                field = 'front_interior_image' if s == 0 else 'back_interior_image'
+                cover = img(templates._texture_path(book, book.get(field)))
+                if cover is not None:
+                    p.drawPixmap(x, y0, cover)
+                else:
+                    p.fillRect(x, y0, pw, ph, QColor('#5a3018'))
+                continue
+            field = 'paper_odd_image' if row % 2 == 0 else 'paper_even_image'
+            paper = img(templates._texture_path(book, book.get(field) or book.get('paper_image')))
+            if paper is not None:
+                p.drawPixmap(x, y0, paper)
+            else:
+                p.fillRect(x, y0, pw, ph, QColor('#e8dcc4'))
+            content = img(images[row]) if row < len(images) else None
+            if content is not None:
+                p.drawPixmap(x, y0, content)
+        p.end()
+        return QIcon(pix)
+
+    def _rebuild_spreads(self):
+        if not hasattr(self, 'spreads') or not self.books:
+            return
+        book = self._book()
+        try:
+            images = self._content_images()
+        except Exception:  # a broken picture must not empty the list
+            images = [None] * self.pages.count()
+        cur = max(0, self.spreads.currentRow())
+        n = self.pages.count()
+        count = 1 + n // 2 if n else 0
+        self.spreads.blockSignals(True)
+        self.spreads.clear()
+        for s in range(count):
+            left, right = self._spread_rows(s)
+            if s == 0:
+                title = 'Inside cover  ·  page 1'
+                what = self._describe_page(0)
+            elif right is None:
+                title = f'Page {left + 1}  ·  back cover'
+                what = self._describe_page(left)
+            else:
+                title = f'Pages {left + 1} – {right + 1}'
+                across = any(l.get('spread') for l in (self.pages.item(left).data(self.LAYERS_ROLE) or []))
+                a, b = self._describe_page(left), self._describe_page(right)
+                what = ('picture across both pages' + ('' if (a, b) == ('blank', 'blank') else
+                                                       f'  ·  {a}  |  {b}')) if across else f'{a}  |  {b}'
+                if not across and a == b == 'blank':
+                    what = 'blank'
+            item = QListWidgetItem(self._spread_thumb(s, images, book), f'{title}\n{what}')
+            item.setSizeHint(QSize(0, 98))
+            self.spreads.addItem(item)
+        self.spreads.setCurrentRow(min(cur, count - 1))
+        self.spreads.blockSignals(False)
+
+    def _page_menu(self):
+        menu = QMenu(self)
+        left, right = self._spread_rows(max(0, self.spreads.currentRow()))
+        rows = [r for r in (left, right) if r is not None]
+        for r in rows:
+            sub = menu.addMenu(f'Page {r + 1}  ({self._describe_page(r)})')
+            a = sub.addAction('Move it one page earlier', lambda r=r: self._swap_pages(r, r - 1))
+            a.setEnabled(r > 0)
+            a = sub.addAction('Move it one page later', lambda r=r: self._swap_pages(r, r + 1))
+            a.setEnabled(r + 1 < self.pages.count())
+            sub.addAction('Make it blank (keep the page)', lambda r=r: self._blank_page(r))
+            sub.addAction('Remove it (the pages after it move up)', lambda r=r: self._remove_page_at(r))
+        menu.addSeparator()
+        menu.addAction('Make every page blank…', self._clear_pages)
+        return menu
+
+    def _swap_pages(self, a, b):
+        if not (0 <= a < self.pages.count() and 0 <= b < self.pages.count()):
+            return
+        lo, hi = min(a, b), max(a, b)
+        item = self.pages.takeItem(hi)
+        self.pages.insertItem(lo, item)
+        self._pages_changed()
+        self.spreads.setCurrentRow(0 if b == 0 else (b + 1) // 2)
+
+    def _blank_page(self, r):
+        item = self.pages.item(r)
+        for role in (Qt.ItemDataRole.UserRole, self.TEXT_ROLE):
+            item.setData(role, '')
+        item.setData(self.LAYERS_ROLE, [])
+        item.setIcon(QIcon())
+        self._pages_changed()
+
+    def _remove_page_at(self, r):
+        self.pages.takeItem(r)
+        self._pages_changed()
+
+    def _video_turns(self):
+        """How many pages turn in the video: every page, or fewer if asked."""
+        turns = layout_pages(self.pages.count())[0]
+        if hasattr(self, 'turn_limit') and not getattr(self, '_turn_limit_all', True):
+            return min(turns, self.turn_limit.value())
+        return turns
+
+    def _turns_changed(self, v):
+        self._turn_limit_all = v >= self.turn_limit.maximum()
+        if not getattr(self, '_syncing', False):
+            self._update_summary()
 
     def _remove_page(self):
-        for item in self.pages.selectedItems():
-            self.pages.takeItem(self.pages.row(item))
-        self._pages_changed()
+        row = self.pages.currentRow()
+        if row >= 0:
+            self._remove_page_at(row)
 
     def _move_page(self, step):
         row = self.pages.currentRow()
@@ -1247,38 +1487,24 @@ class Studio(QMainWindow):
         self._pages_changed()
 
     def _pages_changed(self, *_):
+        self._sync_page_count()
         n = self.pages.count()
-        for i in range(n):
-            item = self.pages.item(i)
-            path = item.data(Qt.ItemDataRole.UserRole)
-            text = item.data(self.TEXT_ROLE)
-            if text:
-                preview = ' '.join(text.split())
-                name = f'“{preview[:36]}{"…" if len(preview) > 36 else ""}”'
-            elif path:
-                name = Path(path).name
-            else:
-                name = '(blank paper)'
-            layers = item.data(self.LAYERS_ROLE) or []
-            n_own = sum(1 for l in layers if not l.get('spread'))
-            if n_own:
-                name += f'  + {n_own} picture{"s" if n_own > 1 else ""}'
-            if len(layers) > n_own:
-                name += f'  + picture across pages {i + 1}-{i + 2}'
-                if not path and not text:
-                    first = layers[0].get('image', '')
-                    item.setIcon(QIcon(QPixmap(first).scaled(48, 48, Qt.AspectRatioMode.KeepAspectRatio,
-                                                             Qt.TransformationMode.SmoothTransformation)))
-            elif not path:
-                item.setIcon(QIcon())
-            side = 'right' if i % 2 == 0 else 'left'
-            item.setText(f'{i + 1}. {name}  —  {side}')
         turns = layout_pages(n)[0]
+        self._syncing = True
+        all_turns = getattr(self, '_turn_limit_all', True)
+        self.turn_limit.setMaximum(max(turns, 0))
+        if all_turns or self.turn_limit.value() > turns:
+            self.turn_limit.setValue(turns)
+        self._syncing = False
+        self.turn_of.setText(f'of {turns}')
+        filled = sum(1 for i in range(n) if not self._page_is_blank(i))
+        self.page_summary.setText(f'{n} pages  ·  {self.page_count.value()} sheets  ·  '
+                                  f'{filled} with something on them')
         need = required_size(self._book(), 'page') if self.books else None
-        size = f' Page images: {need[0]} × {need[1]} px.' if need else ''
-        self.layout_hint.setText(
-            f'The book opens on the inside cover (left) and page 1 (right). Each turn reveals the next two. '
-            f'{n} page(s) → {turns} page turn(s). Drag to reorder.{size}')
+        size = f' Full-page pictures are made {need[0]} × {need[1]} px.' if need else ''
+        self.layout_hint.setText('Each row is the book open at two pages. Double-click a row to put pictures '
+                                 'or text on it; right-click to move or remove a page.' + size)
+        self._rebuild_spreads()
         self._update_summary()
 
     def _set_pages(self, pages):
@@ -1308,6 +1534,7 @@ class Studio(QMainWindow):
                     open_at=book_model.OPEN_AT[self.open_at.currentText()], open_at_label=self.open_at.currentText(),
                     curl=self.curl.value() / 100, cam=self._cam(), quality=self.quality.currentText(),
                     blend=self.blend.currentText(), page_count=self.page_count.value(),
+                    turn_limit=None if getattr(self, '_turn_limit_all', True) else self.turn_limit.value(),
                     smoothness=self.smooth.value() / 100, recorded_clips=self.recorded_clips,
                     clip_list=self.edited_clips, transform=self._transform(),
                     page_shape=self.page_shape.currentData() or 'flat',
@@ -1337,6 +1564,12 @@ class Studio(QMainWindow):
             self.curl.setValue(round(float(v['curl']) * 100))
         if 'page_count' in v:
             self.page_count.setValue(int(v['page_count']))
+        if v.get('turn_limit') is not None and hasattr(self, 'turn_limit'):
+            self._turn_limit_all = False
+            self.turn_limit.setMaximum(max(self.turn_limit.maximum(), int(v['turn_limit'])))
+            self.turn_limit.setValue(int(v['turn_limit']))
+        elif hasattr(self, 'turn_limit'):
+            self._turn_limit_all = True
         if isinstance(v.get('cam'), dict):
             self._set_cam(v['cam'])
         self._set_transform(v.get('transform'))
@@ -1618,7 +1851,7 @@ class Studio(QMainWindow):
         its clips; turn clips are only added at the end (or removed from the end) to match."""
         if not self.books or not hasattr(self, 'timeline_panel'):
             return
-        turns = layout_pages(self.pages.count())[0]
+        turns = self._video_turns()
         if not self._timeline_hand_edited:
             self._init_timeline()
             return
@@ -1668,7 +1901,7 @@ class Studio(QMainWindow):
         if not self.books:
             return
         v = self._values()
-        turns = layout_pages(self.pages.count())[0]
+        turns = self._video_turns()
         open_sec = v['open_seconds'] if v['start_closed'] else 0.0
         tl = ClipTimeline(turns, v['fps'], v['start_hold'], v['turn_seconds'], v['pause'],
                           v['end_hold'], open_sec, smoothness=v['smoothness'])
@@ -1714,6 +1947,30 @@ class Studio(QMainWindow):
         self.time_label.setText(f'{frame / fps:4.1f} / {(total - 1) / fps:.1f} s')
         if not self.live.playing:
             self.play_btn.setText('▶ Play')
+        self._update_where(frame)
+
+    def _update_where(self, frame=None):
+        """The page counter in the live view's corner, and the open pages marked in the page list."""
+        if self.live is None:
+            return
+        if not hasattr(self, 'where_label'):
+            self.where_label = QLabel(self.live)
+            self.where_label.setStyleSheet('background: rgba(20,20,24,190); color: #f2d8a8; padding: 5px 10px;'
+                                           'border-radius: 6px; font-weight: 600;')
+            self.where_label.move(12, 12)
+        text = self.live.where(frame) if self.show_where.isChecked() else ''
+        self.where_label.setVisible(bool(text) and not self.live.true_shape)
+        if text:
+            self.where_label.setText(text)
+            self.where_label.adjustSize()
+        if hasattr(self, 'spreads') and text and not self.spreads.hasFocus():
+            import re
+            m = re.search(r'pages? (\d+)[–-](\d+)', text.lower())
+            s = 0 if ('page 1' in text and 'Inside' in text) else (int(m.group(1)) // 2 if m else None)
+            if s is not None and s < self.spreads.count() and self.spreads.currentRow() != s:
+                self.spreads.blockSignals(True)
+                self.spreads.setCurrentRow(s)
+                self.spreads.blockSignals(False)
 
     def _live_failed(self, reason):
         """No usable OpenGL on this PC: fall back to the outline view."""
