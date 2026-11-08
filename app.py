@@ -993,6 +993,7 @@ class Studio(QMainWindow):
                 preview = (self._content_images(), self._values())
             except Exception:  # no pages yet or a broken setting: compare is just not offered
                 preview = None
+            old_aspect = float(self._book().get('page_aspect', 1.4318))
             dlg = JournalDialog(self._book(), self, preview=preview)
             if dlg.exec() == QDialog.DialogCode.Accepted:
                 reshaped = dlg.shape_changed()
@@ -1000,6 +1001,7 @@ class Studio(QMainWindow):
                 self._reload_books(saved['folder'])
                 if reshaped:
                     self._refit_pages()
+                    self._rescale_pictures(old_aspect, float(self._book().get('page_aspect', old_aspect)))
                 self._pages_changed()
                 self._refresh_live()          # show the new images right away
                 self.status.setText(f'Saved book "{saved["name"]}". The live view shows the new design.')
@@ -1009,6 +1011,26 @@ class Studio(QMainWindow):
             saved = templates.save(dlg.result_book(), dlg.new_image, dlg.art_images)
             self._reload_books(saved['folder'])
             self.status.setText(f'Saved book "{saved["name"]}". Press "Preview still" to see it.')
+
+    def _rescale_pictures(self, old_aspect, new_aspect):
+        """Pictures and text on the pages follow a new page shape. Their place is kept as a share of
+        the page; their size follows the page's height (shorter page = smaller pictures, taller =
+        bigger), never wider than the page, so they keep their proportions and still fit."""
+        r = new_aspect / max(1e-6, old_aspect)
+        if abs(r - 1.0) < 1e-3:
+            return
+        for i in range(self.pages.count()):
+            layers = self.pages.item(i).data(self.LAYERS_ROLE) or []
+            if not layers:
+                continue
+            out = []
+            for l in layers:
+                l = dict(l)
+                w = float(l.get('w', 0.6))
+                limit = 0.98 if l.get('spread') else 0.95
+                l['w'] = round(w * r if r < 1 else min(w * r, max(w, limit)), 4)
+                out.append(l)
+            self.pages.item(i).setData(self.LAYERS_ROLE, out)
 
     def _copy_book(self):
         name, ok = QInputDialog.getText(self, 'Make a copy', 'Name for the new book:',

@@ -1,5 +1,8 @@
 # Changes
 
+## 0.12.1
+- **Pictures and text follow a new page shape**: when you make the pages shorter or taller in Change book design, the pictures and text on them grow or shrink with the page, keeping their proportions and their place on the page (never wider than the page). Before, they kept their width, so on a shorter page they looked too big and could run off the edge.
+
 ## 0.12.0
 - **A clearer Pages panel**: the book is shown as it opens, one row per open spread ("Inside cover - page 1", "Pages 2 - 3", ...), each with a small picture of both pages and what is on them. Double-click a row to put pictures or text on those pages; right-click (or "This page") to move a page earlier or later, make it blank or remove it.
 - **Add pages** menu, in plain words: 2 blank pages (one more sheet), pages from pictures (each picture fills a whole page), or a page of text. New pages go right after the last page that has something on it.
