@@ -16,10 +16,11 @@ def main():
     qt = QApplication(sys.argv)
     w = app.Studio()
     w.show()
+    w._pages_changed()
+    n = w.pages.count()
+    assert n == 2 * w.page_count.value()              # the book always has all its pages
     w._add_blank()
-    w._add_blank()
-    w._add_blank()
-    assert w.pages.count() == 3
+    assert w.pages.count() == n + 2                   # one more sheet = two more pages
     w._move_page(-1)
     assert 'turn' in w.summary.text()
     state = w._state()
