@@ -51,7 +51,7 @@ jobs:
 
       - name: Build app folder
         run: >
-          pyinstaller --noconfirm --clean --windowed --name Handyman
+          pyinstaller --noconfirm --clean --windowed --name MotionCraft
           --icon assets/icon.ico
           --add-data "book_scene.py;."
           --add-data "page_curl.py;."
@@ -77,19 +77,19 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         shell: bash
         run: |
-          test -f dist/Handyman/Handyman.exe
-          test -f dist/Handyman/_internal/book_scene.py
-          test -f dist/Handyman/_internal/page_curl.py
-          test -f dist/Handyman/_internal/camera_fit.py
-          test -f dist/Handyman/_internal/book_model.py
-          test -f dist/Handyman/_internal/scene.py
-          test -f dist/Handyman/_internal/clips.py
-          test -f dist/Handyman/_internal/journal_scene.py
-          test -f dist/Handyman/_internal/journal_geom.py
-          test -f dist/Handyman/_internal/gltf_export.py
-          test -f dist/Handyman/_internal/resources/viewer/viewer.html
-          test -f dist/Handyman/_internal/resources/viewer/three.module.js
-          test -f dist/Handyman/_internal/resources/books/leather-journal/book.json
+          test -f dist/MotionCraft/MotionCraft.exe
+          test -f dist/MotionCraft/_internal/book_scene.py
+          test -f dist/MotionCraft/_internal/page_curl.py
+          test -f dist/MotionCraft/_internal/camera_fit.py
+          test -f dist/MotionCraft/_internal/book_model.py
+          test -f dist/MotionCraft/_internal/scene.py
+          test -f dist/MotionCraft/_internal/clips.py
+          test -f dist/MotionCraft/_internal/journal_scene.py
+          test -f dist/MotionCraft/_internal/journal_geom.py
+          test -f dist/MotionCraft/_internal/gltf_export.py
+          test -f dist/MotionCraft/_internal/resources/viewer/viewer.html
+          test -f dist/MotionCraft/_internal/resources/viewer/three.module.js
+          test -f dist/MotionCraft/_internal/resources/books/leather-journal/book.json
 
       - name: Build installer
         shell: pwsh
@@ -98,13 +98,13 @@ jobs:
             choco install innosetup -y --no-progress
             $env:PATH += ";C:\Program Files (x86)\Inno Setup 6"
           }
-          iscc /DMyAppVersion=${{ steps.ver.outputs.version }} installer\handyman.iss
+          iscc /DMyAppVersion=${{ steps.ver.outputs.version }} installer\motioncraft.iss
 
       - name: Keep installer as a build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Handyman-Setup-${{ steps.ver.outputs.version }}
-          path: dist/Handyman-Setup-*.exe
+          name: MotionCraft-Setup-${{ steps.ver.outputs.version }}
+          path: dist/MotionCraft-Setup-*.exe
           if-no-files-found: error
 
       - name: Publish release (only for a new version)
@@ -119,4 +119,4 @@ jobs:
             exit 0
           fi
           NOTES="$(python -c "import re,sys;t=open('CHANGES.md',encoding='utf-8').read();m=re.search(r'## '+re.escape('$V')+r'\n(.*?)(\n## |\Z)',t,re.S);print(m.group(1).strip() if m else 'Update.')")"
-          gh release create "v$V" dist/Handyman-Setup-$V.exe --target "$GITHUB_SHA" --title "Handyman $V" --notes "$NOTES"
+          gh release create "v$V" dist/MotionCraft-Setup-$V.exe --target "$GITHUB_SHA" --title "MotionCraft $V" --notes "$NOTES"

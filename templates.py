@@ -1,6 +1,6 @@
 """Book templates: a folder with book.json and its images (emblem, optional textures).
 
-Templates live in the user folder (%APPDATA%\\Handyman\\books), so your own designs
+Templates live in the user folder (%APPDATA%\\MotionCraft\\books), so your own designs
 never go into the app's public code. The app ships one plain starter book.
 """
 import json

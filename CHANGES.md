@@ -1,5 +1,9 @@
 # Changes
 
+## 0.13.0
+- **Handyman is now MotionCraft**: the app has its new name in the window, the Start menu and the desktop shortcut. This update moves it into a MotionCraft program folder and removes the old Handyman one and its shortcuts.
+- **Nothing of yours is lost**: your books, templates, settings and logs are carried over from the Handyman folder the first time MotionCraft starts, and your saved projects open as before.
+
 ## 0.12.1
 - **Pictures and text follow a new page shape**: when you make the pages shorter or taller in Change book design, the pictures and text on them grow or shrink with the page, keeping their proportions and their place on the page (never wider than the page). Before, they kept their width, so on a shorter page they looked too big and could run off the edge.
 

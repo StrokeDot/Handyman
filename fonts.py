@@ -2,7 +2,7 @@
 
 The list is StrokeScribe's: open-licensed Google Fonts (OFL or Apache 2.0, free also for
 commercial use), downloaded only when you choose one, each saved with its original licence.
-Handyman uses StrokeScribe's own font folder, so a font you already have there is ready here
+MotionCraft uses StrokeScribe's own font folder, so a font you already have there is ready here
 too, and the other way round. You can also bring a font file of your own.
 """
 from __future__ import annotations
@@ -88,7 +88,7 @@ def imported_fonts():
 def _read_url(url, binary=False):
     from urllib.request import Request, urlopen
     req = Request(url, headers={
-        'User-Agent': 'Handyman-font-installer/1.0',
+        'User-Agent': 'MotionCraft-font-installer/1.0',
         'Accept': 'application/vnd.github+json' if not binary else 'application/octet-stream',
     })
     with urlopen(req, timeout=30) as response:

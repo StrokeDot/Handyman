@@ -50,7 +50,7 @@ jobs:
         id: blender
         run: |
           mkdir -p out
-          UA="Mozilla/5.0 (X11; Linux x86_64) handyman-ci"
+          UA="Mozilla/5.0 (X11; Linux x86_64) motioncraft-ci"
           curl -sSL -A "$UA" https://download.blender.org/release/ -o out/releases.html
           DIR=$(grep -oE 'Blender[0-9]+\.[0-9]+/' out/releases.html | sort -u -V | tail -1)
           curl -sSL -A "$UA" "https://download.blender.org/release/$DIR" -o out/dir.html
@@ -72,7 +72,7 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
           mkdir -p ~/blender
-          curl -sSL -A "Mozilla/5.0 handyman-ci" "${{ steps.blender.outputs.url }}" | tar -xJ -C ~/blender --strip-components=1
+          curl -sSL -A "Mozilla/5.0 motioncraft-ci" "${{ steps.blender.outputs.url }}" | tar -xJ -C ~/blender --strip-components=1
 
       - name: System libraries
         run: |
@@ -104,12 +104,12 @@ jobs:
       # landing at the path the app's preview widget loads.
       - name: Configure Blender for integration tests
         run: |
-          echo "HANDYMAN_BLENDER=$HOME/blender/blender" >> "$GITHUB_ENV"
+          echo "MOTIONCRAFT_BLENDER=$HOME/blender/blender" >> "$GITHUB_ENV"
           test -x "$HOME/blender/blender" && echo "Blender found: $HOME/blender/blender"
 
       - name: Template and first-spread integration tests
         run: |
-          test -x "$HANDYMAN_BLENDER"
+          test -x "$MOTIONCRAFT_BLENDER"
           python test_new_book_flow.py 2>&1 | tee out/run_new_book.log; exit ${PIPESTATUS[0]}
 
       - name: Template upgrade / user-work preservation tests

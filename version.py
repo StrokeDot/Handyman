@@ -1,6 +1,8 @@
 """Single place for the app's name and version. Bumping APP_VERSION on main publishes a release."""
-APP_NAME = 'Handyman'
-APP_VERSION = '0.12.1'
+APP_NAME = 'MotionCraft'
+# the app's earlier name: its folders and settings are carried over on first start
+OLD_NAME = 'Handyman'
+APP_VERSION = '0.13.0'
 # GitHub's permanent repository ID: update checks keep working even if the repo is renamed.
 REPO_ID = 1423040943
 

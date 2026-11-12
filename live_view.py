@@ -56,7 +56,7 @@ LOG_MAX = 2_000_000        # bytes: the log starts over beyond this (it once gre
 
 
 def log_problem(msg):
-    """Append a live-view error with its traceback to Handyman/logs/live_view.log. The same error
+    """Append a live-view error with its traceback to MotionCraft/logs/live_view.log. The same error
     is written once a minute at most (a failing frame repeats 30 times a second)."""
     import datetime
     import time

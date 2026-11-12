@@ -17,7 +17,7 @@ def test_versions():
 
 
 def test_pick_installer():
-    rel = {'assets': [{'name': 'notes.txt'}, {'name': 'Handyman-Setup-0.3.0.exe', 'browser_download_url': 'u'}]}
+    rel = {'assets': [{'name': 'notes.txt'}, {'name': 'MotionCraft-Setup-0.3.0.exe', 'browser_download_url': 'u'}]}
     assert updater.pick_installer(rel)['name'].endswith('.exe')
     assert updater.pick_installer({'assets': []}) is None
 
@@ -71,7 +71,7 @@ def test_0_6_0_release_is_detected():
     import updater
     assert updater.is_newer('0.6.0', '0.5.0')
     assert updater.is_newer('v0.6.0', '0.5.0')
-    asset = {'name': 'Handyman-Setup-0.6.0.exe', 'browser_download_url': 'u',
+    asset = {'name': 'MotionCraft-Setup-0.6.0.exe', 'browser_download_url': 'u',
              'size': 123, 'digest': 'sha256:abc'}
     release = {'tag_name': 'v0.6.0', 'assets': [{'name': 'notes.txt'}, asset]}
     assert updater.pick_installer(release) is asset
@@ -89,3 +89,16 @@ if __name__ == '__main__':
         if name.startswith('test_'):
             fn()
             print('ok', name)
+
+
+def test_the_old_handyman_folder_is_carried_over_to_motioncraft(tmp_path, monkeypatch):
+    import paths
+    old = tmp_path / 'Handyman' / 'books' / 'my-book'
+    old.mkdir(parents=True)
+    (old / 'book.json').write_text('{}')
+    monkeypatch.setenv('APPDATA', str(tmp_path))
+    d = paths.user_dir()
+    assert d == tmp_path / 'MotionCraft'
+    assert (d / 'books' / 'my-book' / 'book.json').exists()
+    (d / 'new.txt').write_text('x')
+    assert paths.user_dir() == d and (d / 'new.txt').exists()     # later starts leave it alone

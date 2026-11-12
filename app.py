@@ -1,4 +1,4 @@
-"""Handyman: 3D book page-turn overlays with transparent backgrounds.
+"""MotionCraft: 3D book page-turn overlays with transparent backgrounds.
 
 Pick a book template and your page images, adjust the timing, press Render.
 Blender does the 3D work in the background; you never need to open it.
@@ -48,7 +48,7 @@ except Exception as _exc:  # PySide6 without OpenGL widgets, or PyOpenGL missing
 from page_curl import Timeline, layout_pages
 from timeline_panel import TimelinePanel
 from clips import Clip, ClipTimeline, clip_from_dict, clip_to_dict
-from version import APP_NAME, APP_VERSION
+from version import APP_NAME, APP_VERSION, OLD_NAME
 
 APP_STYLE = """
 QGroupBox { font-weight: 600; font-size: 13px; border: 1px solid #3a3a42; border-radius: 8px;
@@ -275,6 +275,10 @@ class Studio(QMainWindow):
         if icon.exists():
             self.setWindowIcon(QIcon(str(icon)))
         self.settings = QSettings('StrokeDot', APP_NAME)
+        if not self.settings.allKeys():                # first start after the rename: keep the old settings
+            old = QSettings('StrokeDot', OLD_NAME)
+            for key in old.allKeys():
+                self.settings.setValue(key, old.value(key))
         self.worker = None
         self.update_thread = None
         self.preview_frames, self.preview_index = [], 0
@@ -1785,7 +1789,7 @@ class Studio(QMainWindow):
             QMessageBox.warning(
                 self, APP_NAME,
                 'The "Leather Journal" template is not installed.\n'
-                'Reinstall Handyman, or check your books folder.')
+                'Reinstall MotionCraft, or check your books folder.')
             return
 
         # Never discard unsaved work silently.
@@ -1820,7 +1824,7 @@ class Studio(QMainWindow):
 
     def _save_project(self):
         path, _ = QFileDialog.getSaveFileName(self, 'Save project', self.settings.value('proj_dir', ''),
-                                              'Handyman project (*.hmproj)')
+                                              'MotionCraft project (*.hmproj)')
         if path:
             Path(path).write_text(json.dumps(self._state(), indent=2), encoding='utf-8')
             self.settings.setValue('proj_dir', str(Path(path).parent))
@@ -1828,7 +1832,7 @@ class Studio(QMainWindow):
 
     def _open_project(self):
         path, _ = QFileDialog.getOpenFileName(self, 'Open project', self.settings.value('proj_dir', ''),
-                                              'Handyman project (*.hmproj)')
+                                              'MotionCraft project (*.hmproj)')
         if not path:
             return
         try:
@@ -2344,6 +2348,10 @@ def main():
         'QCheckBox::indicator{width:15px;height:15px;border:1px solid #8a8a92;border-radius:3px;background:#2a2a30}'
         'QCheckBox::indicator:hover{border-color:#c0c0c8}'
         f'QCheckBox::indicator:checked{{background:#2f7de1;border-color:#2f7de1;image:url("{check}")}}')
+    try:
+        paths.remove_old_install()
+    except Exception:
+        pass
     w = Studio()
     w.resize(1440, 860)
     w.show()

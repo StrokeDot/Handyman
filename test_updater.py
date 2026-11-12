@@ -25,7 +25,7 @@ class Resp:
 
 def release(version='9.9.9'):
     return {'tag_name': f'v{version}', 'body': 'notes',
-            'assets': [{'name': 'Handyman-Setup-9.9.9.exe', 'size': 5,
+            'assets': [{'name': 'MotionCraft-Setup-9.9.9.exe', 'size': 5,
                         'browser_download_url': 'http://x/y.exe', 'digest': 'sha256:abc'}]}
 
 
@@ -104,7 +104,7 @@ def test_meta_avoids_the_api(real):
         target = getattr(url, 'full_url', str(url))
         if target.startswith('https://raw.githubusercontent.com'):
             return Resp({'version': '9.9.9', 'url': 'http://x/y.exe', 'size': 5,
-                         'name': 'Handyman-Setup-9.9.9.exe', 'digest': 'abc'})
+                         'name': 'MotionCraft-Setup-9.9.9.exe', 'digest': 'abc'})
         raise AssertionError('the GitHub API should not be called')
     updater.urllib.request.urlopen = meta_only
     result = updater.check(manual=True)

@@ -2,7 +2,9 @@
 #ifndef MyAppVersion
   #define MyAppVersion "0.0.0"
 #endif
-#define MyAppName "Handyman"
+#define MyAppName "MotionCraft"
+; the app's earlier name: its program folder and shortcuts are removed on update
+#define OldAppName "Handyman"
 
 [Setup]
 AppId={{6F1E5C2A-4B7D-4C8E-9A51-3D2B7E0F9C14}
@@ -10,6 +12,9 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
 DefaultDirName={localappdata}\Programs\{#MyAppName}
+; same AppId as Handyman, so this is an update; but install into the new MotionCraft folder
+UsePreviousAppDir=no
+UsePreviousGroup=no
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 DisableDirPage=yes
@@ -32,6 +37,10 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 [InstallDelete]
 ; Remove the previous version's program files (your books and settings live elsewhere and stay).
 Type: filesandordirs; Name: "{app}\_internal"
+; the old Handyman program folder and shortcuts (the app also tidies these on its first start)
+Type: filesandordirs; Name: "{localappdata}\Programs\{#OldAppName}"
+Type: files; Name: "{autoprograms}\{#OldAppName}.lnk"
+Type: files; Name: "{autodesktop}\{#OldAppName}.lnk"
 
 [Files]
 Source: "..\dist\{#MyAppName}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
