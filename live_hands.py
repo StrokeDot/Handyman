@@ -106,35 +106,189 @@ class LiveHands:
                     pass
         self._tex = {}
 
-    def draw(self, frame):
+    # ------------------------------------------------------------ shading
+    def _program(self):
+        """The hands' shading (compiled once): light glowing through the skin near the shadow
+        line, a soft skin shine, suede's velvety edge sheen and mottled nap. None if this
+        computer's OpenGL cannot compile it (then the plain lighting is used)."""
+        if getattr(self, '_prog_tried', False):
+            return self._prog
+        self._prog_tried, self._prog = True, None
+        try:
+            from OpenGL.GL import shaders
+            vs = shaders.compileShader(_VERTEX, gl.GL_VERTEX_SHADER)
+            fs = shaders.compileShader(_FRAGMENT, gl.GL_FRAGMENT_SHADER)
+            self._prog = shaders.compileProgram(vs, fs, validate=False)
+        except Exception:
+            self._prog = None
+        return self._prog
+
+    def _shadow(self, parts, sun, z, clip):
+        """A soft shadow of the hands on the book (the light straight down its direction onto a
+        plane just over the pages), drawn a few times with the light slightly moved."""
+        sun = np.asarray(sun, np.float32)
+        sun = sun / np.linalg.norm(sun)
+        gl.glDisable(gl.GL_LIGHTING)
+        gl.glDisable(gl.GL_TEXTURE_2D)
+        gl.glEnable(gl.GL_BLEND)
+        gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
+        gl.glDisableClientState(gl.GL_NORMAL_ARRAY)
+        if clip is not None:                                       # only on the book (held up: no table)
+            x0, x1, y0, y1 = clip
+            for i, eq in enumerate(((1, 0, 0, -x0), (-1, 0, 0, x1), (0, 1, 0, -y0), (0, -1, 0, y1))):
+                gl.glClipPlane(gl.GL_CLIP_PLANE0 + i, eq)
+                gl.glEnable(gl.GL_CLIP_PLANE0 + i)
+        # each pass darkens a spot only once, however many bits of hand overlap there (stencil)
+        gl.glClear(gl.GL_STENCIL_BUFFER_BIT)
+        gl.glEnable(gl.GL_STENCIL_TEST)
+        gl.glStencilOp(gl.GL_KEEP, gl.GL_KEEP, gl.GL_REPLACE)
+        gl.glDepthMask(gl.GL_FALSE)
+        jitter = ((0, 0), (0.08, 0.03), (-0.06, 0.07), (0.04, -0.08), (-0.09, -0.03), (0.02, 0.1))
+        for i, (jx, jy) in enumerate(jitter):
+            d = sun + np.array((jx, jy, 0.0), np.float32)
+            gl.glStencilFunc(gl.GL_GREATER, i + 1, 0xFF)
+            gl.glColor4f(0.07, 0.05, 0.04, 0.055)
+            for v in parts:
+                # onto the page under it: the left and the right side of an open book lie at
+                # different heights (z = (height left of the spine, height right of it))
+                zi = np.where(v[:, 0:1] < 0.0, z[0], z[1]).astype(np.float32) if np.ndim(z) else np.full((len(v), 1), z, np.float32)
+                t = (v[:, 2:3] - zi) / d[2]
+                p = np.ascontiguousarray(np.concatenate([v[:, :2] - t * d[:2], zi], 1), np.float32)
+                keep = (v[:, 2:3] > zi - 0.02)[:, 0]               # (nothing below the page casts on it)
+                if not keep.all():
+                    p = p.reshape(-1, 3, 3)[keep.reshape(-1, 3).all(1)].reshape(-1, 3)
+                if len(p):
+                    gl.glVertexPointer(3, gl.GL_FLOAT, 0, p)
+                    gl.glDrawArrays(gl.GL_TRIANGLES, 0, len(p))
+        for i in range(4):
+            gl.glDisable(gl.GL_CLIP_PLANE0 + i)
+        gl.glDisable(gl.GL_STENCIL_TEST)
+        gl.glDepthMask(gl.GL_TRUE)
+        gl.glDisable(gl.GL_BLEND)
+        gl.glEnableClientState(gl.GL_NORMAL_ARRAY)
+        gl.glEnable(gl.GL_LIGHTING)
+
+    def draw(self, frame, sun=(0.45, -0.55, 0.85), shadow_z=None, shadow_clip=None):
         gl.glEnableClientState(gl.GL_VERTEX_ARRAY)
         gl.glEnableClientState(gl.GL_NORMAL_ARRAY)
         gl.glDisable(gl.GL_CULL_FACE)
-        for h in self.hands:
-            for name, part in h['parts'].items():
-                v, n = part.corner_arrays(frame)
-                gl.glVertexPointer(3, gl.GL_FLOAT, 0, v)
-                gl.glNormalPointer(gl.GL_FLOAT, 0, n)
-                uv = part.uv
-                if name == 'skin':
-                    tex = self._texture(h.get('skin_picture'))
-                    if tex and not h.get('skin_is_photo'):
-                        uv = part.uv * 4.0                      # a glove's leather, repeated
-                else:
-                    tex = self._texture(h.get('sleeve_picture'))
-                    if tex:
-                        uv = part.uv / SLEEVE_TILE_M             # the sleeve's UVs are in metres
+        arrays = [(h, name, part, *part.corner_arrays(frame)) for h in self.hands for name, part in h['parts'].items()]
+        if shadow_z is not None:
+            try:
+                self._shadow([a[3] for a in arrays], sun, shadow_z, shadow_clip)
+            except Exception:
+                pass
+        prog = self._program()
+        for h, name, part, v, n in arrays:
+            gl.glVertexPointer(3, gl.GL_FLOAT, 0, v)
+            gl.glNormalPointer(gl.GL_FLOAT, 0, n)
+            uv = part.uv
+            photo = False
+            if name == 'skin':
+                tex = self._texture(h.get('skin_picture'))
+                photo = bool(tex and h.get('skin_is_photo'))
+                if tex and not photo:
+                    uv = part.uv * 4.0                      # a glove's leather, repeated
+            else:
+                tex = self._texture(h.get('sleeve_picture'))
                 if tex:
-                    gl.glEnable(gl.GL_TEXTURE_2D)
-                    gl.glBindTexture(gl.GL_TEXTURE_2D, tex)
-                    gl.glColor3f(1, 1, 1)
-                    gl.glEnableClientState(gl.GL_TEXTURE_COORD_ARRAY)
-                    gl.glTexCoordPointer(2, gl.GL_FLOAT, 0, np.ascontiguousarray(uv, np.float32))
-                else:
-                    gl.glDisable(gl.GL_TEXTURE_2D)
-                    gl.glColor3f(*(SUEDE_RGB if name == 'sleeve' else (0.78, 0.58, 0.46)))
-                gl.glDrawArrays(gl.GL_TRIANGLES, 0, len(v))
-                gl.glDisableClientState(gl.GL_TEXTURE_COORD_ARRAY)
+                    uv = part.uv / SLEEVE_TILE_M             # the sleeve's UVs are in metres
+            base = SUEDE_RGB if name == 'sleeve' else (0.78, 0.58, 0.46)
+            if tex:
+                gl.glEnable(gl.GL_TEXTURE_2D)
+                gl.glBindTexture(gl.GL_TEXTURE_2D, tex)
+                gl.glColor3f(1, 1, 1)
+                gl.glEnableClientState(gl.GL_TEXTURE_COORD_ARRAY)
+                gl.glTexCoordPointer(2, gl.GL_FLOAT, 0, np.ascontiguousarray(uv, np.float32))
+            else:
+                gl.glDisable(gl.GL_TEXTURE_2D)
+                gl.glColor3f(*base)
+            if prog:
+                gl.glUseProgram(prog)
+                gl.glUniform1i(gl.glGetUniformLocation(prog, 'tex'), 0)
+                gl.glUniform1i(gl.glGetUniformLocation(prog, 'useTex'), 1 if tex else 0)
+                gl.glUniform1i(gl.glGetUniformLocation(prog, 'kind'), 1 if name == 'sleeve' else (2 if tex and not photo else 0))
+                gl.glUniform3f(gl.glGetUniformLocation(prog, 'base'), *base)
+            gl.glDrawArrays(gl.GL_TRIANGLES, 0, len(v))
+            if prog:
+                gl.glUseProgram(0)
+            gl.glDisableClientState(gl.GL_TEXTURE_COORD_ARRAY)
         gl.glDisable(gl.GL_TEXTURE_2D)
         gl.glDisableClientState(gl.GL_VERTEX_ARRAY)
         gl.glDisableClientState(gl.GL_NORMAL_ARRAY)
+
+
+_VERTEX = """
+#version 120
+varying vec3 vN;
+varying vec3 vV;
+varying vec3 vObj;
+varying vec2 vUV;
+void main() {
+    vec4 eye = gl_ModelViewMatrix * gl_Vertex;
+    vV = -eye.xyz;
+    vN = gl_NormalMatrix * gl_Normal;
+    vObj = gl_Vertex.xyz;
+    vUV = gl_MultiTexCoord0.xy;
+    gl_ClipVertex = eye;
+    gl_Position = gl_ProjectionMatrix * eye;
+}
+"""
+
+_FRAGMENT = """
+#version 120
+uniform sampler2D tex;
+uniform int useTex;
+uniform int kind;          // 0 bare skin (photo), 1 sleeve, 2 a glove or other picture
+uniform vec3 base;
+varying vec3 vN;
+varying vec3 vV;
+varying vec3 vObj;
+varying vec2 vUV;
+
+float hash(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+float noise(vec3 p) {
+    vec3 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(mix(hash(i), hash(i + vec3(1, 0, 0)), f.x), mix(hash(i + vec3(0, 1, 0)), hash(i + vec3(1, 1, 0)), f.x), f.y),
+               mix(mix(hash(i + vec3(0, 0, 1)), hash(i + vec3(1, 0, 1)), f.x), mix(hash(i + vec3(0, 1, 1)), hash(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+}
+
+void main() {
+    vec3 N = normalize(vN);
+    vec3 V = normalize(vV);
+    if (dot(N, V) < 0.0) N = -N;
+    vec3 L0 = normalize(gl_LightSource[0].position.xyz);
+    vec3 L1 = normalize(gl_LightSource[1].position.xyz);
+    vec3 col = useTex == 1 ? texture2D(tex, vUV).rgb : base;
+    float nv = max(dot(N, V), 0.0);
+    vec3 c;
+    if (kind == 1) {
+        // suede: mottled nap, soft broad light, a velvety sheen towards the edges
+        float m = noise(vObj * 9.0) * 0.6 + noise(vObj * 24.0) * 0.4;
+        col *= 0.84 + 0.3 * m;
+        float d0 = clamp(dot(N, L0) * 0.75 + 0.25, 0.0, 1.0);
+        float d1 = max(dot(N, L1), 0.0);
+        c = col * (0.34 + 0.78 * d0 + 0.18 * d1);
+        c += vec3(0.80, 0.66, 0.52) * pow(1.0 - nv, 2.4) * 0.34 * (0.4 + 0.6 * d0);
+    } else {
+        if (kind == 0) {               // the photo's skin: a touch less orange, as in the render
+            float g = dot(col, vec3(0.30, 0.59, 0.11));
+            col = mix(vec3(g), col, 0.74) * vec3(0.98, 0.97, 1.0);
+        }
+        // light wraps round into the shadow side and glows red there, as through skin
+        float w = kind == 0 ? 0.5 : 0.2;
+        float nl = dot(N, L0);
+        float d0 = max((nl + w) / (1.0 + w), 0.0);
+        float d1 = max((dot(N, L1) + w) / (1.0 + w), 0.0);
+        float glow = kind == 0 ? smoothstep(-0.45, 0.15, nl) * (1.0 - smoothstep(0.15, 0.7, nl)) : 0.0;
+        c = col * (0.30 + 0.80 * d0 * vec3(1.0, 0.98, 0.95) + 0.24 * d1 * vec3(0.85, 0.9, 1.0));
+        c += col * glow * vec3(0.20, 0.05, 0.03);
+        vec3 H = normalize(L0 + V);
+        float nh = max(dot(N, H), 0.0);
+        c += vec3(1.0, 0.95, 0.9) * (pow(nh, 30.0) * 0.16 + pow(nh, 7.0) * 0.05) * step(0.0, nl);
+        c += vec3(0.9, 0.9, 0.95) * pow(1.0 - nv, 3.0) * 0.05;
+    }
+    gl_FragColor = vec4(c, 1.0);
+}
+"""

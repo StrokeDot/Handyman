@@ -227,6 +227,7 @@ class LiveView(QOpenGLWidget):
         fmt = QSurfaceFormat()
         fmt.setSamples(4)
         fmt.setDepthBufferSize(24)
+        fmt.setStencilBufferSize(8)        # (the hands' soft shadow)
         self.setFormat(fmt)
         self.setMinimumHeight(220)
         self.setCursor(Qt.CursorShape.OpenHandCursor)
@@ -836,7 +837,16 @@ class LiveView(QOpenGLWidget):
             gl.glPushMatrix()                     # the hands go with the book as it slides
             try:
                 gl.glTranslatef(float(pose.get('cover_slide', 0.0)), 0.0, 0.0)
-                hands.draw(self.frame)
+                import journal_geom as G
+                closed = float(pose.get('cover_angle', math.pi)) < math.pi / 2
+                turned = sum(float(t) for t in pose.get('sheet_progress', []))
+                if closed:                                   # on the closed cover
+                    shadow_z = 2 * G.TB + G.T + 0.003
+                else:                                        # on the left and the right page
+                    shadow_z = (G.TB + turned * G.PITCH + 0.003, G.TB + (G.N_SHEETS - turned) * G.PITCH + 0.003)
+                held_up = self.values.get('hand_left', True) and self.values.get('hand_left_style') == 'under'
+                clip = (-(G.WC + G.SPINE_GAP + 0.05), G.WC + 0.02, -G.HC / 2, G.HC / 2) if held_up else None
+                hands.draw(self.frame, sun=(0.45, -0.55, 0.85), shadow_z=shadow_z, shadow_clip=clip)
             except Exception:
                 self.hands = None
             finally:

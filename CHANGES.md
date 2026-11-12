@@ -1,5 +1,8 @@
 # Changes
 
+## 0.23.0
+- **The hands look much better in the live view**: they now have their own shading, closer to the video - light glows softly through the skin on the shadow side, the skin has a gentle shine and a less orange tone, and the suede sleeve has its velvety sheen on the folds and patchy nap. The hands also cast a soft shadow on the pages (and on the table beside the book), so they sit on the book instead of floating over it.
+
 ## 0.22.1
 - **Fix: the hand missed the cover in the live view.** While the book is closed it slides to the middle of the picture, and the hands in the live view did not slide with it - so as the cover opened the hand was off to the side. They now move with the book (the rendered video was already right).
 - While the hands are being worked out for the live view, the status line shows how far along it is and about how long is left.
