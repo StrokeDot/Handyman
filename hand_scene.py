@@ -29,6 +29,8 @@ SHOULDER_CM = (33.0, -30.0, 30.0)   # right of the spine, in front of the bottom
 REST_CM = (46.0, -34.0, 6.0)        # where the hand waits before the first turn and after the last (low, front right)
 GRAB_UP = 0.28                      # catch the edge this far up from the bottom (share of page height)
 GRAB_IN = 0.012                     # ...and this far in from the fore-edge (share of page width)
+STRAP_GRAB_IN = 0.03                # the strap's tongue is pinched this far in from its tip
+STRAP_LET_GO = 0.65                 # ...and let go when it is this far undone (it falls open by itself)
 COVER_GRAB_IN, COVER_GRAB_DOWN = 0.03, 0.12   # the cover is caught near its top fore-edge corner
 GRIP_IN_DEG = 35.0                  # the fingers lie along the edge, turned this much in over the page
 RELEASE = 0.97                      # (at the latest) let go at this turn progress
@@ -38,6 +40,7 @@ LEAD_S = 0.3                        # be at the edge this long before the page s
 PINCH_S = 0.15                      # time to close or open the fingers
 PRESS_S = 0.25                      # time smoothing the turned page down
 PRESS_ALONG, PRESS_UP = 0.6, 0.3    # where it smooths: share of the way from spine to edge, up the page
+TRAVEL_LIFT = 0.16                  # moving between pages the hand rises this much (clears the book)
 ENTER_S = 0.6                       # time to come in at the start, or go out at the end
 ELBOW_ABOVE_CM = 6.0                # the elbow stays at least this high above the table
 MAX_BEND = 85.0                     # degrees the wrist may bend away from the forearm's line
@@ -266,6 +269,11 @@ class Hand:
         point = np.array((pv[0], 0.0, pv[1])) + R @ local
         return point, (R @ np.array((-1.0, 0, 0)), R @ np.array((0, 1.0, 0)), R @ np.array((0, 0, 1.0)))
 
+    def strap_grip(self, u):
+        """(grab point, frame) at the tip of the journal strap's tongue, undone by u."""
+        _, _, tip, along, outer = G.strap_points(u)
+        return tip - along * STRAP_GRAB_IN, (-along, np.array((0.0, 1.0, 0.0)), outer)
+
     def cover_pose(self, theta, prev_turn=None):
         return self.grip_pose(*self.cover_grip(theta), prev_turn)
 
@@ -349,7 +357,7 @@ def _blend(a, b, u, lift=0.0, smooth=True):
     return [tuple(p), tuple(m.col[0]), tuple(m.col[1])]
 
 
-def plan(hand, n_frames, fps, state_at):
+def plan(hand, n_frames, fps, state_at, strap_u=None):
     """The hand's pose for every frame: [(point, fwd, up, pinch amount)].
     state_at(f) sets the book's shape for frame f and returns (progress list, curve weights).
     Per page (as in Red Dead Redemption 2's journal): slide in low to the page's edge, catch it,
@@ -368,6 +376,11 @@ def plan(hand, n_frames, fps, state_at):
             continue
         rel = next((f for f, t in enumerate(series) if t >= RELEASE), n_frames - 1)
         turns.append((k, start, rel))
+    if strap_u and strap_u[0] < 1.0:                          # a journal's strap: undo it first
+        s_start = next((f for f, u in enumerate(strap_u) if u > 1e-4), None)
+        if s_start is not None:
+            s_rel = next((f for f, u in enumerate(strap_u) if u >= STRAP_LET_GO), n_frames - 1)
+            turns.append(('strap', s_start, s_rel))
     if thetas and thetas[0] < math.pi - 1e-3:                 # the book starts closed: open the cover first
         c_start = next((f for f, th in enumerate(thetas) if th > 1e-3), None)
         if c_start is not None:
@@ -377,7 +390,7 @@ def plan(hand, n_frames, fps, state_at):
     # pages turning faster than a hand could take them (a fast flip) turn on their own
     kept = []
     for t in turns:
-        if not kept or t[1] - lead - pinch >= kept[-1][2]:
+        if t[0] in ('strap', 'cover') or not kept or t[1] - lead - pinch >= kept[-1][2]:
             kept.append(t)
     turns = kept
     carry, lands = {}, {}
@@ -385,7 +398,10 @@ def plan(hand, n_frames, fps, state_at):
         prev = None
         for f in range(max(0, start - lead), min(n_frames, rel + 1)):
             ts, cw = state_at(f)[:2]
-            if k == 'cover':
+            if k == 'strap':
+                pose, prev, phi = hand.grip_pose(*hand.strap_grip(strap_u[f]), prev)
+                phi = 0.0                                        # let go by how far it is undone
+            elif k == 'cover':
                 pose, prev, phi = hand.cover_pose(thetas[f], prev)
             else:
                 pose, prev, phi = hand.carry_pose(k, ts[k], cw[k], prev)
@@ -394,7 +410,9 @@ def plan(hand, n_frames, fps, state_at):
                 rel = f                                          # past upright: let go
                 break
         turns[i] = (k, start, rel)
-        if k == 'cover':
+        if k == 'strap':
+            lands[k] = rel + 2
+        elif k == 'cover':
             lands[k] = next((f for f, th in enumerate(thetas) if f > rel and th >= math.pi * 0.99), rel + press)
         else:
             series = [p[0][k] for p in progs]
@@ -407,7 +425,13 @@ def plan(hand, n_frames, fps, state_at):
             nxt_arrive = max(0, turns[i + 1][1] - lead)
             done = max(rel + 1, min(done, nxt_arrive - max(2, pinch)))
         ts, cw = state_at(min(n_frames - 1, max(lands[k], rel + 2)))[:2]
-        press_p = hand.cover_press() if k == 'cover' else hand.press_pose(k, cw[k])
+        if k == 'strap':                                       # lift away from the strap as it falls
+            pp = carry[rel]
+            press_p = [(pp[0][0] + 0.05, pp[0][1], pp[0][2] + 0.12), pp[1], pp[2]]
+        elif k == 'cover':
+            press_p = hand.cover_press()
+        else:
+            press_p = hand.press_pose(k, cw[k])
         steps.append((arrive, start, rel, done, press_p, max(lands[k], rel + 2)))
     rest = hand.rest_pose()
     out = []
@@ -430,7 +454,7 @@ def plan(hand, n_frames, fps, state_at):
         if not before:                                         # sliding in for the first page
             arrive = after[0][0]
             u = (f - (arrive - enter)) / enter
-            out.append(_blend(rest, carry[arrive], u, 0.02) + [0.0])
+            out.append(_blend(rest, carry[arrive], u, TRAVEL_LIFT * 0.6) + [0.0])
         elif not after:                                        # going back out after the last
             done, press_p = before[-1][3], before[-1][4]
             u = (f - done) / enter
@@ -439,5 +463,5 @@ def plan(hand, n_frames, fps, state_at):
             done, press_p = before[-1][3], before[-1][4]
             arrive = after[0][0]
             u = (f - done) / max(1, arrive - done)
-            out.append(_blend(press_p, carry[arrive], u, 0.06) + [-1 + _smooth(u * 2)])
+            out.append(_blend(press_p, carry[arrive], u, TRAVEL_LIFT) + [-1 + _smooth(u * 2)])
     return out

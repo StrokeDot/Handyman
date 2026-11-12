@@ -1,6 +1,7 @@
 {
   "name": "Leather Journal",
   "engine": "journal",
+  "kind": "journal",
   "page_aspect": 1.4318,
   "page_count": 10,
   "leather_color": "#3a1f10",

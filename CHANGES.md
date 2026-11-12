@@ -1,5 +1,8 @@
 # Changes
 
+## 0.17.0
+- **Journals can have a strap**: in Change book design, "Book kind" is Book or Journal (a diary). Only a journal can have "Leather strap round the fore-edge": a strap in the cover's leather from the back cover round to the front, like Arthur Morgan's journal. When the video starts closed, the strap comes undone just before the cover opens - and if the hand is shown, the hand pinches its tip, lifts it off and folds it out, then opens the cover. (The strap is in the rendered video; the live view does not show it yet.)
+
 ## 0.16.1
 - **The hand opens the book** (with "Start closed, then open the cover"): like Arthur Morgan, it catches the closed cover by its top corner, swings it open past upright, lets go, smooths it down on the left, and then goes on to turn the pages.
 

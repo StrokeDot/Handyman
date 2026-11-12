@@ -496,7 +496,65 @@ def build(job):
                   page_material(f'Page{2 * k + 2:03d}', paper_even, get(2 * k + 1)), m_edge):
             ob.data.materials.append(m)
         obs.append(ob)
-    return root, pivot, sp, core, obs
+    strap = build_strap(root, m_leather) if book.get('strap') else None
+    return root, pivot, sp, core, obs, strap
+
+
+def _box(name, x0, x1, w, z0, z1, tip=0.0):
+    """A leather strip: x from x0 to x1, y across w, z from z0 to z1; the x0 end rounded when
+    tip > 0 (a half circle of radius tip)."""
+    if tip:
+        n = 8
+        outline = [(x1, -w / 2)]
+        cx = x0 + tip
+        for k in range(n + 1):
+            a = -math.pi / 2 - k * math.pi / n
+            outline.append((cx + tip * math.cos(a), tip * math.sin(a)))
+        outline.append((x1, w / 2))
+    else:
+        outline = [(x1, -w / 2), (x0, -w / 2), (x0, w / 2), (x1, w / 2)]
+    m = len(outline)
+    verts = [(x, y, z0) for x, y in outline] + [(x, y, z1) for x, y in outline]
+    faces = [tuple(range(m, 2 * m)), tuple(range(m - 1, -1, -1))]
+    faces += [(k, (k + 1) % m, m + (k + 1) % m, m + k) for k in range(m)]
+    me = bpy.data.meshes.new(name)
+    me.from_pydata(verts, [], faces)
+    me.update()
+    return me
+
+
+def build_strap(root, material):
+    """The journal's leather strap: up the fore-edge from the back cover, and a tongue over the
+    front cover. Two hinges (at the back cover, at the fore-edge's top) undo it."""
+    ax, h, L = G.strap_dims()
+    w, t = G.STRAP_W, G.STRAP_T
+    e1 = bpy.data.objects.new('StrapHinge', None)
+    bpy.context.scene.collection.objects.link(e1)
+    e1.parent = root
+    e1.location = (ax, 0.0, 0.0)
+    e1.rotation_mode = 'XYZ'
+    up = new_object('StrapEdge', _box('StrapEdge', -t / 2, t / 2, w, 0.0, h), e1)
+    e2 = bpy.data.objects.new('StrapFold', None)
+    bpy.context.scene.collection.objects.link(e2)
+    e2.parent = e1
+    e2.location = (0.0, 0.0, h)
+    e2.rotation_mode = 'XYZ'
+    tongue = new_object('StrapTongue', _box('StrapTongue', -L, t / 2, w, -t, 0.0, tip=w / 2), e2)
+    for ob in (up, tongue):
+        ob.data.materials.append(material)
+        bevel(ob, width=0.003, segs=2)
+    return e1, e2
+
+
+def strap_u_at(f, c_start, fps, starts_closed):
+    """How far the strap is undone at frame f (0 fastened .. 1 open): it is undone in the second
+    before the cover starts to open (sooner if the video starts closer to the opening)."""
+    if not starts_closed:
+        return 1.0
+    end = c_start - round(0.15 * fps)
+    span = max(2, min(round(1.0 * fps), end))
+    begin = end - span
+    return min(1.0, max(0.0, (f - begin) / span))
 
 
 def sheet_coords(k, t, curve=1.0):
@@ -585,7 +643,7 @@ def main():
     sc_b.view_settings.exposure = -1.25
     if sc_b.render.engine == 'CYCLES':
         tune_cycles(sc_b)
-    root, pivot, sp, core, obs = build(job)
+    root, pivot, sp, core, obs, strap = build(job)
     setup_lights_world()
     add_shadow_catcher(root)
     cam_data = bpy.data.cameras.new('Camera')
@@ -604,6 +662,9 @@ def main():
                      job.get('open_seconds', 0.0), job.get('slide', True),
                      page_count=G.N_SHEETS, smoothness=job.get('smoothness', 1.0),
                      recorded_clips=job.get('recorded_clips'), clip_list=job.get('clip_list'))
+    starts_closed = sc.evaluate(0)['cover_progress'] < 1.0 - 1e-6
+    c_start = next((f for f in range(sc.frames) if sc.evaluate(f)['cover_progress'] > 1e-6), 0)
+    strap_u = [strap_u_at(f, c_start, job['fps'], starts_closed) for f in range(sc.frames)] if strap else None
     hand_plan, hand = None, None
     if job.get('hand'):
         import hand_scene
@@ -619,7 +680,7 @@ def main():
         cm = (job['book'].get('page_size_cm') or [G.REF_PAGE_CM[0]])[0]
         hand = hand_scene.Hand(root, float(cm), G.H / 2)
         hand.set_look(job.get('hand_skin'), job.get('hand_sleeve'))
-        hand_plan = hand_scene.plan(hand, sc.frames, job['fps'], state_at)
+        hand_plan = hand_scene.plan(hand, sc.frames, job['fps'], state_at, strap_u)
         log('INFO hand turns the pages')
     frames = job.get('frames') or list(range(sc.frames))
     total_frames = len(frames)
@@ -667,6 +728,13 @@ def main():
             if state != last[k]:
                 set_coords(ob.data, sheet_coords(k, ts[k], cw[k]))
                 last[k] = state
+        strap_key = None
+        if strap is not None:
+            su = strap_u[min(f, len(strap_u) - 1)]
+            a1, a2 = G.strap_state(su)
+            strap[0].rotation_euler = (0.0, a1, 0.0)
+            strap[1].rotation_euler = (0.0, a2, 0.0)
+            strap_key = round(su, 5)
         hand_key = None
         if hand_plan is not None:
             hp = hand_plan[min(f, len(hand_plan) - 1)]
@@ -675,7 +743,7 @@ def main():
         path = os.path.join(out, f'frame_{offset + i:06d}.png')
         cam_key = None if job['cam'].get('move', 'none') == 'none' else round(float(pose['camera_frac']), 6)
         key = (round(theta, 7), w_open, tuple(round(float(x), 7) for x in prog), cam_key,
-               round(float(pose.get('cover_slide', 0.0)), 7), hand_key)
+               round(float(pose.get('cover_slide', 0.0)), 7), hand_key, strap_key)
         if key == last_key and last_path:
             shutil.copyfile(last_path, path)          # nothing moved: same picture, no render
         else:

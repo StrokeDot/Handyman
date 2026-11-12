@@ -312,3 +312,15 @@ def test_hand_look_choices_reach_the_render():
         glove = bb.make_job(dict(settings, hand_skin='book-leather', hand_sleeve='/x/wool.png'), book, [], tmp)
         assert glove['hand_skin'] and Path(glove['hand_skin']).exists()            # the cover's leather
         assert glove['hand_sleeve'] == '/x/wool.png'
+
+
+def test_only_a_journal_can_have_a_strap():
+    book = templates.load(Path(__file__).parent / 'resources' / 'books' / 'leather-journal')
+    assert book['kind'] == 'journal' and not book['strap']
+    assert templates.for_scene(dict(book, strap=True))['strap'] is True
+    assert templates.for_scene(dict(book, kind='book', strap=True))['strap'] is False
+    G.configure(10, 1.4318, **G.book_dims({}))
+    _, _, tip0, _, _ = G.strap_points(0.0)
+    _, _, tip1, _, _ = G.strap_points(1.0)
+    assert tip0[0] < G.XB + G.WC and tip0[2] > 0.05          # fastened: lies over the closed front cover
+    assert tip1[0] > G.XB + G.WC and abs(tip1[2]) < 1e-6      # undone: flat on the table to the right

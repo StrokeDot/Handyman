@@ -220,6 +220,26 @@ class JournalDialog(QDialog):
         f = QFormLayout(g)
         self.name = QLineEdit(book['name'])
         f.addRow('Template name', self.name)
+        self.kind = QComboBox()
+        self.kind.addItem('Book', 'book')
+        self.kind.addItem('Journal (a diary)', 'journal')
+        self.kind.setCurrentIndex(max(0, self.kind.findData(book.get('kind') or 'book')))
+        self.kind.setToolTip('A journal is a diary-style book; only a journal can have a strap')
+        f.addRow('Book kind', self.kind)
+        self.strap = QCheckBox('Leather strap round the fore-edge')
+        self.strap.setToolTip('A strap from the back cover round the front, like Arthur Morgan\'s journal.\n'
+                              'When the book starts closed it is undone first (by the hand, if it is shown).\n'
+                              'Made from the cover\'s leather. Shown in the rendered video.')
+        self.strap.setChecked(bool(book.get('strap')))
+        f.addRow('', self.strap)
+
+        def _kind_changed(*_):
+            journal = self.kind.currentData() == 'journal'
+            self.strap.setEnabled(journal)
+            if not journal:
+                self.strap.setChecked(False)
+        self.kind.currentIndexChanged.connect(_kind_changed)
+        _kind_changed()
         self.page_label = QLabel()
         if required_size(book, 'page'):
             f.addRow('Page images you add', self.page_label)
@@ -572,4 +592,6 @@ class JournalDialog(QDialog):
         b['board_mm'] = None if abs(self.board_mm.value() - 4.2) < 1e-6 else round(self.board_mm.value(), 2)
         b['paper_mm'] = None if abs(self.paper_mm.value() - 0.45) < 1e-6 else round(self.paper_mm.value(), 3)
         b['edge_mode'] = self.edge_mode.currentData()
+        b['kind'] = self.kind.currentData()
+        b['strap'] = bool(self.strap.isChecked()) and b['kind'] == 'journal'
         return b

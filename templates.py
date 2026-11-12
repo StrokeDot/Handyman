@@ -13,6 +13,8 @@ import paths
 DEFAULTS = {
     'name': 'Leather Journal',
     'leather_color': '#6b3a1e',
+    'kind': 'book',               # 'book' or 'journal' (a diary): only a journal can have a strap
+    'strap': False,               # journal only: a leather strap round the fore-edge, undone to open
     'back_cover_color': None,     # None = same as leather_color (swappable back cover)
     'inside_cover_color': None,   # None = paper-coloured endpaper (swappable inside cover)
     'leather_image': 'resources/templates/leather.png',   # bundled photo texture (relative to resources/)
@@ -278,6 +280,7 @@ def for_scene(book):
         board_mm=book.get('board_mm'), paper_mm=book.get('paper_mm'),
         edge_image=_edge_image(book), edge_rgb=_edge_rgb(book),       # real size: the camera frames the Leather Journal's size
         page_count=book.get('page_count'),
+        strap=bool(book.get('strap')) and book.get('kind') == 'journal',
         paper_odd_image=_texture_path(book, book.get('paper_odd_image')),
         paper_even_image=_texture_path(book, book.get('paper_even_image')),
         joint_image=_texture_path(book, book.get('joint_image')),

@@ -666,3 +666,45 @@ def camera(cam_settings, frac, aspect, real=None):
                               c.get('shift_y', 0.0) * (H / 2 + COVER_MARGIN), 0.0])
     cam, r, u, f = cf.pose(tilt, turn, roll, dist, target)
     return cam, r, u, f, lens
+
+
+# ------------------------------------------------------------------ the journal's strap
+STRAP_W = 0.13            # width (page widths: about 2 cm on the Leather Journal)
+STRAP_T = 0.012           # leather thickness
+STRAP_TONGUE = 0.34       # how far it reaches in over the front cover (share of the cover's width)
+
+
+def strap_dims():
+    """(anchor x, height of the part up the fore-edge, tongue length): the strap is fixed at the
+    back cover's fore-edge, goes up the edge of the closed book and lies in over the front cover."""
+    pv = cover_pivot(0.0)
+    top = pv[1] + TB + STRAP_T
+    return XB + WC + STRAP_T * 0.5, top, STRAP_TONGUE * WC
+
+
+def strap_state(u):
+    """Strap undone by u (0 = fastened round the closed book, 1 = open, lying on the table to the
+    right). Returns (hinge angle at the anchor, hinge angle at the fore-edge's top) in radians:
+    first the tongue lifts off the cover, then the whole strap folds out and down."""
+    u = min(1.0, max(0.0, float(u)))
+    s = lambda x: x * x * (3 - 2 * x)  # noqa: E731
+    a2 = 0.5 * math.pi * s(min(1.0, u / 0.6))
+    a1 = 0.5 * math.pi * s(max(0.0, (u - 0.3) / 0.7))
+    return a1, a2
+
+
+def strap_points(u):
+    """World (book) points of the strap at undone u: anchor, fore-edge corner hinge, tongue tip,
+    and the tongue's frame (along the tongue from hinge to tip, across = +y, its outer face)."""
+    ax, h, L = strap_dims()
+    a1, a2 = strap_state(u)
+
+    def roty(v, a):
+        c, s_ = math.cos(a), math.sin(a)
+        return np.array((c * v[0] + s_ * v[2], v[1], -s_ * v[0] + c * v[2]))
+    anchor = np.array((ax, 0.0, 0.0))
+    hinge = anchor + roty(np.array((0.0, 0.0, h)), a1)
+    along = roty(roty(np.array((-1.0, 0.0, 0.0)), a2), a1)       # hinge -> tip
+    tip = hinge + along * L
+    outer = roty(roty(np.array((0.0, 0.0, 1.0)), a2), a1)        # the tongue's outer face
+    return anchor, hinge, tip, along, outer
