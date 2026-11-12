@@ -322,6 +322,12 @@ def test_the_left_hand_holds_the_book_unless_turned_off():
     with tempfile.TemporaryDirectory() as tmp:
         assert bb.make_job(settings, book, [], tmp)['hand_left'] is True             # on by default
         assert bb.make_job(dict(settings, hand_left=False), book, [], tmp)['hand_left'] is False
+        job = bb.make_job(settings, book, [], tmp)
+        assert job['hand_left_style'] == 'on' and job['hand_size'] == 1.0              # defaults
+        job = bb.make_job(dict(settings, hand_left_style='under', hand_size=85), book, [], tmp)
+        assert job['hand_left_style'] == 'under' and abs(job['hand_size'] - 0.85) < 1e-9
+        assert bb.make_job(dict(settings, hand_left_style='sideways', hand_size=5), book, [], tmp)['hand_size'] == 0.4
+        assert bb.make_job(dict(settings, hand_left_style='sideways'), book, [], tmp)['hand_left_style'] == 'on'
 
 
 def test_the_left_hand_moves_aside_for_the_right_one():

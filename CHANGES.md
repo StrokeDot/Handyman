@@ -1,5 +1,12 @@
 # Changes
 
+## 0.19.0
+- **Natural fingers, no more hooks**: each finger now bends the way a real finger does (before, the joints bent a little sideways, so the hand looked like a claw), the fingers lie together instead of splayed, and a relaxed hand is gently curved. Holding a page, the hand pinches it between the thumb and the side of the index fingertip, like paper, while the other fingers stay loose instead of curling into a fist. The holding hand's fingers lie nearly flat on the book.
+- **Left hand under the book, like Arthur Morgan**: new "Left hand" choice under the hand options. "On the book" is the book on a table with the left hand holding its corner; "Under the book" has the left hand holding the book up from beneath, palm up, like Arthur reading his journal - under the closed book from the left, then sliding under the left half as the cover opens (no table shadow under a book held up).
+- **The hand waits below the book during a pause**: when there is a pause between turns of about a second or more, the right hand goes back down below the book, waits, and comes back in time for the next page - always on the timing you set.
+- **Hand size**: new "Hand size" setting (60 % to 140 %). 100 % is a real man's hand next to the book at its real size.
+- On fast flips the wrist eases straight as the hand lets go of each page.
+
 ## 0.18.0
 - **Both hands, like Arthur Morgan**: the left hand now holds the book too. While the book is closed it steadies the cover as the strap is undone; it moves aside to the left before the cover swings over, then holds the open book by its bottom-left corner, below the pages, so turned pages never land on it. It eases up a little as each page comes down, and moves aside whenever the right hand comes near. On a very small book, where two hands would not fit, it rests on the table beside the book instead. Untick "...and the left hand holds the book" (Animation tab, under the hand option) to show only the right hand.
 - **Smoother hand movement**: no more sudden flip of the hand when it lays the cover or a page down - it now grips the page so that, letting go, it only has to roll a little onto the page's back. It lets go just past upright, and every change of movement (taking hold, letting go, setting off for the next page) flows on instead of starting or stopping dead. On fast flips it simply lets go and lifts away instead of rushing to lay each page.
