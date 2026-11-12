@@ -161,6 +161,23 @@ class Hand:
         self.pad_flat, self.pad_rel = pads[-1.0], pads[0.0]
         self.pad0 = self.pad_flat
         self._fingers(0.0)
+        if bpy.context.scene.render.engine != 'CYCLES':
+            self._tone_for_fast_engine()
+
+    def _tone_for_fast_engine(self):
+        """EEVEE draws fabric sheen and a skin's oily layer much stronger than Cycles (the suede
+        would look like satin): tone them down there."""
+        for ob in self.objects:
+            if ob.type != 'MESH' or not ob.data.materials or ob.data.materials[0] is None:
+                continue
+            nt = ob.data.materials[0].node_tree
+            bsdf = next((n for n in nt.nodes if n.type == 'BSDF_PRINCIPLED'), None) if nt else None
+            if bsdf is None:
+                continue
+            if ob.name.startswith('Sleeve'):
+                bsdf.inputs['Sheen Weight'].default_value = min(bsdf.inputs['Sheen Weight'].default_value, 0.12)
+            else:
+                bsdf.inputs['Coat Weight'].default_value = min(bsdf.inputs['Coat Weight'].default_value, 0.04)
 
     def set_look(self, skin=None, sleeve=None):
         """Swap the hand's and the sleeve's pictures (like a book's): skin = a picture wrapped

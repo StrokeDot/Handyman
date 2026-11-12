@@ -1,5 +1,9 @@
 # Changes
 
+## 0.20.0
+- **More natural skin**: the hand is less orange, with a soft natural sheen like real skin, knuckles and fingertips a little redder where the skin is thin, creases a little darker, light glowing through the edges of the fingers, and fine pores up close.
+- **The sleeve looks like real suede**: a soft velvety sheen on the folds, patches where the nap lies differently, darker inside the folds and worn a little lighter on the edges that stick out, with the nap's fine texture. A sleeve picture of your own keeps the folds, stitches and wear.
+
 ## 0.19.0
 - **Natural fingers, no more hooks**: each finger now bends the way a real finger does (before, the joints bent a little sideways, so the hand looked like a claw), the fingers lie together instead of splayed, and a relaxed hand is gently curved. Holding a page, the hand pinches it between the thumb and the side of the index fingertip, like paper, while the other fingers stay loose instead of curling into a fist. The holding hand's fingers lie nearly flat on the book.
 - **Left hand under the book, like Arthur Morgan**: new "Left hand" choice under the hand options. "On the book" is the book on a table with the left hand holding its corner; "Under the book" has the left hand holding the book up from beneath, palm up, like Arthur reading his journal - under the closed book from the left, then sliding under the left half as the cover opens (no table shadow under a book held up).
