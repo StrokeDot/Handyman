@@ -62,6 +62,7 @@ GIVE_WAY_MAX_CM = 7.0               # if it would have to move further aside, it
 BESIDE_CM = (6.0, 5.0)              # ...this far left of the open book, this far up from its bottom edge
 HOVER_CM = (-4.0, -7.0, 4.0)        # while the cover opens it waits this far from where it will hold
 LEFT_EASE_CM = 1.8                  # ...and eases up this much as a page lands on the left
+JOIN_SMOOTH_S = 0.05                # seconds of smoothing over the joins between movements
 LAY_FLIP_COST = 0.1                 # choosing the grip: a degree of turning over onto the page after ~ this much wrist bend
 LAY_TILT = 0.4                      # laying a page down the fingers point this much into it (palm raised)
 LET_GO_OUT_CM = 2.0                 # letting go, the thumb slips out this far past the page's edge
@@ -495,6 +496,24 @@ def _slerp_m(Ra, Rb, w):
     return Ra.to_quaternion().slerp(Rb.to_quaternion(), w).to_matrix()
 
 
+def _smooth_poses(poses, sigma):
+    """Gaussian-smoothed copy of a pose sequence: point, finger amount and anchor smoothed; the
+    pointing and back-of-hand directions smoothed and made square again."""
+    if len(poses) < 3 or sigma <= 0:
+        return poses
+    cols = [np.array([p[i] for p in poses], dtype=float) for i in range(3)]
+    sm = [np.stack([_smooth_series(list(c[:, a]), sigma) for a in range(3)], 1) for c in cols]
+    am = _smooth_series([p[3] for p in poses], sigma)
+    an = _smooth_series([p[4] for p in poses], sigma)
+    out = []
+    for i in range(len(poses)):
+        f = sm[1][i] / np.linalg.norm(sm[1][i])
+        u = sm[2][i] - f * (sm[2][i] @ f)
+        u /= np.linalg.norm(u)
+        out.append([tuple(sm[0][i]), tuple(f), tuple(u), float(am[i]), float(an[i])])
+    return out
+
+
 def _rot_deg(A, B):
     """The angle (degrees) of the rotation taking matrix A to matrix B."""
     M = np.array(A, dtype=float).T @ np.array(B, dtype=float)
@@ -731,6 +750,9 @@ def plan(hand, n_frames, fps, state_at, strap_u=None):
             a, sa = after[0]
             out.append(_blend(sb[b], sa[a], (f - b) / max(1, a - b), TRAVEL_LIFT))
         LAST_PHASES.append('free')
+    # no corners: where one movement hands over to the next (taking hold, letting go, setting
+    # off) the speed and the turning carry on smoothly instead of starting or stopping dead
+    out = _smooth_poses(out, JOIN_SMOOTH_S * fps)
     # a free hand is never perfectly still: a slow, tiny drift (not while it touches the book)
     free = np.array([1.0 if ph == 'free' else 0.0 for ph in LAST_PHASES])
     if len(free) > 3:
