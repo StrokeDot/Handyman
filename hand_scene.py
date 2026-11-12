@@ -46,7 +46,8 @@ RIGHT_FINGERS = -0.35               # ...its fingers nearly flat on the edge
 RETURN_S = 0.45                     # after laying a page down it is back holding the book in this long
 SLIDE_S = 0.3                       # ...and slides up the edge to the next page in this long
 SLIDE_LIFT_CM = 0.6                 # ...barely lifting
-FAST_BACK_S = 0.3                   # with less time than this between turns it goes straight across
+FAST_BACK_S = 0.45                   # with less time than this between turns it goes straight across
+BACK_LIFT_CM = 1.2                  # ...rising this much on the way (clear of the book's edges)
 SKIM_CM = 0.8                       # coming back along the bottom it skims this far over the pages
 BOTTOM_PATH = (0.45, 0.1, 0.55)     # ...over the left page this far from the spine, this far up, then the right page
 BACK_FINGERS = -0.3                 # ...fingers relaxed and open
@@ -844,14 +845,19 @@ def plan(hand, n_frames, fps, state_at, strap_u=None):
         keys = [start, skim_pose(w1), skim_pose(w2), end]
         pts = [np.array(k_[0]) for k_ in keys]
         ext = [2 * pts[0] - pts[1]] + pts + [2 * pts[-1] - pts[-2]]
+        # time shared by distance, so the hand moves at an even pace along the whole way
+        seg = np.array([max(1e-6, np.linalg.norm(pts[i + 1] - pts[i])) for i in range(len(pts) - 1)])
+        cum = np.concatenate([[0.0], np.cumsum(seg)]) / seg.sum()
         out_ = []
         for f in range(f0 + 1, f1 + 1):
-            s_ = _smoother((f - f0) / max(1, f1 - f0)) * (len(keys) - 1)
-            i = min(int(s_), len(keys) - 2)
-            t = s_ - i
+            u = _smoother((f - f0) / max(1, f1 - f0))
+            i = min(int(np.searchsorted(cum, u, side='right')) - 1, len(keys) - 2)
+            i = max(i, 0)
+            t = (u - cum[i]) / max(1e-9, cum[i + 1] - cum[i])
             p0, p1, p2, p3 = ext[i], ext[i + 1], ext[i + 2], ext[i + 3]       # Catmull-Rom
             p = 0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t +
                        (-p0 + 3 * p1 - 3 * p2 + p3) * t ** 3)
+            p = p + np.array((0.0, 0.0, BACK_LIFT_CM * cm * math.sin(math.pi * u)))   # clear of the edges
             m = _slerp_m(_frame(keys[i][1], keys[i][2]), _frame(keys[i + 1][1], keys[i + 1][2]), t)
             a_ = keys[i][3] + (keys[i + 1][3] - keys[i][3]) * t
             n_ = keys[i][4] + (keys[i + 1][4] - keys[i][4]) * t
