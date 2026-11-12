@@ -41,6 +41,15 @@ LEAD_S = 0.3                        # be at the edge this long before the page s
 PINCH_S = 0.15                      # time to close or open the fingers
 PRESS_S = 0.25                      # time smoothing the turned page down
 PRESS_ALONG, PRESS_UP = 0.6, 0.3    # where it smooths: share of the way from spine to edge, up the page
+RIGHT_HOLD = (0.985, 0.3)           # between turns the right hand holds the book here (share of the page: from the spine, up)
+RIGHT_FINGERS = -0.35               # ...its fingers nearly flat on the edge
+RETURN_S = 0.45                     # after laying a page down it is back holding the book in this long
+SLIDE_S = 0.3                       # ...and slides up the edge to the next page in this long
+SLIDE_LIFT_CM = 0.6                 # ...barely lifting
+FAST_BACK_S = 0.3                   # with less time than this between turns it goes straight across
+SKIM_CM = 0.8                       # coming back along the bottom it skims this far over the pages
+BOTTOM_PATH = (0.45, 0.1, 0.55)     # ...over the left page this far from the spine, this far up, then the right page
+BACK_FINGERS = -0.3                 # ...fingers relaxed and open
 WITHDRAW_MIN_S = 0.9                # a pause at least this long: the hand goes back below the book and waits
 WITHDRAW_TRAVEL_S = 0.45            # ...taking about this long each way
 WAIT_CM = (0.62, -8.0, 2.5)         # where it waits: this share of the page's width from the spine, cm below the bottom edge, cm up
@@ -239,15 +248,17 @@ class Hand:
     def arm_dir(self, v):
         return Vector((self.mx * v[0], v[1], v[2]))
 
-    def natural_pose(self, point, up=(0.0, 0.0, 1.0), amount=0.0, anchor=1.0, pitches=(-35, -20, -5)):
+    def natural_pose(self, point, up=(0.0, 0.0, 1.0), amount=0.0, anchor=1.0, pitches=(-35, -20, -5),
+                     yaws=range(0, 360, 8)):
         """A resting pose at `point` (book space) with the back of the hand towards `up`: the
-        direction that keeps the wrist straightest, searched (works for either hand)."""
+        direction that keeps the wrist straightest, searched (works for either hand); yaws limits
+        which ways the fingers may point (degrees, 0 = +x, 90 = up the book)."""
         P = self.arm(point)
         pad = self.pad_rel.lerp(self.pad_flat, min(1.0, max(0.0, -amount)))
         ref = self.pinch0.lerp(pad, anchor)
         upv = Vector(up).normalized()
         best = None
-        for yaw in range(0, 360, 8):
+        for yaw in yaws:
             for pitch in pitches:
                 y, pt = math.radians(yaw), math.radians(pitch)
                 fwd = Vector((math.cos(y), math.sin(y), 0.0)) * math.cos(pt) + upv * math.sin(pt)
@@ -773,46 +784,145 @@ def plan(hand, n_frames, fps, state_at, strap_u=None):
                     seq[f] = hand.pose(np.array(pt) - np.array(frame[2]) * PAD_GAP, _fmat(frame) @ L_lay, -1.0, 1.0)
                     phases[f] = f'smooth {k}'
         seqs.append((seq, phases))
-    rest = hand.rest_pose()
-    wait = hand.rest_pose((WAIT_CM[0] * hand.pw, WAIT_CM[1], WAIT_CM[2]))
-    out, LAST_PHASES = [], []
-    for f in range(n_frames):
-        here = next(((seq, ph) for seq, ph in seqs if f in seq), None)
-        if here:
-            out.append(here[0][f])
-            LAST_PHASES.append(here[1][f])
-            continue
-        before = [(max(seq), seq) for seq, _ in seqs if max(seq) < f]
-        after = [(min(seq), seq) for seq, _ in seqs if min(seq) > f]
-        if not seqs:
-            out.append(rest)
-        elif not before:                                         # coming in for the first one
-            a, seq = after[0]
-            out.append(_blend(rest, seq[a], (f - (a - enter)) / enter, TRAVEL_LIFT))
-        elif not after:                                          # going back out after the last
-            b, seq = before[-1]
-            out.append(_blend(seq[b], rest, (f - b) / enter, TRAVEL_LIFT * 0.6))
-        else:                                                    # from one to the next
-            b, sb = before[-1]
-            a, sa = after[0]
-            if (a - b) / fps >= WITHDRAW_MIN_S:
-                # a pause: it goes back down below the book, waits, and comes back in time
-                go = max(1, round(min(WITHDRAW_TRAVEL_S * fps, (a - b) * 0.4)))
-                if f - b <= go:
-                    out.append(_blend(sb[b], wait, (f - b) / go, TRAVEL_LIFT * 0.6))
-                elif a - f <= go:
-                    out.append(_blend(wait, sa[a], 1.0 - (a - f) / go, TRAVEL_LIFT))
-                else:
-                    out.append(list(wait))
-                LAST_PHASES.append('wait')
+    # ------------------------------------------------------------------ between the turns
+    # As Arthur Morgan does: between turns the hand holds the book on the right (fingertips on
+    # the right edge, low down, the hand off the page); to turn it slides up that edge to the
+    # page; after laying the page down it comes back along the bottom of the book, from the left
+    # page to the right one, and holds the book again. When turns come too fast for that, the
+    # way back is cut short (straight to the next page along the bottom, or straight across).
+    ret_n, slide_n = max(2, round(RETURN_S * fps)), max(2, round(SLIDE_S * fps))
+    skim = SKIM_CM * cm
+    hold_cache = {}
+
+    def turned_count(f):
+        return sum(1 for t in progs[f][0] if t >= 0.5)
+
+    def flipping(f0, f1):
+        """Does any page turn on its own (a fast flip) between frames f0 and f1?"""
+        return any(0.0 < t < 1.0 for f in range(max(0, f0), min(n_frames, f1 + 1)) for t in progs[f][0])
+
+    def hold_pose(f, away=False):
+        """Holding the book's right side at frame f (away: just off it, clear of pages flipping)."""
+        key = (thetas[f] < math.pi * 0.99, turned_count(f), away)
+        if key in hold_cache:
+            return hold_cache[key]
+        if thetas[f] < math.pi * 0.99:                           # the closed book: on the cover
+            pt, fr = hand.cover_at(0.0, RIGHT_HOLD[0], RIGHT_HOLD[1], 1.0)
+        else:
+            k = min(turned_count(f), n_sheets - 1)
+            pt, fr, _ = where(k, f, RIGHT_HOLD[0], RIGHT_HOLD[1])
+        p = np.array(pt) + np.array(fr[2]) * PAD_GAP
+        if away:
+            p = p + np.array((3.5, -1.0, 2.5)) * cm
+        pose = hand.natural_pose(p, amount=RIGHT_FINGERS, anchor=1.0, yaws=range(95, 181, 5))
+        hold_cache[key] = pose
+        return pose
+
+    def surface(k, f, along, up):
+        """A point just over thing k (a turned page or the open cover, or the top page on the
+        right) where the hand skims along the bottom of the book."""
+        if k == 'cover':
+            pt, fr, _ = where('cover', f, along, up, 0.0)
+            return np.array(pt) - np.array(fr[2]) * skim
+        pt, fr, _ = where(k, f, along, up)
+        n = np.array(fr[2])
+        return np.array(pt) + n * skim * (1.0 if n[2] > 0 else -1.0)
+
+    skim_dir = np.array((-0.35, 0.9, -0.2))
+    skim_dir /= np.linalg.norm(skim_dir)
+
+    def skim_pose(point):
+        upv = np.array((0.0, 0.0, 1.0)) - skim_dir * skim_dir[2]
+        return [tuple(point), tuple(skim_dir), tuple(upv / np.linalg.norm(upv)), BACK_FINGERS, 1.0]
+
+    def along_bottom(start, end, f0, f1, k_prev):
+        """Poses from `start` (laying the page down on the left) to `end`, skimming along the
+        bottom of the book: over the left page, over the right one, then to `end`."""
+        k_right = min(turned_count(f0), n_sheets - 1)
+        w1 = surface(k_prev, f0, BOTTOM_PATH[0], BOTTOM_PATH[1])
+        w2 = surface(k_right, f0, BOTTOM_PATH[2], BOTTOM_PATH[1])
+        keys = [start, skim_pose(w1), skim_pose(w2), end]
+        pts = [np.array(k_[0]) for k_ in keys]
+        ext = [2 * pts[0] - pts[1]] + pts + [2 * pts[-1] - pts[-2]]
+        out_ = []
+        for f in range(f0 + 1, f1 + 1):
+            s_ = _smoother((f - f0) / max(1, f1 - f0)) * (len(keys) - 1)
+            i = min(int(s_), len(keys) - 2)
+            t = s_ - i
+            p0, p1, p2, p3 = ext[i], ext[i + 1], ext[i + 2], ext[i + 3]       # Catmull-Rom
+            p = 0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t +
+                       (-p0 + 3 * p1 - 3 * p2 + p3) * t ** 3)
+            m = _slerp_m(_frame(keys[i][1], keys[i][2]), _frame(keys[i + 1][1], keys[i + 1][2]), t)
+            a_ = keys[i][3] + (keys[i + 1][3] - keys[i][3]) * t
+            n_ = keys[i][4] + (keys[i + 1][4] - keys[i][4]) * t
+            out_.append([tuple(p), tuple(m.col[0]), tuple(m.col[1]), a_, n_])
+        return out_
+
+    def slide_in(hold, arrive_pose, u):
+        """From holding the right side, up along the edge to the page (low, no arc)."""
+        return _blend(hold, arrive_pose, u, SLIDE_LIFT_CM * cm)
+
+    by_item = []                                                 # (first frame, last frame, thing, seq)
+    for cur, (seq, _) in zip(info, seqs):
+        by_item.append((min(seq), max(seq), cur['k'], seq))
+    out, LAST_PHASES = [None] * n_frames, [''] * n_frames
+    for (a0_, b0_, _, seq), (_, phs) in zip(by_item, seqs):
+        for f in range(a0_, b0_ + 1):
+            if f in seq:
+                out[f], LAST_PHASES[f] = seq[f], phs[f]
+    if not by_item:
+        for f in range(n_frames):
+            out[f], LAST_PHASES[f] = hold_pose(f), 'hold'
+    else:
+        # before the first: holding the book, then sliding up to it
+        a, seq = by_item[0][0], by_item[0][3]
+        h = hold_pose(0, flipping(0, a))
+        for f in range(0, a):
+            u = (f - (a - slide_n)) / slide_n
+            out[f] = slide_in(h, seq[a], u) if u > 0 else list(h)
+            LAST_PHASES[f] = 'slide' if u > 0 else 'hold'
+        # between two
+        for (_, b, k_prev, sb), (a, _, _, sa) in zip(by_item, by_item[1:]):
+            gap = a - b - 1
+            if gap <= 0:
                 continue
-            out.append(_blend(sb[b], sa[a], (f - b) / max(1, a - b), TRAVEL_LIFT))
-        LAST_PHASES.append('free')
+            if k_prev == 'strap' or gap < max(3, round(FAST_BACK_S * fps)):
+                for f in range(b + 1, a):                        # too quick: straight across
+                    out[f] = _blend(sb[b], sa[a], (f - b) / (a - b), TRAVEL_LIFT)
+                    LAST_PHASES[f] = 'free'
+            elif gap < ret_n + slide_n + 2:                      # straight to the next one, along the bottom
+                for f, p in zip(range(b + 1, a), along_bottom(sb[b], sa[a], b, a, k_prev)):
+                    out[f], LAST_PHASES[f] = p, 'back'
+            else:                                                # back along the bottom, hold, slide up
+                h = hold_pose(b + ret_n, flipping(b, a))
+                for f, p in zip(range(b + 1, b + ret_n + 1), along_bottom(sb[b], h, b, b + ret_n, k_prev)):
+                    out[f], LAST_PHASES[f] = p, 'back'
+                for f in range(b + ret_n + 1, a):
+                    u = (f - (a - slide_n)) / slide_n
+                    out[f] = slide_in(h, sa[a], u) if u > 0 else list(h)
+                    LAST_PHASES[f] = 'slide' if u > 0 else 'hold'
+        # after the last: back along the bottom and hold the book
+        _, b, k_prev, sb = by_item[-1]
+        if b < n_frames - 1:
+            if k_prev == 'strap':
+                h = hold_pose(b)
+                for f in range(b + 1, n_frames):
+                    out[f], LAST_PHASES[f] = _blend(sb[b], h, (f - b) / ret_n), 'free'
+            else:
+                end = min(n_frames - 1, b + ret_n)
+                h = hold_pose(end)
+                for f, p in zip(range(b + 1, end + 1), along_bottom(sb[b], h, b, end, k_prev)):
+                    out[f], LAST_PHASES[f] = p, 'back'
+                for f in range(end + 1, n_frames):
+                    out[f], LAST_PHASES[f] = list(h), 'hold'
+        for f in range(n_frames):                                # (anything missed: hold)
+            if out[f] is None:
+                out[f], LAST_PHASES[f] = hold_pose(f), 'hold'
     # no corners: where one movement hands over to the next (taking hold, letting go, setting
     # off) the speed and the turning carry on smoothly instead of starting or stopping dead
     out = _smooth_poses(out, JOIN_SMOOTH_S * fps)
     # a free hand is never perfectly still: a slow, tiny drift (not while it touches the book)
-    free = np.array([1.0 if ph in ('free', 'wait') else 0.0 for ph in LAST_PHASES])
+    free = np.array([1.0 if ph in ('free', 'hold') else 0.0 for ph in LAST_PHASES])
     if len(free) > 3:
         free = np.array(_smooth_series(list(free), 0.15 * fps)) * free
     amp = IDLE_CM / hand.pw
