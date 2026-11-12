@@ -74,7 +74,7 @@ LEFT_EASE_CM = 1.8                  # ...and eases up this much as a page lands 
 JOIN_SMOOTH_S = 0.05                # seconds of smoothing over the joins between movements
 LAY_FLIP_COST = 0.1                 # choosing the grip: a degree of turning over onto the page after ~ this much wrist bend
 LAY_TILT = 0.4                      # laying a page down the fingers point this much into it (palm raised)
-LET_GO_OUT_CM = 2.0                 # letting go, the thumb slips out this far past the page's edge
+LET_GO_OUT_CM = 4.0                 # letting go, the thumb slips out this far past the page's edge
 LET_GO_BACK_CM = 0.9                # ...while the hand drops this far behind the page
 # (all distances in real centimetres: the hand is a real hand's size whatever the book's size)
 SMOOTH_STROKE = (-0.1, -0.04)       # smoothing it: the hand then strokes this far (along, up)
@@ -725,6 +725,8 @@ def plan(hand, n_frames, fps, state_at, strap_u=None):
                 F0 = np.array(frs[-1][0])                        # the wrist easing straight as it goes
                 p_end = np.array(last[0]) - F0 * LET_GO_OUT + np.array((0.0, 0.0, LET_GO_BACK * 1.5))
                 easy = hand.natural_pose(p_end, amount=0.15, anchor=n0)
+                half = _blend(last, easy, 0.5, 0.0)              # half way round; the trip on finishes it
+                easy = [easy[0], half[1], half[2], easy[3], easy[4]]
                 for f in range(rel + 1, lay_end + 1):
                     v = (f - rel) / max(1, lay_end - rel)
                     seq[f] = _blend(last, easy, v, 0.0)
