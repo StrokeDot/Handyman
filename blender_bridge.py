@@ -96,6 +96,8 @@ def make_job(settings, book, images, out_dir, frames=None, width=None, height=No
         turn_style=str(settings.get('turn_style') or 'natural'),
         hand=bool(settings.get('hand')),
         hand_left=bool(settings.get('hand_left', True)),
+        hand_left_style='under' if settings.get('hand_left_style') == 'under' else 'on',
+        hand_size=min(max(float(settings.get('hand_size') or 100) / 100.0, 0.4), 2.0),
         hand_skin=(scene_book.get('leather_image') if settings.get('hand_skin') == 'book-leather'
                    else settings.get('hand_skin') or None),
         hand_sleeve=settings.get('hand_sleeve') or None,

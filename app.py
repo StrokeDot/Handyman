@@ -746,6 +746,28 @@ class Studio(QMainWindow):
         self.hand_left.setEnabled(False)
         self.hand_turns.toggled.connect(self.hand_left.setEnabled)
         f.addRow(self.hand_left)
+        self.hand_left_style = QComboBox()
+        self.hand_left_style.addItem('On the book (holds its corner)', 'on')
+        self.hand_left_style.addItem('Under the book (holds it up, like Arthur)', 'under')
+        self.hand_left_style.setToolTip('On the book: the book lies on a table and the left hand holds it by the corner.\n'
+                                        'Under the book: the left hand holds the book up from beneath, palm up, like\n'
+                                        'Arthur Morgan reading his journal (no table under it).')
+        self.hand_left_style.setEnabled(False)
+        f.addRow('Left hand', self.hand_left_style)
+        self.hand_size = QSpinBox()
+        self.hand_size.setRange(60, 140)
+        self.hand_size.setSingleStep(5)
+        self.hand_size.setValue(100)
+        self.hand_size.setSuffix(' %')
+        self.hand_size.setToolTip('The hands\' size: 100 % is a real man\'s hand next to the book at its real size')
+        self.hand_size.setEnabled(False)
+        f.addRow('Hand size', self.hand_size)
+
+        def _left_style_on(_=None):
+            self.hand_left_style.setEnabled(self.hand_turns.isChecked() and self.hand_left.isChecked())
+        self.hand_turns.toggled.connect(_left_style_on)
+        self.hand_left.toggled.connect(_left_style_on)
+        self.hand_turns.toggled.connect(self.hand_size.setEnabled)
         # the hand's look, swappable like the book's pictures
         self.hand_skin = QComboBox()
         self.hand_skin.addItem('Bare hand (from the photos)', '')
@@ -1615,6 +1637,7 @@ class Studio(QMainWindow):
                     page_shape=self.page_shape.currentData() or 'flat',
                     turn_style=self.turn_style.currentData() or 'natural',
                     hand=self.hand_turns.isChecked(), hand_left=self.hand_left.isChecked(),
+                    hand_left_style=self.hand_left_style.currentData() or 'on', hand_size=self.hand_size.value(),
                     hand_skin=self.hand_skin.currentData() or '', hand_sleeve=self.hand_sleeve.currentData() or '',
                     page_fits=self._page_fits())
 
@@ -1660,7 +1683,10 @@ class Studio(QMainWindow):
             if val and val != 'book-leather' and not Path(val).exists():
                 val = ''
             self._hand_set(combo, val)
-        for combo, key, default in ((self.page_shape, 'page_shape', 'flat'), (self.turn_style, 'turn_style', 'natural')):
+        if 'hand_size' in v:
+            self.hand_size.setValue(int(v['hand_size']))
+        for combo, key, default in ((self.page_shape, 'page_shape', 'flat'), (self.turn_style, 'turn_style', 'natural'),
+                                    (self.hand_left_style, 'hand_left_style', 'on')):
             j = combo.findData(v.get(key, default))
             if j >= 0:
                 combo.setCurrentIndex(j)

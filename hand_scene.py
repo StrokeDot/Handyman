@@ -41,6 +41,9 @@ LEAD_S = 0.3                        # be at the edge this long before the page s
 PINCH_S = 0.15                      # time to close or open the fingers
 PRESS_S = 0.25                      # time smoothing the turned page down
 PRESS_ALONG, PRESS_UP = 0.6, 0.3    # where it smooths: share of the way from spine to edge, up the page
+WITHDRAW_MIN_S = 1.3                # a pause at least this long: the hand goes back below the book and waits
+WITHDRAW_TRAVEL_S = 0.55            # ...taking about this long each way
+WAIT_CM = (0.62, -8.0, 2.5)         # where it waits: this share of the page's width from the spine, cm below the bottom edge, cm up
 TRAVEL_LIFT_CM = 3.9                # moving between pages the hand rises this much and comes down onto the next
 ENTER_S = 0.6                       # time to come in at the start, or go out at the end
 ELBOW_ABOVE_CM = 6.0                # the elbow stays at least this high above the table
@@ -55,6 +58,12 @@ PAD_GAP_CM = 0.3                    # finger pads rest this far above the paper
 LAY_PAGE = (0.55, 0.58)              # laying a page down: the hand slides to here on it (along, up)
 LAY_COVER = (0.55, 0.7)             # ...and on the cover
 LEFT_HOLD = (0.88, 0.0)              # the left hand holds the open book here on the cover (along, up)
+LEFT_SHOULDER_UNDER_CM = (-12.0, -26.0, -28.0)   # holding the book up from beneath: the left shoulder is below it
+UNDER_X = (0.35, -0.35)             # ...its finger pads under this share of the page's width (closed book, open book)
+UNDER_UP = 0.4                      # ...this share of the way up the book
+UNDER_GAP_CM = 0.35                 # ...this far below the book's underside
+UNDER_FINGERS = -0.6                # ...fingers nearly flat against it
+LEFT_FINGERS = -0.5                 # the holding hand's fingers lie nearly flat on the book
 LEFT_HOLD_CLOSED = (0.22, 0.035)    # ...and the closed book here, near the spine
 HAND_LEN_CM = 28.0                  # fingertips to wrist and the bare forearm below the sleeve
 HANDS_APART_CM = 9.0                # the left hand keeps about this far from the right one
@@ -100,8 +109,10 @@ def _frame(fwd, up):
 
 
 class Hand:
-    def __init__(self, root, page_w_cm, half_h, mirror=False):
-        """mirror=True makes it a left hand (the right hand mirrored, with its own shoulder)."""
+    def __init__(self, root, page_w_cm, half_h, mirror=False, shoulder_cm=None, elbow_floor=True):
+        """mirror=True makes it a left hand (the right hand mirrored, with its own shoulder).
+        shoulder_cm: where the shoulder is instead (cm from the spine / bottom edge / table);
+        elbow_floor=False lets the elbow go below the table (an arm holding the book up from beneath)."""
         self.mx = -1.0 if mirror else 1.0
         with bpy.data.libraries.load(ASSET, link=False) as (src, dst):
             dst.collections = ['MotionCraftHand']
@@ -122,7 +133,8 @@ class Hand:
         self.m0 = {n: b[n].matrix_local.copy() for n in ('upperarm_r', 'lowerarm_r', 'hand_r')}
         self.l_up = (b['upperarm_r'].head_local - b['upperarm_r'].tail_local).length
         self.l_lo = (b['lowerarm_r'].head_local - b['hand_r'].head_local).length
-        self.shoulder = self.arm(self.book_cm(LEFT_SHOULDER_CM if mirror else SHOULDER_CM))   # metres
+        self.shoulder = self.arm(self.book_cm(shoulder_cm or (LEFT_SHOULDER_CM if mirror else SHOULDER_CM)))   # metres
+        self.elbow_floor = elbow_floor
         for pb in self.rig.pose.bones:
             pb.rotation_mode = 'QUATERNION'
         # the hand's own frame and pinch point, read from the bones themselves
@@ -248,7 +260,7 @@ class Hand:
         pole = (pole - dirv * pole.dot(dirv)).normalized()
         E = S + dirv * a + pole * h
         floor = ELBOW_ABOVE_CM / 100.0                                # metres above the table
-        if E.z < floor:
+        if self.elbow_floor and E.z < floor:
             for k in range(1, 19):                                    # swing it up round the arm's line
                 for sgn in (1, -1):
                     pq = Quaternion(dirv, sgn * math.radians(10 * k)) @ pole
@@ -308,17 +320,25 @@ class Hand:
             self._fingers(amount)                  # an open, flat hand (smoothing a page)
 
     def _fingers(self, amount):
-        """-1 = flat open hand, 0 = relaxed, 1 = pinching."""
+        """-1 = flat open hand, 0 = relaxed, 1 = pinching. Each finger bends about its own true
+        bending axis and swings sideways at its root (the fingers come together from the model's
+        splayed rest pose)."""
         pbs = self.rig.pose.bones
         P = self.info['poses']
+        axes, sp_axes = self.info.get('finger_axes'), self.info.get('spread_axes')
         rel, pin, flat = P['relaxed'], P['pinch'], P['flat']
         a, b, w = (rel, pin, amount) if amount >= 0 else (rel, flat, -amount)
         span = 1.0 + max(FINGER_DELAY.values())
         for f in FINGERS:
             wf = _smooth(w * span - FINGER_DELAY[f])           # one after another, eased
             for k in range(3):
+                name = f'{f}_0{k + 1}_r'
                 deg = a[f][k] * (1 - wf) + b[f][k] * wf
-                pbs[f'{f}_0{k + 1}_r'].rotation_quaternion = Quaternion((1, 0, 0), math.radians(deg))
+                q = Quaternion(axes[name] if axes else (1, 0, 0), math.radians(deg))
+                if k == 0 and sp_axes and 'spread' in a:
+                    sp = a['spread'][f] * (1 - wf) + b['spread'][f] * wf
+                    q = Quaternion(sp_axes[name], math.radians(sp)) @ q
+                pbs[name].rotation_quaternion = q
 
     # ---------------------------------------------------------------- where things are
     def page_at(self, k, t, curve, along, up):
@@ -438,9 +458,10 @@ class Hand:
         fwd = along.normalized() - n * 0.6                      # fingertips down on it, palm raised
         return _frame(fwd, n) @ self.rest_frame.transposed()
 
-    def rest_pose(self):
-        """Waiting off to the front right: the hand in line with the forearm, palm down."""
-        p = self.book_cm(REST_CM)
+    def rest_pose(self, where_cm=None):
+        """Waiting off to the front right (or at where_cm): the hand in line with the forearm,
+        palm down."""
+        p = self.book_cm(where_cm or REST_CM)
         best = None
         for yaw in range(0, 360, 10):       # the direction that keeps the wrist straightest
             for pitch in (-25, -10, 0, 10):
@@ -728,6 +749,7 @@ def plan(hand, n_frames, fps, state_at, strap_u=None):
                     phases[f] = f'smooth {k}'
         seqs.append((seq, phases))
     rest = hand.rest_pose()
+    wait = hand.rest_pose((WAIT_CM[0] * hand.pw, WAIT_CM[1], WAIT_CM[2]))
     out, LAST_PHASES = [], []
     for f in range(n_frames):
         here = next(((seq, ph) for seq, ph in seqs if f in seq), None)
@@ -745,16 +767,27 @@ def plan(hand, n_frames, fps, state_at, strap_u=None):
         elif not after:                                          # going back out after the last
             b, seq = before[-1]
             out.append(_blend(seq[b], rest, (f - b) / enter, TRAVEL_LIFT * 0.6))
-        else:                                                    # from one to the next, over the book
+        else:                                                    # from one to the next
             b, sb = before[-1]
             a, sa = after[0]
+            if (a - b) / fps >= WITHDRAW_MIN_S:
+                # a pause: it goes back down below the book, waits, and comes back in time
+                go = max(1, round(min(WITHDRAW_TRAVEL_S * fps, (a - b) * 0.35)))
+                if f - b <= go:
+                    out.append(_blend(sb[b], wait, (f - b) / go, TRAVEL_LIFT * 0.6))
+                elif a - f <= go:
+                    out.append(_blend(wait, sa[a], 1.0 - (a - f) / go, TRAVEL_LIFT))
+                else:
+                    out.append(list(wait))
+                LAST_PHASES.append('wait')
+                continue
             out.append(_blend(sb[b], sa[a], (f - b) / max(1, a - b), TRAVEL_LIFT))
         LAST_PHASES.append('free')
     # no corners: where one movement hands over to the next (taking hold, letting go, setting
     # off) the speed and the turning carry on smoothly instead of starting or stopping dead
     out = _smooth_poses(out, JOIN_SMOOTH_S * fps)
     # a free hand is never perfectly still: a slow, tiny drift (not while it touches the book)
-    free = np.array([1.0 if ph == 'free' else 0.0 for ph in LAST_PHASES])
+    free = np.array([1.0 if ph in ('free', 'wait') else 0.0 for ph in LAST_PHASES])
     if len(free) > 3:
         free = np.array(_smooth_series(list(free), 0.15 * fps)) * free
     amp = IDLE_CM / hand.pw
@@ -782,16 +815,33 @@ def _seg_dist(p1, q1, p2, q2):
     return c1, c2, float(np.linalg.norm(c1 - c2))
 
 
-def plan_left(hand, n_frames, fps, state_at, right_plan=None):
+def plan_left_under(hand, n_frames, thetas):
+    """The left hand holding the book up from beneath, like Arthur Morgan with his journal: palm
+    up under the book, fingers spread under it - under the closed book's middle, sliding over
+    under the spine and the left half as the cover opens. (The arm comes up from below.)"""
+    cm = 1.0 / hand.pw
+
+    def under(x_share):
+        pt = np.array((x_share, -hand.half_h + UNDER_UP * 2 * hand.half_h, -UNDER_GAP_CM * cm))
+        return hand.natural_pose(pt, up=(0.0, 0.0, -1.0), amount=UNDER_FINGERS, anchor=1.0)
+
+    closed, opened = under(UNDER_X[0]), under(UNDER_X[1])
+    return [_blend(closed, opened, th / math.pi, 0.0) for th in thetas]
+
+
+def plan_left(hand, n_frames, fps, state_at, right_plan=None, style='on'):
     """The left hand (a mirrored Hand) holds the book, like Arthur's: while the book is closed its
     fingertips rest on the front cover's bottom margin near the spine (steadying it while the
     strap is undone); as the cover opens it moves off and waits just below the book; once the
-    cover has landed it holds the open book by the cover's bottom margin, below the pages (so
-    turned pages never land on it). Always a little alive, never frozen."""
+    cover has landed it holds the open book by the cover's bottom-left corner, below the pages (so
+    turned pages never land on it). Always a little alive, never frozen.
+    style='under': it holds the book up from beneath instead (plan_left_under)."""
     cm = 1.0 / hand.pw
     PAD_GAP, LEFT_EASE = PAD_GAP_CM * cm, LEFT_EASE_CM * cm
     states = [state_at(f) for f in range(n_frames)]
     thetas = [st[2] for st in states]
+    if style == 'under':
+        return plan_left_under(hand, n_frames, thetas)
     lands = []                                                   # when each turned page lands
     for k in range(len(states[0][0]) if states else 0):
         series = [st[0][k] for st in states]
@@ -800,13 +850,13 @@ def plan_left(hand, n_frames, fps, state_at, right_plan=None):
             if f_land is not None:
                 lands.append(f_land)
     open_pt, open_fr = hand.cover_at(math.pi, LEFT_HOLD[0], LEFT_HOLD[1], 0.0)
-    hold_open = hand.natural_pose(np.array(open_pt) - np.array(open_fr[2]) * PAD_GAP)
+    hold_open = hand.natural_pose(np.array(open_pt) - np.array(open_fr[2]) * PAD_GAP, amount=LEFT_FINGERS)
     # on a small book the two hands cannot both be on it: the left one rests on the table beside it
     beside = hand.natural_pose(hand.book_cm((-hand.pw - BESIDE_CM[0], BESIDE_CM[1], 0.15)), amount=0.3)
     starts_closed = bool(n_frames) and thetas[0] < math.pi - 1e-3
     if starts_closed:
         c_pt, c_fr = hand.cover_at(0.0, LEFT_HOLD_CLOSED[0], LEFT_HOLD_CLOSED[1], 1.0)
-        hold_closed = hand.natural_pose(np.array(c_pt) + np.array(c_fr[2]) * PAD_GAP)
+        hold_closed = hand.natural_pose(np.array(c_pt) + np.array(c_fr[2]) * PAD_GAP, amount=LEFT_FINGERS)
         hp = np.array(hold_open[0]) + np.array(HOVER_CM) * cm   # aside, by where it will hold
         hover = hand.natural_pose(hp, amount=0.2, anchor=1.0)
         c_start = next((f for f, th in enumerate(thetas) if th > 1e-3), 0)

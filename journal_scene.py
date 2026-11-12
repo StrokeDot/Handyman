@@ -645,7 +645,9 @@ def main():
         tune_cycles(sc_b)
     root, pivot, sp, core, obs, strap = build(job)
     setup_lights_world()
-    add_shadow_catcher(root)
+    held_up = bool(job.get('hand')) and job.get('hand_left', True) and job.get('hand_left_style') == 'under'
+    if not held_up:                    # a book held up in the hand has no table under it
+        add_shadow_catcher(root)
     cam_data = bpy.data.cameras.new('Camera')
     cam_data.sensor_width = 36.0
     cam_data.sensor_fit = 'HORIZONTAL'
@@ -678,13 +680,18 @@ def main():
             G.set_turned(ts)
             return ts, G.curve_weights(ts), theta
         cm = (job['book'].get('page_size_cm') or [G.REF_PAGE_CM[0]])[0]
+        # a smaller hand on this book looks just like a real-size hand on a bigger book
+        cm = float(cm) / min(max(float(job.get('hand_size') or 1.0), 0.4), 2.0)
         hand = hand_scene.Hand(root, float(cm), G.H / 2)
         hand.set_look(job.get('hand_skin'), job.get('hand_sleeve'))
         hand_plan = hand_scene.plan(hand, sc.frames, job['fps'], state_at, strap_u)
         if job.get('hand_left', True):                 # the left hand holds the book
-            left = hand_scene.Hand(root, float(cm), G.H / 2, mirror=True)
+            style = 'under' if held_up else 'on'
+            left = hand_scene.Hand(root, float(cm), G.H / 2, mirror=True,
+                                   shoulder_cm=hand_scene.LEFT_SHOULDER_UNDER_CM if held_up else None,
+                                   elbow_floor=not held_up)
             left.set_look(job.get('hand_skin'), job.get('hand_sleeve'))
-            left_plan = hand_scene.plan_left(left, sc.frames, job['fps'], state_at, hand_plan)
+            left_plan = hand_scene.plan_left(left, sc.frames, job['fps'], state_at, hand_plan, style)
         log('INFO hand turns the pages')
     frames = job.get('frames') or list(range(sc.frames))
     total_frames = len(frames)
