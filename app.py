@@ -735,6 +735,10 @@ class Studio(QMainWindow):
         self.turn_style.setToolTip('How each page moves as it turns')
         self.turn_style.currentIndexChanged.connect(self._schedule_live)
         f.addRow('Page turn style', self.turn_style)
+        self.hand_turns = QCheckBox('Show a 3D hand turning the pages')
+        self.hand_turns.setToolTip('A right hand reaches in, pinches each page by its corner and turns it.\n'
+                                   'It is in the rendered video and "Preview still" (not yet in the live view).')
+        f.addRow(self.hand_turns)
         flip = QPushButton('Add a fast flip…')
         flip.setToolTip('Flip through many pages quickly, like riffling them with your thumb')
         flip.clicked.connect(self._fast_flip)
@@ -1565,6 +1569,7 @@ class Studio(QMainWindow):
                     clip_list=self.edited_clips, transform=self._transform(),
                     page_shape=self.page_shape.currentData() or 'flat',
                     turn_style=self.turn_style.currentData() or 'natural',
+                    hand=self.hand_turns.isChecked(),
                     page_fits=self._page_fits())
 
     def _state(self):
@@ -1600,7 +1605,7 @@ class Studio(QMainWindow):
             self._set_cam(v['cam'])
         self._set_transform(v.get('transform'))
         for key, box in (('mov', self.mov), ('webm', self.webm), ('keep_png', self.keep_png),
-                         ('start_closed', self.start_closed)):
+                         ('start_closed', self.start_closed), ('hand', self.hand_turns)):
             if key in v:
                 box.setChecked(bool(v[key]))
         for combo, key, default in ((self.page_shape, 'page_shape', 'flat'), (self.turn_style, 'turn_style', 'natural')):

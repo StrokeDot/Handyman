@@ -286,3 +286,16 @@ def test_travelling_curve_never_makes_pages_touch():
             for a in range(max(0, landed - 2), min(n - 1, landed + 2)):
                 assert mind(sh[a], sh[a + 1]) >= G.SHEET_T - 1e-4, (landed, u, a)
     G.configure(10, 1.4318, page_shape='flat')
+
+
+def test_the_hand_option_reaches_the_render_and_its_model_ships():
+    settings = dict(width=640, height=360, fps=24, start_hold=0.5, turn_seconds=1.0, pause=0.3, end_hold=0.5,
+                    curl=1.0, cam={'move': 'none'}, quality='Draft (fastest)', blend='Photo (keeps bright colours)',
+                    open_seconds=0, start_closed=False, page_count=6, hand=True)
+    book = templates.load(Path(__file__).parent / 'resources' / 'books' / 'leather-journal')
+    with tempfile.TemporaryDirectory() as tmp:
+        assert bb.make_job(settings, book, [], tmp)['hand'] is True
+        assert bb.make_job(dict(settings, hand=False), book, [], tmp)['hand'] is False
+    hand = Path(__file__).parent / 'resources' / 'hand' / 'hand.blend'
+    assert hand.exists() and hand.stat().st_size > 1_000_000
+    assert (Path(__file__).parent / 'hand_scene.py').exists()

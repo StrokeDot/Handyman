@@ -527,7 +527,7 @@ def add_shadow_catcher(root):
     modes have no table, like the classic engine.)"""
     if bpy.context.scene.render.engine != 'CYCLES':
         return
-    bpy.ops.mesh.primitive_plane_add(size=6, location=(0, 0, 0))
+    bpy.ops.mesh.primitive_plane_add(size=60, location=(0, 0, 0))   # big: an arm's shadow reaches far
     table = bpy.context.active_object
     table.name = 'ShadowCatcher'
     table.is_shadow_catcher = True
@@ -604,6 +604,21 @@ def main():
                      job.get('open_seconds', 0.0), job.get('slide', True),
                      page_count=G.N_SHEETS, smoothness=job.get('smoothness', 1.0),
                      recorded_clips=job.get('recorded_clips'), clip_list=job.get('clip_list'))
+    hand_plan, hand = None, None
+    if job.get('hand'):
+        import hand_scene
+
+        def state_at(f):
+            pose = sc.evaluate(f)
+            G.set_opening(G.cover_angle(float(pose['cover_progress'])))
+            prog = pose['sheet_progress']
+            ts = [float(prog[k]) if k < len(prog) else 0.0 for k in range(len(obs))]
+            G.set_turned(ts)
+            return ts, G.curve_weights(ts)
+        cm = (job['book'].get('page_size_cm') or [G.REF_PAGE_CM[0]])[0]
+        hand = hand_scene.Hand(root, float(cm), G.H / 2)
+        hand_plan = hand_scene.plan(hand, sc.frames, job['fps'], state_at)
+        log('INFO hand turns the pages')
     frames = job.get('frames') or list(range(sc.frames))
     total_frames = len(frames)
     offset = 0
@@ -650,10 +665,15 @@ def main():
             if state != last[k]:
                 set_coords(ob.data, sheet_coords(k, ts[k], cw[k]))
                 last[k] = state
+        hand_key = None
+        if hand_plan is not None:
+            hp = hand_plan[min(f, len(hand_plan) - 1)]
+            hand.apply(hp)
+            hand_key = tuple(round(float(x), 5) for part in hp[:3] for x in part) + (round(float(hp[3]), 4),)
         path = os.path.join(out, f'frame_{offset + i:06d}.png')
         cam_key = None if job['cam'].get('move', 'none') == 'none' else round(float(pose['camera_frac']), 6)
         key = (round(theta, 7), w_open, tuple(round(float(x), 7) for x in prog), cam_key,
-               round(float(pose.get('cover_slide', 0.0)), 7))
+               round(float(pose.get('cover_slide', 0.0)), 7), hand_key)
         if key == last_key and last_path:
             shutil.copyfile(last_path, path)          # nothing moved: same picture, no render
         else:
