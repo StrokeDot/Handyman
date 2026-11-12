@@ -115,6 +115,9 @@ def main():
             parts.append((key, B))
         mats = {key: np.zeros((sc.frames, len(bones), 4, 4), np.float32) for key, _ in parts}
         for f in range(sc.frames):
+            if f % 20 == 0:                                       # the app shows how far along it is
+                done = (len(meta['hands']) + f / sc.frames) / (2 if left is not None else 1)
+                print(f'PROGRESS {done:.3f}', flush=True)
             h.apply(plan[min(f, len(plan) - 1)])
             bpy.context.view_layer.update()
             P = [rig.pose.bones[n].matrix for n in bones]

@@ -833,10 +833,14 @@ class LiveView(QOpenGLWidget):
                           _hex_rgb(self.book.get('paper_color')))
         hands = getattr(self, 'hands', None)
         if hands is not None:                     # baked by Blender: the render's own movement
+            gl.glPushMatrix()                     # the hands go with the book as it slides
             try:
+                gl.glTranslatef(float(pose.get('cover_slide', 0.0)), 0.0, 0.0)
                 hands.draw(self.frame)
             except Exception:
                 self.hands = None
+            finally:
+                gl.glPopMatrix()
         gl.glPopMatrix()
 
     # ------------------------------------------------------------- drawing

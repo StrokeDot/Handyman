@@ -119,6 +119,7 @@ class HandBakeWorker(QThread):
     """Blender works out the hands' movement for the live view (hand_bake.py; no rendering)."""
     finished_ok = Signal(str)
     failed = Signal(str)
+    progress = Signal(float)
 
     def __init__(self, blender, job_path, out_path):
         super().__init__()
@@ -131,6 +132,12 @@ class HandBakeWorker(QThread):
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                     text=True, encoding='utf-8', errors='replace', creationflags=NO_WINDOW)
             for line in proc.stdout:
+                if line.startswith('PROGRESS '):
+                    try:
+                        self.progress.emit(float(line.split()[1]))
+                    except ValueError:
+                        pass
+                    continue
                 if line.strip():
                     tail = (tail + [line.rstrip()])[-20:]
             proc.wait()
@@ -2073,8 +2080,19 @@ class Studio(QMainWindow):
         self._hand_worker = HandBakeWorker(self.blender, str(job_path), str(out))
         self._hand_worker.finished_ok.connect(self._hands_ready)
         self._hand_worker.failed.connect(self._hands_failed)
+        self._hand_worker.progress.connect(self._hands_progress)
         self._hand_worker.start()
-        self.status.setText('Working out the hands\' movement for the live view…')
+        self._hand_started = time.time()
+        self.status.setText('Working out the hands\' movement for the live view… (starting Blender)')
+
+    def _hands_progress(self, done):
+        """How far along working out the hands is, and roughly how long is left."""
+        took = time.time() - getattr(self, '_hand_started', time.time())
+        left = ''
+        if done > 0.05:
+            secs = max(1, round(took * (1 - done) / done))
+            left = f', about {secs} s left'
+        self.status.setText(f'Working out the hands\' movement for the live view… {round(done * 100)}%{left}')
 
     def _hands_ready(self, path):
         if getattr(self, '_hands_pending', False):
