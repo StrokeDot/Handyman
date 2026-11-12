@@ -1,5 +1,8 @@
 # Changes
 
+## 0.16.1
+- **The hand opens the book** (with "Start closed, then open the cover"): like Arthur Morgan, it catches the closed cover by its top corner, swings it open past upright, lets go, smooths it down on the left, and then goes on to turn the pages.
+
 ## 0.16.0
 - **Change the hand's look, like the book's**: under "Show a 3D hand turning the pages" (Animation tab), "Hand skin" can be the bare hand, a leather glove made from the book cover's own leather, or any picture of your own (leather, fabric, skin) wrapped over the hand. "Sleeve" can be the brown suede or any fabric picture, repeated over the sleeve with its stitching and folds kept.
 

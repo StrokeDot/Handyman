@@ -29,6 +29,7 @@ SHOULDER_CM = (33.0, -30.0, 30.0)   # right of the spine, in front of the bottom
 REST_CM = (46.0, -34.0, 6.0)        # where the hand waits before the first turn and after the last (low, front right)
 GRAB_UP = 0.28                      # catch the edge this far up from the bottom (share of page height)
 GRAB_IN = 0.012                     # ...and this far in from the fore-edge (share of page width)
+COVER_GRAB_IN, COVER_GRAB_DOWN = 0.03, 0.12   # the cover is caught near its top fore-edge corner
 GRIP_IN_DEG = 35.0                  # the fingers lie along the edge, turned this much in over the page
 RELEASE = 0.97                      # (at the latest) let go at this turn progress
 RELEASE_DEG = 118.0                 # let go once the page has turned this far (past upright)
@@ -256,12 +257,36 @@ class Hand:
         e_in /= np.linalg.norm(e_in)
         return edge + e_in * GRAB_IN, (e_in, e_edge, n)
 
+    def cover_grip(self, theta):
+        """(grab point, frame) on the front cover's top fore-edge corner, the cover open by theta."""
+        pv = G.cover_pivot(theta)
+        c, s_ = math.cos(-theta), math.sin(-theta)
+        R = np.array(((c, 0, s_), (0, 1, 0), (-s_, 0, c)))
+        local = np.array((G.WC - COVER_GRAB_IN * G.WC, G.HC / 2 - COVER_GRAB_DOWN * G.HC, G.TB * 0.5))
+        point = np.array((pv[0], 0.0, pv[1])) + R @ local
+        return point, (R @ np.array((-1.0, 0, 0)), R @ np.array((0, 1.0, 0)), R @ np.array((0, 0, 1.0)))
+
+    def cover_pose(self, theta, prev_turn=None):
+        return self.grip_pose(*self.cover_grip(theta), prev_turn)
+
+    def cover_press(self):
+        """An open hand resting on the opened cover's lower part (on its pastedown)."""
+        theta = math.pi
+        pv = G.cover_pivot(theta)
+        c, s_ = math.cos(-theta), math.sin(-theta)
+        R = np.array(((c, 0, s_), (0, 1, 0), (-s_, 0, c)))
+        local = np.array((G.WC * 0.6, -G.HC / 2 + PRESS_UP * G.HC, 0.0))
+        p = np.array((pv[0], 0.0, pv[1])) + R @ local + np.array((0, 0, 0.012))
+        return [tuple(p), HOLD_LEFT[1], HOLD_LEFT[2]]
+
     def carry_pose(self, k, t, curve, prev_turn=None):
-        """Holding the page's edge, at the page's own speed: the pinch point is fixed to the page
-        where it caught it, thumb on the page's front, index finger behind it. Around that
-        pinch the hand may turn (as fingers do on paper) to keep the wrist comfortable.
-        Returns (pose, turn angle used, how far the page has turned 0..pi)."""
-        point, frame = self.page_grip(k, t, curve)
+        return self.grip_pose(*self.page_grip(k, t, curve), prev_turn)
+
+    def grip_pose(self, point, frame, prev_turn=None):
+        """Holding a page's (or the cover's) edge, at its own speed: the pinch point is fixed to
+        it where it caught it, thumb on its front, index finger behind it. Around that pinch
+        the hand may turn (as fingers do on paper) to keep the wrist comfortable.
+        Returns (pose, turn angle used, how far it has turned 0..pi)."""
         e_in, e_edge, n = (Vector(v) for v in frame)
         a = -n                                                   # thumb (front) -> index (back)
         base = e_edge * math.cos(math.radians(GRIP_IN_DEG)) + e_in * math.sin(math.radians(GRIP_IN_DEG))
@@ -331,6 +356,7 @@ def plan(hand, n_frames, fps, state_at):
     carry it all the way over turning with it, lay it down and smooth it, then go for the next."""
     lead, pinch, press, enter = (max(1, round(x * fps)) for x in (LEAD_S, PINCH_S, PRESS_S, ENTER_S))
     progs = [state_at(f) for f in range(n_frames)]
+    thetas = [p[2] if len(p) > 2 else math.pi for p in progs]
     turns = []                      # (sheet, start frame, let-go frame)
     n_sheets = len(progs[0][0]) if progs else 0
     for k in range(n_sheets):
@@ -342,6 +368,11 @@ def plan(hand, n_frames, fps, state_at):
             continue
         rel = next((f for f, t in enumerate(series) if t >= RELEASE), n_frames - 1)
         turns.append((k, start, rel))
+    if thetas and thetas[0] < math.pi - 1e-3:                 # the book starts closed: open the cover first
+        c_start = next((f for f, th in enumerate(thetas) if th > 1e-3), None)
+        if c_start is not None:
+            c_open = next((f for f, th in enumerate(thetas) if th >= math.radians(RELEASE_DEG)), n_frames - 1)
+            turns.append(('cover', c_start, c_open))
     turns.sort(key=lambda x: x[1])
     # pages turning faster than a hand could take them (a fast flip) turn on their own
     kept = []
@@ -353,15 +384,21 @@ def plan(hand, n_frames, fps, state_at):
     for i, (k, start, rel) in enumerate(turns):
         prev = None
         for f in range(max(0, start - lead), min(n_frames, rel + 1)):
-            ts, cw = state_at(f)
-            pose, prev, phi = hand.carry_pose(k, ts[k], cw[k], prev)
+            ts, cw = state_at(f)[:2]
+            if k == 'cover':
+                pose, prev, phi = hand.cover_pose(thetas[f], prev)
+            else:
+                pose, prev, phi = hand.carry_pose(k, ts[k], cw[k], prev)
             carry[f] = pose
             if phi >= math.radians(RELEASE_DEG) and f >= start:
                 rel = f                                          # past upright: let go
                 break
         turns[i] = (k, start, rel)
-        series = [p[0][k] for p in progs]
-        lands[k] = next((f for f, t in enumerate(series) if f > rel and t >= 0.985), rel + press)
+        if k == 'cover':
+            lands[k] = next((f for f, th in enumerate(thetas) if f > rel and th >= math.pi * 0.99), rel + press)
+        else:
+            series = [p[0][k] for p in progs]
+            lands[k] = next((f for f, t in enumerate(series) if f > rel and t >= 0.985), rel + press)
     steps = []                      # per turn: arrive, let go, done smoothing, press pose
     for i, (k, start, rel) in enumerate(turns):
         arrive = max(0, start - lead)
@@ -369,8 +406,9 @@ def plan(hand, n_frames, fps, state_at):
         if i + 1 < len(turns):
             nxt_arrive = max(0, turns[i + 1][1] - lead)
             done = max(rel + 1, min(done, nxt_arrive - max(2, pinch)))
-        ts, cw = state_at(min(n_frames - 1, max(lands[k], rel + 2)))
-        steps.append((arrive, start, rel, done, hand.press_pose(k, cw[k]), max(lands[k], rel + 2)))
+        ts, cw = state_at(min(n_frames - 1, max(lands[k], rel + 2)))[:2]
+        press_p = hand.cover_press() if k == 'cover' else hand.press_pose(k, cw[k])
+        steps.append((arrive, start, rel, done, press_p, max(lands[k], rel + 2)))
     rest = hand.rest_pose()
     out = []
     for f in range(n_frames):

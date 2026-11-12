@@ -610,11 +610,12 @@ def main():
 
         def state_at(f):
             pose = sc.evaluate(f)
-            G.set_opening(G.cover_angle(float(pose['cover_progress'])))
+            theta = G.cover_angle(float(pose['cover_progress']))
+            G.set_opening(theta)
             prog = pose['sheet_progress']
             ts = [float(prog[k]) if k < len(prog) else 0.0 for k in range(len(obs))]
             G.set_turned(ts)
-            return ts, G.curve_weights(ts)
+            return ts, G.curve_weights(ts), theta
         cm = (job['book'].get('page_size_cm') or [G.REF_PAGE_CM[0]])[0]
         hand = hand_scene.Hand(root, float(cm), G.H / 2)
         hand.set_look(job.get('hand_skin'), job.get('hand_sleeve'))
