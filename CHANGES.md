@@ -1,5 +1,8 @@
 # Changes
 
+## 0.23.1
+- **"Under the book" rebuilt from the Red Dead Redemption 2 reference**: the left hand now holds the book from beneath with its fingers pointing away from you, up under the book, so it stays hidden - only the wrist and sleeve show below the book's bottom edge, as with Arthur's left hand. Before, its fingertips poked out from the book's right side. While the cover opens it stays under the closed part, and moves across under the left side just as the cover comes down onto it.
+
 ## 0.23.0
 - **The hands look much better in the live view**: they now have their own shading, closer to the video - light glows softly through the skin on the shadow side, the skin has a gentle shine and a less orange tone, and the suede sleeve has its velvety sheen on the folds and patchy nap. The hands also cast a soft shadow on the pages (and on the table beside the book), so they sit on the book instead of floating over it.
 

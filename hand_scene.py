@@ -70,8 +70,9 @@ LAY_PAGE = (0.55, 0.45)              # laying a page down: the hand slides to he
 LAY_COVER = (0.55, 0.7)             # ...and on the cover
 LEFT_HOLD = (0.88, 0.0)              # the left hand holds the open book here on the cover (along, up)
 LEFT_SHOULDER_UNDER_CM = (-12.0, -26.0, -28.0)   # holding the book up from beneath: the left shoulder is below it
-UNDER_X = (0.62, -0.38)             # ...its finger pads under this share of the page's width (closed book, open book)
-UNDER_UP = 0.4                      # ...this share of the way up the book
+UNDER_X = (0.4, -0.45)              # ...its finger pads under this share of the page's width (closed book, open book)
+UNDER_UP = 0.58                     # ...this share of the way up the book
+UNDER_YAW = (60, 104)               # ...fingers pointing away up the book (degrees: 90 = straight up it)
 UNDER_GAP_CM = 0.35                 # ...this far below the book's underside
 UNDER_FINGERS = -0.6                # ...fingers nearly flat against it
 LEFT_FINGERS = -0.5                 # the holding hand's fingers lie nearly flat on the book
@@ -966,11 +967,17 @@ def plan_left_under(hand, n_frames, thetas):
     cm = 1.0 / hand.pw
 
     def under(x_share):
+        # palm up, fingers pointing away up under the book: only the wrist and the sleeve show,
+        # coming out below the book's bottom edge (as Arthur's left hand in the reference)
         pt = np.array((x_share, -hand.half_h + UNDER_UP * 2 * hand.half_h, -UNDER_GAP_CM * cm))
-        return hand.natural_pose(pt, up=(0.0, 0.0, -1.0), amount=UNDER_FINGERS, anchor=1.0)
+        return hand.natural_pose(pt, up=(0.0, 0.0, -1.0), amount=UNDER_FINGERS, anchor=1.0,
+                                 yaws=range(UNDER_YAW[0], UNDER_YAW[1] + 1, 4))
 
     closed, opened = under(UNDER_X[0]), under(UNDER_X[1])
-    return [_blend(closed, opened, th / math.pi, 0.0) for th in thetas]
+    # it stays hidden under the closed part while the cover is up, and moves across under the
+    # left side just as the cover comes down onto it
+    return [_blend(closed, opened, min(1.0, max(0.0, (th - 0.72 * math.pi) / (0.25 * math.pi))), 0.0)
+            for th in thetas]
 
 
 def plan_left(hand, n_frames, fps, state_at, right_plan=None, style='on'):
