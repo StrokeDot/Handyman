@@ -1,5 +1,8 @@
 # Changes
 
+## 0.22.0
+- **The hand moves like Arthur Morgan's between pages** (studied frame by frame from the Red Dead Redemption 2 journal): between turns the right hand now holds the book on its right side - fingertips on the edge, low down, the hand off the page - instead of waiting off to the side. To turn, it slides up that edge and catches the page; it pushes the page over and presses it down low on the left page, sweeping towards the bottom corner; then it comes back along the bottom of the book to hold the right side again. With the usual timing it goes straight from the bottom of the book to the next page; with a longer pause it holds the book and waits; with very fast turns it goes straight across. It always keeps to your turn and pause timing. The live view shows the same movement.
+
 ## 0.21.1
 - **Fix**: in 0.21.0 a journal video could stop with an error right at the end of rendering (after the last frame). Videos finish normally again.
 
