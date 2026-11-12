@@ -178,8 +178,11 @@ class Hand:
                 continue
             if ob.name.startswith('Sleeve') and sleeve and os.path.exists(sleeve):
                 tex = self._picture(nt, sleeve, 'UV', SLEEVE_TILE_M)
+                fabric = nt.nodes.get('FabricColour')          # keeps the stitches, nap, folds and wear
                 into = bsdf.inputs['Base Color'].links[0].from_node if bsdf.inputs['Base Color'].links else None
-                if into is not None and into.type == 'MIX':
+                if fabric is not None:
+                    nt.links.new(tex.outputs['Color'], fabric.inputs[6])
+                elif into is not None and into.type == 'MIX':
                     nt.links.new(tex.outputs['Color'], into.inputs[6])    # keeps the stitches' shading
                 else:
                     nt.links.new(tex.outputs['Color'], bsdf.inputs['Base Color'])
