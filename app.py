@@ -742,7 +742,7 @@ class Studio(QMainWindow):
         self.hand_left = QCheckBox('…and the left hand holds the book')
         self.hand_left.setChecked(True)
         self.hand_left.setToolTip('Like Arthur Morgan: the left hand steadies the closed book, moves out of the\n'
-                                  'cover\'s way while it opens, then holds the open book by its bottom edge.')
+                                  'cover\'s way while it opens, then holds the open book by its bottom-left corner.')
         self.hand_left.setEnabled(False)
         self.hand_turns.toggled.connect(self.hand_left.setEnabled)
         f.addRow(self.hand_left)

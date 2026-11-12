@@ -1,5 +1,10 @@
 # Changes
 
+## 0.18.0
+- **Both hands, like Arthur Morgan**: the left hand now holds the book too. While the book is closed it steadies the cover as the strap is undone; it moves aside to the left before the cover swings over, then holds the open book by its bottom-left corner, below the pages, so turned pages never land on it. It eases up a little as each page comes down, and moves aside whenever the right hand comes near. On a very small book, where two hands would not fit, it rests on the table beside the book instead. Untick "...and the left hand holds the book" (Animation tab, under the hand option) to show only the right hand.
+- **Smoother hand movement**: no more sudden flip of the hand when it lays the cover or a page down - it now grips the page so that, letting go, it only has to roll a little onto the page's back. It lets go just past upright, and every change of movement (taking hold, letting go, setting off for the next page) flows on instead of starting or stopping dead. On fast flips it simply lets go and lifts away instead of rushing to lay each page.
+- Hand distances are worked out in real centimetres, so the hands behave the same on small and large books.
+
 ## 0.17.0
 - **Journals can have a strap**: in Change book design, "Book kind" is Book or Journal (a diary). Only a journal can have "Leather strap round the fore-edge": a strap in the cover's leather from the back cover round to the front, like Arthur Morgan's journal. When the video starts closed, the strap comes undone just before the cover opens - and if the hand is shown, the hand pinches its tip, lifts it off and folds it out, then opens the cover. (The strap is in the rendered video; the live view does not show it yet.)
 

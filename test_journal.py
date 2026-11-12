@@ -314,6 +314,31 @@ def test_hand_look_choices_reach_the_render():
         assert glove['hand_sleeve'] == '/x/wool.png'
 
 
+def test_the_left_hand_holds_the_book_unless_turned_off():
+    settings = dict(width=640, height=360, fps=24, start_hold=0.5, turn_seconds=1.0, pause=0.3, end_hold=0.5,
+                    curl=1.0, cam={'move': 'none'}, quality='Draft (fastest)', blend='Photo (keeps bright colours)',
+                    open_seconds=0, start_closed=False, page_count=6, hand=True)
+    book = templates.load(Path(__file__).parent / 'resources' / 'books' / 'leather-journal')
+    with tempfile.TemporaryDirectory() as tmp:
+        assert bb.make_job(settings, book, [], tmp)['hand_left'] is True             # on by default
+        assert bb.make_job(dict(settings, hand_left=False), book, [], tmp)['hand_left'] is False
+
+
+def test_the_left_hand_moves_aside_for_the_right_one():
+    try:
+        import hand_scene as H                      # needs Blender's Python module (bpy)
+    except ImportError:
+        return
+    import numpy as np
+    a, b, d = H._seg_dist(np.array((0.0, 0, 0)), np.array((1.0, 0, 0)), np.array((0.5, 1, 0)), np.array((0.5, 2, 0)))
+    assert abs(d - 1.0) < 1e-9 and np.allclose(a, (0.5, 0, 0)) and np.allclose(b, (0.5, 1, 0))
+    poses = [[(0.0, 0, 0), (1.0, 0, 0), (0.0, 0, 1), 0.0, 1.0]] * 5 + [[(1.0, 0, 0), (0.0, 1, 0), (0.0, 0, 1), 1.0, 0.0]] * 5
+    sm = H._smooth_poses(poses, 1.2)
+    assert len(sm) == 10 and 0 < sm[5][0][0] < 1                                 # the join is eased
+    for p in sm:
+        assert abs(np.linalg.norm(p[1]) - 1) < 1e-9 and abs(np.dot(p[1], p[2])) < 1e-9   # still square
+
+
 def test_only_a_journal_can_have_a_strap():
     book = templates.load(Path(__file__).parent / 'resources' / 'books' / 'leather-journal')
     assert book['kind'] == 'journal' and not book['strap']
