@@ -95,6 +95,7 @@ def make_job(settings, book, images, out_dir, frames=None, width=None, height=No
         page_shape=str(settings.get('page_shape') or 'flat'),
         turn_style=str(settings.get('turn_style') or 'natural'),
         hand=bool(settings.get('hand')),
+        hand_left=bool(settings.get('hand_left', True)),
         hand_skin=(scene_book.get('leather_image') if settings.get('hand_skin') == 'book-leather'
                    else settings.get('hand_skin') or None),
         hand_sleeve=settings.get('hand_sleeve') or None,

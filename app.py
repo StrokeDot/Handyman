@@ -739,6 +739,13 @@ class Studio(QMainWindow):
         self.hand_turns.setToolTip('A right hand reaches in, pinches each page by its corner and turns it.\n'
                                    'It is in the rendered video and "Preview still" (not yet in the live view).')
         f.addRow(self.hand_turns)
+        self.hand_left = QCheckBox('…and the left hand holds the book')
+        self.hand_left.setChecked(True)
+        self.hand_left.setToolTip('Like Arthur Morgan: the left hand steadies the closed book, moves out of the\n'
+                                  'cover\'s way while it opens, then holds the open book by its bottom edge.')
+        self.hand_left.setEnabled(False)
+        self.hand_turns.toggled.connect(self.hand_left.setEnabled)
+        f.addRow(self.hand_left)
         # the hand's look, swappable like the book's pictures
         self.hand_skin = QComboBox()
         self.hand_skin.addItem('Bare hand (from the photos)', '')
@@ -1607,7 +1614,7 @@ class Studio(QMainWindow):
                     clip_list=self.edited_clips, transform=self._transform(),
                     page_shape=self.page_shape.currentData() or 'flat',
                     turn_style=self.turn_style.currentData() or 'natural',
-                    hand=self.hand_turns.isChecked(),
+                    hand=self.hand_turns.isChecked(), hand_left=self.hand_left.isChecked(),
                     hand_skin=self.hand_skin.currentData() or '', hand_sleeve=self.hand_sleeve.currentData() or '',
                     page_fits=self._page_fits())
 
@@ -1644,7 +1651,8 @@ class Studio(QMainWindow):
             self._set_cam(v['cam'])
         self._set_transform(v.get('transform'))
         for key, box in (('mov', self.mov), ('webm', self.webm), ('keep_png', self.keep_png),
-                         ('start_closed', self.start_closed), ('hand', self.hand_turns)):
+                         ('start_closed', self.start_closed), ('hand', self.hand_turns),
+                         ('hand_left', self.hand_left)):
             if key in v:
                 box.setChecked(bool(v[key]))
         for combo, key in ((self.hand_skin, 'hand_skin'), (self.hand_sleeve, 'hand_sleeve')):

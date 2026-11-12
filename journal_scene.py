@@ -551,7 +551,7 @@ def strap_u_at(f, c_start, fps, starts_closed):
     before the cover starts to open (sooner if the video starts closer to the opening)."""
     if not starts_closed:
         return 1.0
-    end = c_start - round(0.15 * fps)
+    end = c_start - round(0.45 * fps)
     span = max(2, min(round(1.0 * fps), end))
     begin = end - span
     return min(1.0, max(0.0, (f - begin) / span))
@@ -665,7 +665,7 @@ def main():
     starts_closed = sc.evaluate(0)['cover_progress'] < 1.0 - 1e-6
     c_start = next((f for f in range(sc.frames) if sc.evaluate(f)['cover_progress'] > 1e-6), 0)
     strap_u = [strap_u_at(f, c_start, job['fps'], starts_closed) for f in range(sc.frames)] if strap else None
-    hand_plan, hand = None, None
+    hand_plan, hand, left_plan, left = None, None, None, None
     if job.get('hand'):
         import hand_scene
 
@@ -681,6 +681,10 @@ def main():
         hand = hand_scene.Hand(root, float(cm), G.H / 2)
         hand.set_look(job.get('hand_skin'), job.get('hand_sleeve'))
         hand_plan = hand_scene.plan(hand, sc.frames, job['fps'], state_at, strap_u)
+        if job.get('hand_left', True):                 # the left hand holds the book
+            left = hand_scene.Hand(root, float(cm), G.H / 2, mirror=True)
+            left.set_look(job.get('hand_skin'), job.get('hand_sleeve'))
+            left_plan = hand_scene.plan_left(left, sc.frames, job['fps'], state_at, hand_plan)
         log('INFO hand turns the pages')
     frames = job.get('frames') or list(range(sc.frames))
     total_frames = len(frames)
@@ -739,7 +743,11 @@ def main():
         if hand_plan is not None:
             hp = hand_plan[min(f, len(hand_plan) - 1)]
             hand.apply(hp)
-            hand_key = tuple(round(float(x), 5) for part in hp[:3] for x in part) + (round(float(hp[3]), 4),)
+            hand_key = tuple(round(float(x), 5) for part in hp[:3] for x in part) + tuple(round(float(x), 4) for x in hp[3:])
+        if left_plan is not None:
+            lp = left_plan[min(f, len(left_plan) - 1)]
+            left.apply(lp)
+            hand_key = (hand_key, tuple(round(float(x), 5) for part in lp[:3] for x in part))
         path = os.path.join(out, f'frame_{offset + i:06d}.png')
         cam_key = None if job['cam'].get('move', 'none') == 'none' else round(float(pose['camera_frac']), 6)
         key = (round(theta, 7), w_open, tuple(round(float(x), 7) for x in prog), cam_key,
