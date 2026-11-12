@@ -42,10 +42,11 @@ PINCH_S = 0.15                      # time to close or open the fingers
 PRESS_S = 0.25                      # time smoothing the turned page down
 PRESS_ALONG, PRESS_UP = 0.6, 0.3    # where it smooths: share of the way from spine to edge, up the page
 RIGHT_HOLD = (0.985, 0.3)           # between turns the right hand holds the book here (share of the page: from the spine, up)
+HOLD_EXTRA_CM = 0.2                 # ...resting this much higher (its thumb clear of the pages)
 RIGHT_FINGERS = -0.35               # ...its fingers nearly flat on the edge
 RETURN_S = 0.45                     # after laying a page down it is back holding the book in this long
 SLIDE_S = 0.3                       # ...and slides up the edge to the next page in this long
-SLIDE_LIFT_CM = 0.6                 # ...barely lifting
+SLIDE_LIFT_CM = 1.4                 # ...barely lifting
 FAST_BACK_S = 0.45                   # with less time than this between turns it goes straight across
 BACK_LIFT_CM = 1.2                  # ...rising this much on the way (clear of the book's edges)
 SKIM_CM = 0.8                       # coming back along the bottom it skims this far over the pages
@@ -65,7 +66,7 @@ SIDES = {}                          # which side the thumb took for each thing h
 SIDE_INFO = {}                      # (side, mean bend, turn onto the page after) per thing (for checks)
 PAD_DEPTH_M = 0.008                 # from the middle of a fingertip to its pad (the skin that touches)
 PAD_GAP_CM = 0.3                    # finger pads rest this far above the paper
-LAY_PAGE = (0.55, 0.58)              # laying a page down: the hand slides to here on it (along, up)
+LAY_PAGE = (0.55, 0.45)              # laying a page down: the hand slides to here on it (along, up)
 LAY_COVER = (0.55, 0.7)             # ...and on the cover
 LEFT_HOLD = (0.88, 0.0)              # the left hand holds the open book here on the cover (along, up)
 LEFT_SHOULDER_UNDER_CM = (-12.0, -26.0, -28.0)   # holding the book up from beneath: the left shoulder is below it
@@ -87,7 +88,7 @@ LAY_TILT = 0.4                      # laying a page down the fingers point this 
 LET_GO_OUT_CM = 4.0                 # letting go, the thumb slips out this far past the page's edge
 LET_GO_BACK_CM = 0.9                # ...while the hand drops this far behind the page
 # (all distances in real centimetres: the hand is a real hand's size whatever the book's size)
-SMOOTH_STROKE = (-0.1, -0.04)       # smoothing it: the hand then strokes this far (along, up)
+SMOOTH_STROKE = (0.06, -0.12)       # smoothing it: the hand then strokes this far (along, up)
 PINCH_LIFT_CM = (1.2, 3.7)          # ...and only once its edge has risen this far (from .. to fully)
 COVER_PINCH_LIFT_CM = (2.6, 5.2)    # ...the cover: higher, so the fingers going under it clear the pages
 CATCH_DEG = 32.0                    # flat things are touched with the fingertips; pinched once lifted this far
@@ -812,7 +813,7 @@ def plan(hand, n_frames, fps, state_at, strap_u=None):
         else:
             k = min(turned_count(f), n_sheets - 1)
             pt, fr, _ = where(k, f, RIGHT_HOLD[0], RIGHT_HOLD[1])
-        p = np.array(pt) + np.array(fr[2]) * PAD_GAP
+        p = np.array(pt) + np.array(fr[2]) * (PAD_GAP + HOLD_EXTRA_CM * cm)
         if away:
             p = p + np.array((3.5, -1.0, 2.5)) * cm
         pose = hand.natural_pose(p, amount=RIGHT_FINGERS, anchor=1.0, yaws=range(95, 181, 5))
@@ -842,7 +843,9 @@ def plan(hand, n_frames, fps, state_at, strap_u=None):
         k_right = min(turned_count(f0), n_sheets - 1)
         w1 = surface(k_prev, f0, BOTTOM_PATH[0], BOTTOM_PATH[1])
         w2 = surface(k_right, f0, BOTTOM_PATH[2], BOTTOM_PATH[1])
-        keys = [start, skim_pose(w1), skim_pose(w2), end]
+        above = list(end)                                        # comes down onto it from just above
+        above[0] = tuple(np.array(end[0]) + np.array((0.4, 0.0, 1.6)) * cm)
+        keys = [start, skim_pose(w1), skim_pose(w2), above, end]
         pts = [np.array(k_[0]) for k_ in keys]
         ext = [2 * pts[0] - pts[1]] + pts + [2 * pts[-1] - pts[-2]]
         # time shared by distance, so the hand moves at an even pace along the whole way
