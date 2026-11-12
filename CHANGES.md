@@ -1,5 +1,8 @@
 # Changes
 
+## 0.21.0
+- **The hands are in the live view**: tick "Show a 3D hand turning the pages" and, a few seconds later, both hands move in the live view together with the pages - exactly as in the rendered video (Blender works out their movement quietly in the background; no rendering). When you change the timing, the pages or the hand options, the hands are worked out again on their own. The skin shows the real hand's colours (or your glove or skin picture) and the sleeve its suede colour (or your fabric picture); the lighting is simpler than in the video, like the rest of the live view.
+
 ## 0.20.0
 - **More natural skin**: the hand is less orange, with a soft natural sheen like real skin, knuckles and fingertips a little redder where the skin is thin, creases a little darker, light glowing through the edges of the fingers, and fine pores up close.
 - **The sleeve looks like real suede**: a soft velvety sheen on the folds, patches where the nap lies differently, darker inside the folds and worn a little lighter on the edges that stick out, with the nap's fine texture. A sleeve picture of your own keeps the folds, stitches and wear.

@@ -345,6 +345,17 @@ def test_the_left_hand_moves_aside_for_the_right_one():
         assert abs(np.linalg.norm(p[1]) - 1) < 1e-9 and abs(np.dot(p[1], p[2])) < 1e-9   # still square
 
 
+def test_hand_bake_key_follows_what_moves_the_hands():
+    base = dict(fps=24, turn_seconds=1.4, pause=0.8, hand=True, hand_left=True, hand_size=1.0, width=640,
+                height=360, quality='draft', out_dir='/a', book={'page_size_cm': [15, 21]}, images=['x'])
+    k = bb.hand_bake_key(base)
+    assert k == bb.hand_bake_key(dict(base, width=1920, height=1080, quality='cycles', out_dir='/b'))
+    assert k != bb.hand_bake_key(dict(base, pause=1.6))
+    assert k != bb.hand_bake_key(dict(base, hand_left_style='under'))
+    assert k != bb.hand_bake_key(dict(base, hand_size=0.85))
+    assert bb.command_hand_bake('blender', 'j.json')[-3:] == [str(bb.HAND_BAKE_SCRIPT), '--', 'j.json']
+
+
 def test_only_a_journal_can_have_a_strap():
     book = templates.load(Path(__file__).parent / 'resources' / 'books' / 'leather-journal')
     assert book['kind'] == 'journal' and not book['strap']

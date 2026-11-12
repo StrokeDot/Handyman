@@ -20,6 +20,7 @@ from drag import DragState
 from page_curl import grid_faces, grid_uvs, layout_pages, sheet_vertices
 import journal_geom
 from journal_live import JournalPreview
+from live_hands import LiveHands
 
 try:
     from OpenGL import GL as gl
@@ -299,6 +300,25 @@ class LiveView(QOpenGLWidget):
         self.cam = dict(v.get('cam', self.cam))
         self.aspect = v['width'] / v['height']
         self.frameChanged.emit(int(self.frame), self.timeline.frames)
+        self.update()
+
+    def set_hands(self, path):
+        """Show the hands baked into `path` (hand_bake.py), or none (None)."""
+        old = getattr(self, 'hands', None)
+        if old is not None and getattr(self, '_hands_path', None) == path:
+            return
+        if old is not None:
+            try:
+                self.makeCurrent()
+                old.release()
+            except Exception:
+                pass
+        self.hands, self._hands_path = None, None
+        if path:
+            try:
+                self.hands, self._hands_path = LiveHands(path), path
+            except Exception:
+                self.hands = None
         self.update()
 
     def play(self, on=True):
@@ -811,6 +831,12 @@ class LiveView(QOpenGLWidget):
                 pose['sheet_progress'][self.drag_sheet] = self.drag_progress
         self.journal.draw(pose, self._journal_tex, _hex_rgb(self.book.get('leather_color')),
                           _hex_rgb(self.book.get('paper_color')))
+        hands = getattr(self, 'hands', None)
+        if hands is not None:                     # baked by Blender: the render's own movement
+            try:
+                hands.draw(self.frame)
+            except Exception:
+                self.hands = None
         gl.glPopMatrix()
 
     # ------------------------------------------------------------- drawing

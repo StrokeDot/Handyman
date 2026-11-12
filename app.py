@@ -115,6 +115,35 @@ class GltfWorker(QThread):
         self.finished_ok.emit(self.job['glb_path'])
 
 
+class HandBakeWorker(QThread):
+    """Blender works out the hands' movement for the live view (hand_bake.py; no rendering)."""
+    finished_ok = Signal(str)
+    failed = Signal(str)
+
+    def __init__(self, blender, job_path, out_path):
+        super().__init__()
+        self.blender, self.job_path, self.out_path = blender, job_path, out_path
+
+    def run(self):
+        tail = []
+        try:
+            proc = subprocess.Popen(bb.command_hand_bake(self.blender, self.job_path),
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    text=True, encoding='utf-8', errors='replace', creationflags=NO_WINDOW)
+            for line in proc.stdout:
+                if line.strip():
+                    tail = (tail + [line.rstrip()])[-20:]
+            proc.wait()
+        except OSError as exc:
+            self.failed.emit(f'Could not start Blender for the hands: {exc}')
+            return
+        if proc.returncode or not Path(self.out_path).exists():
+            err = next((t[6:] for t in reversed(tail) if t.startswith('ERROR ')), tail[-1] if tail else '')
+            self.failed.emit(f'The hands could not be shown in the live view: {err}')
+            return
+        self.finished_ok.emit(self.out_path)
+
+
 class RenderWorker(QThread):
     """Runs Blender, then (optionally) FFmpeg. Emits plain progress for the UI."""
     progress = Signal(int, int, float)   # done, total, seconds per frame
@@ -736,8 +765,9 @@ class Studio(QMainWindow):
         self.turn_style.currentIndexChanged.connect(self._schedule_live)
         f.addRow('Page turn style', self.turn_style)
         self.hand_turns = QCheckBox('Show a 3D hand turning the pages')
-        self.hand_turns.setToolTip('A right hand reaches in, pinches each page by its corner and turns it.\n'
-                                   'It is in the rendered video and "Preview still" (not yet in the live view).')
+        self.hand_turns.setToolTip('A right hand reaches in, pinches each page by its edge and turns it.\n'
+                                   'It shows in the live view a few seconds after you tick it (Blender works\n'
+                                   'out its movement in the background), in "Preview still" and in the video.')
         f.addRow(self.hand_turns)
         self.hand_left = QCheckBox('…and the left hand holds the book')
         self.hand_left.setChecked(True)
@@ -768,6 +798,9 @@ class Studio(QMainWindow):
         self.hand_turns.toggled.connect(_left_style_on)
         self.hand_left.toggled.connect(_left_style_on)
         self.hand_turns.toggled.connect(self.hand_size.setEnabled)
+        for sig in (self.hand_turns.toggled, self.hand_left.toggled, self.hand_left_style.currentIndexChanged,
+                    self.hand_size.valueChanged):
+            sig.connect(self._schedule_live)
         # the hand's look, swappable like the book's pictures
         self.hand_skin = QComboBox()
         self.hand_skin.addItem('Bare hand (from the photos)', '')
@@ -776,12 +809,14 @@ class Studio(QMainWindow):
         self.hand_skin.setToolTip('What the hand looks like: bare skin, a leather glove like the book\'s cover,\n'
                                   'or any picture of leather, fabric or skin wrapped over the hand')
         self.hand_skin.activated.connect(lambda _i: self._hand_pick(self.hand_skin, 'Hand skin'))
+        self.hand_skin.currentIndexChanged.connect(self._schedule_live)
         f.addRow('Hand skin', self.hand_skin)
         self.hand_sleeve = QComboBox()
         self.hand_sleeve.addItem('Brown suede', '')
         self.hand_sleeve.addItem('From a picture…', 'pick')
         self.hand_sleeve.setToolTip('The sleeve: brown suede, or any picture of a fabric (repeated over the sleeve)')
         self.hand_sleeve.activated.connect(lambda _i: self._hand_pick(self.hand_sleeve, 'Sleeve'))
+        self.hand_sleeve.currentIndexChanged.connect(self._schedule_live)
         f.addRow('Sleeve', self.hand_sleeve)
         for w in (self.hand_skin, self.hand_sleeve):
             w.setEnabled(False)
@@ -1994,6 +2029,76 @@ class Studio(QMainWindow):
             self.live.set_content(self._book(), self._content_images(), self._values())
         except Exception as exc:
             self.status.setText(f'Live view could not update: {exc}')
+        self._schedule_hands()
+
+    # ------------------------------------------------------------ hands in the live view
+    def _schedule_hands(self):
+        """The hands' movement depends on the timing, pages and hand options: work it out again
+        (in Blender, in the background) a moment after the last change."""
+        if not hasattr(self, '_hand_timer'):
+            self._hand_timer = QTimer(self)
+            self._hand_timer.setSingleShot(True)
+            self._hand_timer.timeout.connect(self._update_hands)
+        self._hand_timer.start(900)
+
+    def _update_hands(self):
+        live = getattr(self, 'live', None)
+        if live is None or not hasattr(live, 'set_hands'):
+            return
+        book = self._book() if self.books else {}
+        if not self.hand_turns.isChecked() or book.get('engine') != 'journal' or not self.blender:
+            live.set_hands(None)
+            return
+        try:
+            job = self._job(self._values(), paths.cache_dir('hand_bake'), quality='draft')
+        except Exception as exc:
+            self.status.setText(f'The hands could not be shown in the live view: {exc}')
+            return
+        key = bb.hand_bake_key(job)
+        folder = paths.cache_dir('hand_bake') / key
+        out = folder / 'hands.npz'
+        if out.exists():
+            live.set_hands(str(out))
+            return
+        worker = getattr(self, '_hand_worker', None)
+        if worker is not None and worker.isRunning():
+            self._hands_pending = True             # once this one is done, the newest settings
+            return
+        folder.mkdir(parents=True, exist_ok=True)
+        job['hand_bake_out'] = str(out)
+        job['out_dir'] = str(folder)
+        job_path = folder / 'job.json'
+        job_path.write_text(json.dumps(job, indent=2), encoding='utf-8')
+        self._hands_pending = False
+        self._hand_worker = HandBakeWorker(self.blender, str(job_path), str(out))
+        self._hand_worker.finished_ok.connect(self._hands_ready)
+        self._hand_worker.failed.connect(self._hands_failed)
+        self._hand_worker.start()
+        self.status.setText('Working out the hands\' movement for the live view…')
+
+    def _hands_ready(self, path):
+        if getattr(self, '_hands_pending', False):
+            self._update_hands()
+            return
+        if self.hand_turns.isChecked():
+            self.live.set_hands(path)
+        self.status.setText('Hands ready in the live view.')
+        self._prune_hand_bakes()
+
+    def _hands_failed(self, msg):
+        self.status.setText(msg)
+        if getattr(self, '_hands_pending', False):
+            self._update_hands()
+
+    def _prune_hand_bakes(self, keep=6):
+        """Keep the few most recent hand bakes (each is a couple of megabytes)."""
+        try:
+            dirs = sorted((d for d in paths.cache_dir('hand_bake').iterdir() if d.is_dir()),
+                          key=lambda d: d.stat().st_mtime, reverse=True)
+            for d in dirs[keep:]:
+                shutil.rmtree(d, ignore_errors=True)
+        except OSError:
+            pass
 
     def _on_page_turned(self, start, duration, smoothness):
         """Record mode: a finished drag becomes a turn clip on the timeline."""

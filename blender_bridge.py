@@ -13,6 +13,7 @@ import templates
 SCENE_SCRIPT = paths.resource_dir() / 'book_scene.py'
 JOURNAL_SCRIPT = paths.resource_dir() / 'journal_scene.py'
 GLTF_SCRIPT = paths.resource_dir() / 'image_book_export.py'
+HAND_BAKE_SCRIPT = paths.resource_dir() / 'hand_bake.py'
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 
 QUALITY = {'Draft (fastest)': 'draft', 'Final (recommended)': 'final', 'Photoreal (Cycles, slow)': 'cycles'}
@@ -127,6 +128,26 @@ def command(blender, job_path):
 
 def command_gltf(blender, job_path):
     return [blender, '-b', '--factory-startup', '-noaudio', '-P', str(GLTF_SCRIPT), '--', str(job_path)]
+
+
+def command_hand_bake(blender, job_path):
+    """Blender works out the hands' movement for the live view (no rendering)."""
+    return [blender, '-b', '--factory-startup', '-noaudio', '-P', str(HAND_BAKE_SCRIPT), '--', str(job_path)]
+
+
+def hand_bake_key(job):
+    """What the hands' movement depends on (not the picture size, quality or output folder)."""
+    import hashlib
+    skip = {'out_dir', 'width', 'height', 'quality', 'samples', 'frames', 'chunk', 'cam', 'blend',
+            'mov', 'webm', 'keep_png', 'hand_bake_out', 'images'}
+    keep = {k: v for k, v in job.items() if k not in skip}
+    keep['page_total'] = len(job.get('images') or [])
+    try:
+        stamp = os.path.getmtime(HAND_BAKE_SCRIPT.parent / 'hand_scene.py')
+    except OSError:
+        stamp = 0
+    raw = json.dumps(keep, sort_keys=True, default=str) + str(stamp)
+    return hashlib.sha1(raw.encode('utf-8')).hexdigest()[:20]
 
 
 def parse_line(line):

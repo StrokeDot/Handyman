@@ -63,6 +63,7 @@ jobs:
           --add-data "journal_scene.py;."
           --add-data "journal_geom.py;."
           --add-data "hand_scene.py;."
+          --add-data "hand_bake.py;."
           --add-data "clips.py;."
           --add-data "resources;resources"
           --add-data "assets;assets"

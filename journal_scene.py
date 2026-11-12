@@ -632,6 +632,53 @@ def tune_cycles(scene):
         f'{" on GPU" if gpu else ""}')
 
 
+def make_hands(job, root, sc, n_sheets, strap_u, held_up):
+    """The hands and their poses for every frame: (hand, plan, left hand, left plan), each None
+    when not shown. Shared by the render and the live view's hand bake (hand_bake.py), so the
+    live view moves exactly as the video."""
+    if not job.get('hand'):
+        return None, None, None, None
+    import hand_scene
+
+    def state_at(f):
+        pose = sc.evaluate(f)
+        theta = G.cover_angle(float(pose['cover_progress']))
+        G.set_opening(theta)
+        prog = pose['sheet_progress']
+        ts = [float(prog[k]) if k < len(prog) else 0.0 for k in range(n_sheets)]
+        G.set_turned(ts)
+        return ts, G.curve_weights(ts), theta
+    cm = (job['book'].get('page_size_cm') or [G.REF_PAGE_CM[0]])[0]
+    # a smaller hand on this book looks just like a real-size hand on a bigger book
+    cm = float(cm) / min(max(float(job.get('hand_size') or 1.0), 0.4), 2.0)
+    hand = hand_scene.Hand(root, float(cm), G.H / 2)
+    hand.set_look(job.get('hand_skin'), job.get('hand_sleeve'))
+    hand_plan = hand_scene.plan(hand, sc.frames, job['fps'], state_at, strap_u)
+    left = left_plan = None
+    if job.get('hand_left', True):                 # the left hand holds the book
+        style = 'under' if held_up else 'on'
+        left = hand_scene.Hand(root, float(cm), G.H / 2, mirror=True,
+                               shoulder_cm=hand_scene.LEFT_SHOULDER_UNDER_CM if held_up else None,
+                               elbow_floor=not held_up)
+        left.set_look(job.get('hand_skin'), job.get('hand_sleeve'))
+        left_plan = hand_scene.plan_left(left, sc.frames, job['fps'], state_at, hand_plan, style)
+    log('INFO hand turns the pages')
+    return hand, hand_plan, left, left_plan
+
+
+def job_scene(job):
+    """The animation timeline for a job (as the render uses it) and its strap timing."""
+    turns, _, _, _ = layout_pages(len(job.get('images') or []))
+    scheduled = job.get('turns')
+    sc = scene.Scene(turns if scheduled is None else int(scheduled),
+                     job['book']['page_aspect'], job.get('open_at', 0.0), job['fps'],
+                     job['start_hold'], job['turn_seconds'], job['pause'], job['end_hold'],
+                     job.get('open_seconds', 0.0), job.get('slide', True),
+                     page_count=G.N_SHEETS, smoothness=job.get('smoothness', 1.0),
+                     recorded_clips=job.get('recorded_clips'), clip_list=job.get('clip_list'))
+    return sc
+
+
 def main():
     job_path = sys.argv[sys.argv.index('--') + 1]
     with open(job_path, encoding='utf-8') as fh:
@@ -656,43 +703,11 @@ def main():
     sc_b.collection.objects.link(cam)
     sc_b.camera = cam
 
-    turns, _, _, _ = layout_pages(len(job.get('images') or []))
-    scheduled = job.get('turns')
-    sc = scene.Scene(turns if scheduled is None else int(scheduled),
-                     job['book']['page_aspect'], job.get('open_at', 0.0), job['fps'],
-                     job['start_hold'], job['turn_seconds'], job['pause'], job['end_hold'],
-                     job.get('open_seconds', 0.0), job.get('slide', True),
-                     page_count=G.N_SHEETS, smoothness=job.get('smoothness', 1.0),
-                     recorded_clips=job.get('recorded_clips'), clip_list=job.get('clip_list'))
+    sc = job_scene(job)
     starts_closed = sc.evaluate(0)['cover_progress'] < 1.0 - 1e-6
     c_start = next((f for f in range(sc.frames) if sc.evaluate(f)['cover_progress'] > 1e-6), 0)
     strap_u = [strap_u_at(f, c_start, job['fps'], starts_closed) for f in range(sc.frames)] if strap else None
-    hand_plan, hand, left_plan, left = None, None, None, None
-    if job.get('hand'):
-        import hand_scene
-
-        def state_at(f):
-            pose = sc.evaluate(f)
-            theta = G.cover_angle(float(pose['cover_progress']))
-            G.set_opening(theta)
-            prog = pose['sheet_progress']
-            ts = [float(prog[k]) if k < len(prog) else 0.0 for k in range(len(obs))]
-            G.set_turned(ts)
-            return ts, G.curve_weights(ts), theta
-        cm = (job['book'].get('page_size_cm') or [G.REF_PAGE_CM[0]])[0]
-        # a smaller hand on this book looks just like a real-size hand on a bigger book
-        cm = float(cm) / min(max(float(job.get('hand_size') or 1.0), 0.4), 2.0)
-        hand = hand_scene.Hand(root, float(cm), G.H / 2)
-        hand.set_look(job.get('hand_skin'), job.get('hand_sleeve'))
-        hand_plan = hand_scene.plan(hand, sc.frames, job['fps'], state_at, strap_u)
-        if job.get('hand_left', True):                 # the left hand holds the book
-            style = 'under' if held_up else 'on'
-            left = hand_scene.Hand(root, float(cm), G.H / 2, mirror=True,
-                                   shoulder_cm=hand_scene.LEFT_SHOULDER_UNDER_CM if held_up else None,
-                                   elbow_floor=not held_up)
-            left.set_look(job.get('hand_skin'), job.get('hand_sleeve'))
-            left_plan = hand_scene.plan_left(left, sc.frames, job['fps'], state_at, hand_plan, style)
-        log('INFO hand turns the pages')
+    hand, hand_plan, left, left_plan = make_hands(job, root, sc, len(obs), strap_u, held_up)
     frames = job.get('frames') or list(range(sc.frames))
     total_frames = len(frames)
     offset = 0
