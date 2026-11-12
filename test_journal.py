@@ -299,3 +299,16 @@ def test_the_hand_option_reaches_the_render_and_its_model_ships():
     hand = Path(__file__).parent / 'resources' / 'hand' / 'hand.blend'
     assert hand.exists() and hand.stat().st_size > 1_000_000
     assert (Path(__file__).parent / 'hand_scene.py').exists()
+
+
+def test_hand_look_choices_reach_the_render():
+    settings = dict(width=640, height=360, fps=24, start_hold=0.5, turn_seconds=1.0, pause=0.3, end_hold=0.5,
+                    curl=1.0, cam={'move': 'none'}, quality='Draft (fastest)', blend='Photo (keeps bright colours)',
+                    open_seconds=0, start_closed=False, page_count=6, hand=True)
+    book = templates.load(Path(__file__).parent / 'resources' / 'books' / 'leather-journal')
+    with tempfile.TemporaryDirectory() as tmp:
+        plain = bb.make_job(settings, book, [], tmp)
+        assert plain['hand_skin'] is None and plain['hand_sleeve'] is None          # built-in look
+        glove = bb.make_job(dict(settings, hand_skin='book-leather', hand_sleeve='/x/wool.png'), book, [], tmp)
+        assert glove['hand_skin'] and Path(glove['hand_skin']).exists()            # the cover's leather
+        assert glove['hand_sleeve'] == '/x/wool.png'

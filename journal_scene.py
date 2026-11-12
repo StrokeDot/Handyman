@@ -617,6 +617,7 @@ def main():
             return ts, G.curve_weights(ts)
         cm = (job['book'].get('page_size_cm') or [G.REF_PAGE_CM[0]])[0]
         hand = hand_scene.Hand(root, float(cm), G.H / 2)
+        hand.set_look(job.get('hand_skin'), job.get('hand_sleeve'))
         hand_plan = hand_scene.plan(hand, sc.frames, job['fps'], state_at)
         log('INFO hand turns the pages')
     frames = job.get('frames') or list(range(sc.frames))

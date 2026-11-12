@@ -40,6 +40,8 @@ PRESS_ALONG, PRESS_UP = 0.6, 0.3    # where it smooths: share of the way from sp
 ENTER_S = 0.6                       # time to come in at the start, or go out at the end
 ELBOW_ABOVE_CM = 6.0                # the elbow stays at least this high above the table
 MAX_BEND = 85.0                     # degrees the wrist may bend away from the forearm's line
+SKIN_TILE_M = 0.07                  # a skin/glove picture covers this many metres of hand
+SLEEVE_TILE_M = 0.09                # a sleeve picture covers this many metres of sleeve
 FINGERS = ('thumb', 'index', 'middle', 'ring', 'pinky')
 
 
@@ -95,6 +97,56 @@ class Hand:
         self.pinch_axis0 = (pbs['index_03_r'].tail - pbs['thumb_03_r'].tail).normalized()
         self.pinch_gap = (pbs['index_03_r'].tail - pbs['thumb_03_r'].tail).length
         self._fingers(0.0)
+
+    def set_look(self, skin=None, sleeve=None):
+        """Swap the hand's and the sleeve's pictures (like a book's): skin = a picture wrapped
+        over the hand (a glove's leather, a fabric, a skin), sleeve = a fabric repeated over it.
+        None keeps the built-in look (bare hand from the photos, brown suede)."""
+        for ob in self.objects:
+            if ob.type != 'MESH' or not ob.data.materials:
+                continue
+            mat = ob.data.materials[0]
+            if mat is None or not mat.node_tree:
+                continue
+            nt = mat.node_tree
+            bsdf = next((n for n in nt.nodes if n.type == 'BSDF_PRINCIPLED'), None)
+            if bsdf is None:
+                continue
+            if ob.name.startswith('Sleeve') and sleeve and os.path.exists(sleeve):
+                tex = self._picture(nt, sleeve, 'UV', SLEEVE_TILE_M)
+                into = bsdf.inputs['Base Color'].links[0].from_node if bsdf.inputs['Base Color'].links else None
+                if into is not None and into.type == 'MIX':
+                    nt.links.new(tex.outputs['Color'], into.inputs[6])    # keeps the stitches' shading
+                else:
+                    nt.links.new(tex.outputs['Color'], bsdf.inputs['Base Color'])
+            elif not ob.name.startswith('Sleeve') and skin and os.path.exists(skin):
+                tex = self._picture(nt, skin, 'BOX', SKIN_TILE_M)
+                nt.links.new(tex.outputs['Color'], bsdf.inputs['Base Color'])
+                for link in list(bsdf.inputs['Roughness'].links):
+                    nt.links.remove(link)
+                bsdf.inputs['Roughness'].default_value = 0.5            # a glove: no nails, no skin glow
+                bsdf.inputs['Subsurface Weight'].default_value = 0.0
+                bsdf.inputs['Sheen Weight'].default_value = 0.2
+
+    @staticmethod
+    def _picture(nt, path, how, tile_m):
+        """An image node repeating `path` every tile_m metres (UV in metres, or a box wrap)."""
+        img = bpy.data.images.load(path, check_existing=True)
+        tex = nt.nodes.new('ShaderNodeTexImage')
+        tex.image = img
+        mp = nt.nodes.new('ShaderNodeMapping')
+        mp.inputs['Scale'].default_value = (1 / tile_m, 1 / tile_m, 1 / tile_m)
+        if how == 'BOX':
+            tc = nt.nodes.new('ShaderNodeTexCoord')
+            nt.links.new(tc.outputs['Object'], mp.inputs['Vector'])
+            tex.projection = 'BOX'
+            tex.projection_blend = 0.3
+        else:
+            uv = nt.nodes.new('ShaderNodeUVMap')
+            uv.uv_map = 'uv'
+            nt.links.new(uv.outputs['UV'], mp.inputs['Vector'])
+        nt.links.new(mp.outputs['Vector'], tex.inputs['Vector'])
+        return tex
 
     def book_cm(self, cm):
         """A point given in centimetres from the spine / bottom edge / table, in book units."""

@@ -1,5 +1,8 @@
 # Changes
 
+## 0.16.0
+- **Change the hand's look, like the book's**: under "Show a 3D hand turning the pages" (Animation tab), "Hand skin" can be the bare hand, a leather glove made from the book cover's own leather, or any picture of your own (leather, fabric, skin) wrapped over the hand. "Sleeve" can be the brown suede or any fabric picture, repeated over the sleeve with its stitching and folds kept.
+
 ## 0.15.1
 - **The page leads, the hand follows**: the hand now holds the page's edge between thumb and fingers and goes wherever the page goes, at the page's own speed (set by the turn time). Around its grip the hand turns like fingers do on paper, so the wrist stays natural; it stands upright with the thumb up while the page stands, lets go once the page is past upright, and smooths it down as it lands.
 

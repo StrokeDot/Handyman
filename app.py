@@ -739,6 +739,24 @@ class Studio(QMainWindow):
         self.hand_turns.setToolTip('A right hand reaches in, pinches each page by its corner and turns it.\n'
                                    'It is in the rendered video and "Preview still" (not yet in the live view).')
         f.addRow(self.hand_turns)
+        # the hand's look, swappable like the book's pictures
+        self.hand_skin = QComboBox()
+        self.hand_skin.addItem('Bare hand (from the photos)', '')
+        self.hand_skin.addItem('Leather glove (the cover\'s leather)', 'book-leather')
+        self.hand_skin.addItem('From a picture…', 'pick')
+        self.hand_skin.setToolTip('What the hand looks like: bare skin, a leather glove like the book\'s cover,\n'
+                                  'or any picture of leather, fabric or skin wrapped over the hand')
+        self.hand_skin.activated.connect(lambda _i: self._hand_pick(self.hand_skin, 'Hand skin'))
+        f.addRow('Hand skin', self.hand_skin)
+        self.hand_sleeve = QComboBox()
+        self.hand_sleeve.addItem('Brown suede', '')
+        self.hand_sleeve.addItem('From a picture…', 'pick')
+        self.hand_sleeve.setToolTip('The sleeve: brown suede, or any picture of a fabric (repeated over the sleeve)')
+        self.hand_sleeve.activated.connect(lambda _i: self._hand_pick(self.hand_sleeve, 'Sleeve'))
+        f.addRow('Sleeve', self.hand_sleeve)
+        for w in (self.hand_skin, self.hand_sleeve):
+            w.setEnabled(False)
+            self.hand_turns.toggled.connect(w.setEnabled)
         flip = QPushButton('Add a fast flip…')
         flip.setToolTip('Flip through many pages quickly, like riffling them with your thumb')
         flip.clicked.connect(self._fast_flip)
@@ -903,6 +921,26 @@ class Studio(QMainWindow):
         self._pages_changed()
         self.status.setText(f'Added {added} blank page(s): all {target} pages now turn.' if added
                             else 'Every page of the book already has a page in the list.')
+
+    def _hand_pick(self, combo, what):
+        """'From a picture…' in a hand-look list: choose the picture and show it in the list."""
+        if combo.currentData() != 'pick':
+            return
+        path, _ = QFileDialog.getOpenFileName(self, f'{what}: choose a picture', self.settings.value('img_dir', ''),
+                                              'Pictures (*.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)')
+        if not path:
+            combo.setCurrentIndex(0)
+            return
+        self._hand_set(combo, path)
+
+    @staticmethod
+    def _hand_set(combo, value):
+        """Select a hand-look value; a picture path gets its own entry (named after the file)."""
+        i = combo.findData(value or '')
+        if i < 0:
+            combo.insertItem(combo.count() - 1, Path(value).name, value)
+            i = combo.findData(value)
+        combo.setCurrentIndex(i)
 
     def _fast_flip(self):
         """Add a burst of quick, overlapping page turns at the end of the animation."""
@@ -1570,6 +1608,7 @@ class Studio(QMainWindow):
                     page_shape=self.page_shape.currentData() or 'flat',
                     turn_style=self.turn_style.currentData() or 'natural',
                     hand=self.hand_turns.isChecked(),
+                    hand_skin=self.hand_skin.currentData() or '', hand_sleeve=self.hand_sleeve.currentData() or '',
                     page_fits=self._page_fits())
 
     def _state(self):
@@ -1608,6 +1647,11 @@ class Studio(QMainWindow):
                          ('start_closed', self.start_closed), ('hand', self.hand_turns)):
             if key in v:
                 box.setChecked(bool(v[key]))
+        for combo, key in ((self.hand_skin, 'hand_skin'), (self.hand_sleeve, 'hand_sleeve')):
+            val = v.get(key) or ''
+            if val and val != 'book-leather' and not Path(val).exists():
+                val = ''
+            self._hand_set(combo, val)
         for combo, key, default in ((self.page_shape, 'page_shape', 'flat'), (self.turn_style, 'turn_style', 'natural')):
             j = combo.findData(v.get(key, default))
             if j >= 0:
