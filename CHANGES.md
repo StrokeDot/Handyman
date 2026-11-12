@@ -1,5 +1,9 @@
 # Changes
 
+## 0.15.0
+- **The hand turns pages like in Red Dead Redemption 2**: it slides in low to the page's edge, catches it, and carries the page all the way over, turning with it - flat on the right page, upright with the thumb up while the page stands, flat again as it lays the page down. Then it smooths the page with an open hand and goes back for the next one.
+- The wrist can now bend further, so the hand stays on the page through the whole turn.
+
 ## 0.14.1
 - **Cleaner, healthier skin on the hand**: no more scaly, cracked look or blotches; the knuckles and veins are softer, the colour is even, and light passes through the skin a little more, closer to a game like Red Dead Redemption 2.
 
