@@ -1,5 +1,8 @@
 # Changes
 
+## 0.21.1
+- **Fix**: in 0.21.0 a journal video could stop with an error right at the end of rendering (after the last frame). Videos finish normally again.
+
 ## 0.21.0
 - **The hands are in the live view**: tick "Show a 3D hand turning the pages" and, a few seconds later, both hands move in the live view together with the pages - exactly as in the rendered video (Blender works out their movement quietly in the background; no rendering). When you change the timing, the pages or the hand options, the hands are worked out again on their own. The skin shows the real hand's colours (or your glove or skin picture) and the sleeve its suede colour (or your fabric picture); the lighting is simpler than in the video, like the rest of the live view.
 

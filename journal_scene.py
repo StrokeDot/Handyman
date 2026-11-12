@@ -704,6 +704,7 @@ def main():
     sc_b.camera = cam
 
     sc = job_scene(job)
+    turns = layout_pages(len(job.get('images') or []))[0]   # (as written to sequence.json)
     starts_closed = sc.evaluate(0)['cover_progress'] < 1.0 - 1e-6
     c_start = next((f for f in range(sc.frames) if sc.evaluate(f)['cover_progress'] > 1e-6), 0)
     strap_u = [strap_u_at(f, c_start, job['fps'], starts_closed) for f in range(sc.frames)] if strap else None

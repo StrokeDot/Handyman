@@ -356,6 +356,46 @@ def test_hand_bake_key_follows_what_moves_the_hands():
     assert bb.command_hand_bake('blender', 'j.json')[-3:] == [str(bb.HAND_BAKE_SCRIPT), '--', 'j.json']
 
 
+def test_render_scripts_use_no_undefined_names():
+    """The Blender scripts only run inside Blender, so a name used but never set (0.21.0: the
+    render failed at its very end) is not caught by importing them: check each function's source."""
+    import ast
+    import builtins
+
+    def stored(node):
+        out = set()
+        for n in ast.walk(node):
+            if isinstance(n, ast.Name) and isinstance(n.ctx, (ast.Store, ast.Del)):
+                out.add(n.id)
+            elif isinstance(n, (ast.FunctionDef, ast.ClassDef)):
+                out.add(n.name)
+            elif isinstance(n, ast.arg):
+                out.add(n.arg)
+            elif isinstance(n, (ast.Import, ast.ImportFrom)):
+                out.update((a.asname or a.name).split('.')[0] for a in n.names)
+            elif isinstance(n, ast.ExceptHandler) and n.name:
+                out.add(n.name)
+        return out
+
+    for name in ('journal_scene.py', 'hand_scene.py', 'hand_bake.py'):
+        tree = ast.parse((Path(__file__).parent / name).read_text(encoding='utf-8'))
+        module = set(dir(builtins)) | {'__file__', '__name__'}
+        for node in tree.body:                                   # module level: what it sets itself
+            if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
+                module.add(node.name)
+            else:
+                module |= stored(node)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Global):
+                module.update(node.names)
+        tops = [n for n in tree.body if isinstance(n, ast.FunctionDef)]
+        tops += [m for c in tree.body if isinstance(c, ast.ClassDef) for m in c.body if isinstance(m, ast.FunctionDef)]
+        for fn in tops:
+            used = {n.id for n in ast.walk(fn) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
+            missing = used - module - stored(fn)
+            assert not missing, f'{name}, {fn.name}(): names used but never set: {sorted(missing)}'
+
+
 def test_only_a_journal_can_have_a_strap():
     book = templates.load(Path(__file__).parent / 'resources' / 'books' / 'leather-journal')
     assert book['kind'] == 'journal' and not book['strap']
