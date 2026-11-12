@@ -1,5 +1,8 @@
 # Changes
 
+## 0.14.1
+- **Cleaner, healthier skin on the hand**: no more scaly, cracked look or blotches; the knuckles and veins are softer, the colour is even, and light passes through the skin a little more, closer to a game like Red Dead Redemption 2.
+
 ## 0.14.0
 - **A 3D hand turns the pages**: tick "Show a 3D hand turning the pages" (Animation tab). A right hand in a brown suede sleeve reaches in from the front right, pinches each page by its bottom corner, carries it over, lets go and moves on to the next page. It comes in before the first turn and goes back out after the last. Pages in a fast flip turn on their own.
 - **Real size**: the hand is a real hand's size, so on a small book it looks big and on a big book small, and the arm bends naturally at the elbow and wrist from any camera angle.
