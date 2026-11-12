@@ -79,6 +79,7 @@ LET_GO_BACK_CM = 0.9                # ...while the hand drops this far behind th
 # (all distances in real centimetres: the hand is a real hand's size whatever the book's size)
 SMOOTH_STROKE = (-0.1, -0.04)       # smoothing it: the hand then strokes this far (along, up)
 PINCH_LIFT_CM = (1.2, 3.7)          # ...and only once its edge has risen this far (from .. to fully)
+COVER_PINCH_LIFT_CM = (2.6, 5.2)    # ...the cover: higher, so the fingers going under it clear the pages
 CATCH_DEG = 32.0                    # flat things are touched with the fingertips; pinched once lifted this far
 MIN_TRAVEL_S = 0.35                  # the hand always has at least this long to go from one page to the next
 MIN_LEAD_S = 0.12                   # ...and at least this long at the next edge before it moves
@@ -696,7 +697,8 @@ def plan(hand, n_frames, fps, state_at, strap_u=None):
             lifted_cm = (pts[j][2] - z_rest) / cm
             target = _smooth(lift[j] / math.radians(catch_deg))
             if k != 'strap':                                     # (a strap's tongue is short: by angle only)
-                target = min(target, _smooth((lifted_cm - PINCH_LIFT_CM[0]) / (PINCH_LIFT_CM[1] - PINCH_LIFT_CM[0])))
+                lo, hi = COVER_PINCH_LIFT_CM if k == 'cover' else PINCH_LIFT_CM   # (a board is thick)
+                target = min(target, _smooth((lifted_cm - lo) / (hi - lo)))
             wc = min(target, wc + 1.0 / max(1, round(0.25 * fps)))
             wcs.append(wc)
         if len(wcs) > 3:                                         # ease the closing in and out
