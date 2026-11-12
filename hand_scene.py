@@ -41,8 +41,8 @@ LEAD_S = 0.3                        # be at the edge this long before the page s
 PINCH_S = 0.15                      # time to close or open the fingers
 PRESS_S = 0.25                      # time smoothing the turned page down
 PRESS_ALONG, PRESS_UP = 0.6, 0.3    # where it smooths: share of the way from spine to edge, up the page
-WITHDRAW_MIN_S = 1.3                # a pause at least this long: the hand goes back below the book and waits
-WITHDRAW_TRAVEL_S = 0.55            # ...taking about this long each way
+WITHDRAW_MIN_S = 0.9                # a pause at least this long: the hand goes back below the book and waits
+WITHDRAW_TRAVEL_S = 0.45            # ...taking about this long each way
 WAIT_CM = (0.62, -8.0, 2.5)         # where it waits: this share of the page's width from the spine, cm below the bottom edge, cm up
 TRAVEL_LIFT_CM = 3.9                # moving between pages the hand rises this much and comes down onto the next
 ENTER_S = 0.6                       # time to come in at the start, or go out at the end
@@ -721,12 +721,13 @@ def plan(hand, n_frames, fps, state_at, strap_u=None):
             L0 = _slerp_m(L_catches[-1], L_pinches[-1], wcs[-1])   # as it let go
             wc0, a0, n0 = wcs[-1], last[3], last[4]
             land, lay_end = cur['land'], cur['lay_end']
-            if lay_end < land:                                   # no time to lay it: let go and lift off
-                F0 = np.array(frs[-1][0])
+            if lay_end < land:                                   # no time to lay it: let go and lift off,
+                F0 = np.array(frs[-1][0])                        # the wrist easing straight as it goes
+                p_end = np.array(last[0]) - F0 * LET_GO_OUT + np.array((0.0, 0.0, LET_GO_BACK * 1.5))
+                easy = hand.natural_pose(p_end, amount=0.15, anchor=n0)
                 for f in range(rel + 1, lay_end + 1):
-                    v = _smooth((f - rel) / max(1, lay_end - rel))
-                    p = np.array(last[0]) - F0 * LET_GO_OUT * v + np.array((0.0, 0.0, LET_GO_BACK * 1.5)) * v
-                    seq[f] = [tuple(p), last[1], last[2], a0 + (0.15 - a0) * v, n0]
+                    v = (f - rel) / max(1, lay_end - rel)
+                    seq[f] = _blend(last, easy, v, 0.0)
                     phases[f] = f'let go {k}'
             for f in range(rel + 1, lay_end + 1 if lay_end == land else rel + 1):   # let go, then ride it down onto its back
                 u = (f - rel) / (land - rel)
@@ -772,7 +773,7 @@ def plan(hand, n_frames, fps, state_at, strap_u=None):
             a, sa = after[0]
             if (a - b) / fps >= WITHDRAW_MIN_S:
                 # a pause: it goes back down below the book, waits, and comes back in time
-                go = max(1, round(min(WITHDRAW_TRAVEL_S * fps, (a - b) * 0.35)))
+                go = max(1, round(min(WITHDRAW_TRAVEL_S * fps, (a - b) * 0.4)))
                 if f - b <= go:
                     out.append(_blend(sb[b], wait, (f - b) / go, TRAVEL_LIFT * 0.6))
                 elif a - f <= go:
