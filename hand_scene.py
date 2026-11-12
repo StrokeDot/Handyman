@@ -28,16 +28,18 @@ ASSET = os.path.join(HERE, 'resources', 'hand', 'hand.blend')
 SHOULDER_CM = (33.0, -30.0, 30.0)   # right of the spine, in front of the bottom edge, above the table
 REST_CM = (46.0, -34.0, 6.0)        # where the hand waits before the first turn and after the last (low, front right)
 GRAB_UP = 0.28                      # catch the edge this far up from the bottom (share of page height)
-GRAB_IN = 0.02                      # ...and this far in from the fore-edge (share of page width)
-RELEASE = 0.9                       # let go when the page is nearly down on the other side
+GRAB_IN = 0.012                     # ...and this far in from the fore-edge (share of page width)
+GRIP_IN_DEG = 35.0                  # the fingers lie along the edge, turned this much in over the page
+RELEASE = 0.97                      # (at the latest) let go at this turn progress
+RELEASE_DEG = 118.0                 # let go once the page has turned this far (past upright)
 LOOSE = 0.1                         # open fingers stay this much curled (0 = straight, 1 = pinch)
 LEAD_S = 0.3                        # be at the edge this long before the page starts to move
 PINCH_S = 0.15                      # time to close or open the fingers
 PRESS_S = 0.25                      # time smoothing the turned page down
-PRESS_IN, PRESS_UP = 0.45, 0.05     # where it smooths: in from the edge, up the page (page widths)
+PRESS_ALONG, PRESS_UP = 0.6, 0.3    # where it smooths: share of the way from spine to edge, up the page
 ENTER_S = 0.6                       # time to come in at the start, or go out at the end
 ELBOW_ABOVE_CM = 6.0                # the elbow stays at least this high above the table
-MAX_BEND = 70.0                     # degrees the wrist may bend away from the forearm's line
+MAX_BEND = 85.0                     # degrees the wrist may bend away from the forearm's line
 FINGERS = ('thumb', 'index', 'middle', 'ring', 'pinky')
 
 
@@ -89,6 +91,9 @@ class Hand:
         bpy.context.view_layer.update()
         pbs = self.rig.pose.bones
         self.pinch0 = (pbs['thumb_03_r'].tail + pbs['index_03_r'].tail) / 2
+        # thumb -> index across the pinch: the page passes between them, thumb on its front
+        self.pinch_axis0 = (pbs['index_03_r'].tail - pbs['thumb_03_r'].tail).normalized()
+        self.pinch_gap = (pbs['index_03_r'].tail - pbs['thumb_03_r'].tail).length
         self._fingers(0.0)
 
     def book_cm(self, cm):
@@ -183,7 +188,7 @@ class Hand:
 
     # ---------------------------------------------------------------- planning
     def page_grip(self, k, t, curve):
-        """(grab point, how far the page has turned 0..pi, the page's top z) for sheet k now."""
+        """(grab point, the page's frame there: in towards the spine, along the edge, front) now."""
         g = G.sheet_state(k, t, curve)
         ys = g[:, -1, 1]
         r = int(np.argmin(np.abs(ys - (ys.min() + GRAB_UP * (ys.max() - ys.min())))))
@@ -195,24 +200,45 @@ class Hand:
         e_edge /= np.linalg.norm(e_edge)
         n = np.cross(e_edge, e_in)
         n /= np.linalg.norm(n)
+        e_in = np.cross(n, e_edge)              # square the frame (the page is curved)
+        e_in /= np.linalg.norm(e_in)
+        return edge + e_in * GRAB_IN, (e_in, e_edge, n)
+
+    def carry_pose(self, k, t, curve, prev_turn=None):
+        """Holding the page's edge, at the page's own speed: the pinch point is fixed to the page
+        where it caught it, thumb on the page's front, index finger behind it. Around that
+        pinch the hand may turn (as fingers do on paper) to keep the wrist comfortable.
+        Returns (pose, turn angle used, how far the page has turned 0..pi)."""
+        point, frame = self.page_grip(k, t, curve)
+        e_in, e_edge, n = (Vector(v) for v in frame)
+        a = -n                                                   # thumb (front) -> index (back)
+        base = e_edge * math.cos(math.radians(GRIP_IN_DEG)) + e_in * math.sin(math.radians(GRIP_IN_DEG))
+        rb = _basis(self.pinch_axis0, self.rest_frame.col[0]).transposed()
+        best = None
+        for deg in range(-150, 151, 10):
+            f = Quaternion(a, math.radians(deg)) @ base
+            R = _basis(a, f) @ rb
+            bend = self._bend(Vector(point) / self.s, R)
+            score = bend + 0.35 * abs(deg - (prev_turn if prev_turn is not None else 0))
+            if best is None or score < best[0]:
+                best = (score, deg, R)
+        _, deg, R = best
         phi = float(np.clip(math.atan2(-n[0], n[2]), 0.0, math.pi))
-        return edge + e_in * GRAB_IN, phi
+        return [tuple(point), tuple(R @ self.rest_frame.col[0]), tuple(R @ self.rest_frame.col[1])], deg, phi
 
-    def carry_pose(self, k, t, curve):
-        """Holding the page's edge: the hand turns with the page all the way over (RDR2 style):
-        flat on the right page, upright with the thumb up when the page stands, flat again as
-        it lays the page down on the left."""
-        point, phi = self.page_grip(k, t, curve)
-        if phi <= math.pi / 2:
-            pose = _blend(HOLD_RIGHT, HOLD_UP, phi / (math.pi / 2), smooth=False)
-        else:
-            pose = _blend(HOLD_UP, HOLD_LEFT, (phi - math.pi / 2) / (math.pi / 2), smooth=False)
-        return [tuple(point)] + pose[1:]
+    def _bend(self, P, R):
+        """Degrees the wrist would bend for the hand at rotation R with its pinch at P (metres)."""
+        W, E = self._ik(P - R @ (self.pinch0 - self.wrist0))
+        return math.degrees((R @ self.rest_frame.col[0]).angle((W - E).normalized()))
 
-    def press_pose(self, carry_end):
-        """Smoothing the turned page down: an open hand on the lower part of the left page."""
-        p = np.array(carry_end[0])
-        p = p + np.array((PRESS_IN, PRESS_UP, 0.012))
+    def press_pose(self, k, curve):
+        """Smoothing the turned page down: an open hand, palm down, on the lower part of the
+        page where it has landed (worked out from the page lying on the left)."""
+        g = G.sheet_state(k, 1.0, curve)
+        ys = g[:, 0, 1]
+        r = int(np.argmin(np.abs(ys - (ys.min() + PRESS_UP * (ys.max() - ys.min())))))
+        c = int(g.shape[1] * PRESS_ALONG)
+        p = g[r, c] + np.array((0.0, 0.0, 0.012))
         return [tuple(p), HOLD_LEFT[1], HOLD_LEFT[2]]
 
     def rest_pose(self):
@@ -224,6 +250,14 @@ class Hand:
 HOLD_RIGHT = [(0, 0, 0), (-0.55, 0.7, -0.45), (-0.1, 0.05, 1.0)]    # on the right page, palm down
 HOLD_UP = [(0, 0, 0), (-0.1, 0.35, 0.93), (0.95, -0.25, 0.0)]       # page upright: thumb up, palm to the left
 HOLD_LEFT = [(0, 0, 0), (-0.35, 0.85, -0.3), (0.0, 0.05, 1.0)]      # laying it down on the left, palm down
+
+
+def _basis(a, f):
+    """Rotation with columns (a, f made square to a, a x f)."""
+    a = Vector(a).normalized()
+    f = Vector(f)
+    f = (f - a * f.dot(a)).normalized()
+    return Matrix((a, f, a.cross(f))).transposed()
 
 
 def _blend(a, b, u, lift=0.0, smooth=True):
@@ -263,19 +297,28 @@ def plan(hand, n_frames, fps, state_at):
         if not kept or t[1] - lead - pinch >= kept[-1][2]:
             kept.append(t)
     turns = kept
-    carry = {}
-    for k, start, rel in turns:
+    carry, lands = {}, {}
+    for i, (k, start, rel) in enumerate(turns):
+        prev = None
         for f in range(max(0, start - lead), min(n_frames, rel + 1)):
             ts, cw = state_at(f)
-            carry[f] = hand.carry_pose(k, ts[k], cw[k])
+            pose, prev, phi = hand.carry_pose(k, ts[k], cw[k], prev)
+            carry[f] = pose
+            if phi >= math.radians(RELEASE_DEG) and f >= start:
+                rel = f                                          # past upright: let go
+                break
+        turns[i] = (k, start, rel)
+        series = [p[0][k] for p in progs]
+        lands[k] = next((f for f, t in enumerate(series) if f > rel and t >= 0.985), rel + press)
     steps = []                      # per turn: arrive, let go, done smoothing, press pose
     for i, (k, start, rel) in enumerate(turns):
         arrive = max(0, start - lead)
-        done = rel + press
+        done = max(lands[k], rel + 2) + press
         if i + 1 < len(turns):
             nxt_arrive = max(0, turns[i + 1][1] - lead)
             done = max(rel + 1, min(done, nxt_arrive - max(2, pinch)))
-        steps.append((arrive, start, rel, done, hand.press_pose(carry[rel])))
+        ts, cw = state_at(min(n_frames - 1, max(lands[k], rel + 2)))
+        steps.append((arrive, start, rel, done, hand.press_pose(k, cw[k]), max(lands[k], rel + 2)))
     rest = hand.rest_pose()
     out = []
     for f in range(n_frames):
@@ -284,12 +327,12 @@ def plan(hand, n_frames, fps, state_at):
             continue
         cur = next((s for s in steps if s[0] <= f <= s[3]), None)
         if cur:
-            arrive, start, rel, done, press_p = cur
+            arrive, start, rel, done, press_p, land = cur
             if f <= rel:                                       # holding the page
                 amount = _smooth((f - arrive + pinch * 0.5) / pinch)
                 out.append(carry[f] + [amount])
             else:                                              # laying it down, open hand
-                u = (f - rel) / max(1, done - rel)
+                u = (f - rel) / max(1, land - rel)       # down with the page, then smooth it
                 out.append(_blend(carry[rel], press_p, u) + [1 - 2 * _smooth(u * 1.5)])
             continue
         before = [s for s in steps if s[3] < f]

@@ -1,5 +1,8 @@
 # Changes
 
+## 0.15.1
+- **The page leads, the hand follows**: the hand now holds the page's edge between thumb and fingers and goes wherever the page goes, at the page's own speed (set by the turn time). Around its grip the hand turns like fingers do on paper, so the wrist stays natural; it stands upright with the thumb up while the page stands, lets go once the page is past upright, and smooths it down as it lands.
+
 ## 0.15.0
 - **The hand turns pages like in Red Dead Redemption 2**: it slides in low to the page's edge, catches it, and carries the page all the way over, turning with it - flat on the right page, upright with the thumb up while the page stands, flat again as it lays the page down. Then it smooths the page with an open hand and goes back for the next one.
 - The wrist can now bend further, so the hand stays on the page through the whole turn.
