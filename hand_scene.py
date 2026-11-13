@@ -136,6 +136,10 @@ CATCH_DEG = 32.0                    # flat things are touched with the fingertip
 MIN_TRAVEL_S = 0.35                  # the hand always has at least this long to go from one page to the next
 MIN_LEAD_S = 0.12                   # ...and at least this long at the next edge before it moves
 ANGLE_SMOOTH_FRAMES = 2.5           # the grip's turn is smoothed over this many frames (no jitter)
+# Holding a page's edge, the fingers behind it as a real hand does (from hand tracking of a filmed
+# page turn, tools/hand/capture.py): the middle finger curled round behind the edge, ring and
+# little finger tucked loosely towards the palm. Thumb and index (the grip itself) are the rig's.
+CAPTURED_GRIP = {'middle': [18, 39, 10], 'ring': [28, 30, 13], 'pinky': [24, 30, 20]}
 FINGER_DELAY = {'index': 0.0, 'thumb': 0.06, 'middle': 0.08, 'ring': 0.15, 'pinky': 0.22}
 IDLE_CM = 0.18                      # a free hand drifts this much (alive, never perfectly still)
 FINGERS = ('thumb', 'index', 'middle', 'ring', 'pinky')
@@ -174,6 +178,7 @@ class Hand:
         self.objects = list(col.objects)
         self.rig = next(o for o in self.objects if o.type == 'ARMATURE')
         self.info = json.loads(self.rig['motioncraft_hand'])
+        self.info['poses']['pinch'].update(CAPTURED_GRIP)      # (the back fingers as filmed)
         self.pw = float(page_w_cm)
         self.s = 100.0 / self.pw                     # metres -> book units (1 unit = one page width)
         self.rig.parent = root
