@@ -61,6 +61,7 @@ KEY_PUSH = (0.62, 0.6, 145.0, 1.3, 7.0, 0.0)  # pushing over: pads here (along, 
 KEY_WEB_CM = 1.0                    # holding a page by its edge: the web between thumb and finger this far past it
 KEY_CLEAR_CM = 0.8                  # behind a page: every finger joint at least this far off it (finger thickness)
 KEY_UNDER_CM = 3.0                  # back to the corner grip from this far under the (held up) book
+KEY_PRESS_ROLL = 9.0               # ...turned this much about the fingers, so the thumb lies on the page with them
 KEY_PRESS = (0.62, 0.36)            # laid down: flat on it here
 PUSH_AT = (0.72, 0.45)              # pushing a page over: the finger pads on its back here (from the spine, up)
 PUSH_FROM_DEG = (55.0, 95.0)        # ...taking over from the fingertips as the page goes from this angle to this
@@ -834,7 +835,7 @@ def plan(hand, n_frames, fps, state_at, strap_u=None, held_up=False):
         keep('push', f, KEY_PUSH[0], KEY_PUSH[1], pose, KEY_PUSH[2])
         f = cur['land']
         p, e_in, e_edge, n = frame_np(f, *KEY_PRESS)
-        pose = hand.flat_pose(p - n * PAD_GAP, np.array((-0.6, 0.8, 0.0)), -n, -1.0)
+        pose = hand.flat_pose(p - n * PAD_GAP, np.array((-0.6, 0.8, 0.0)), -n, -1.0, KEY_PRESS_ROLL)   # (thumb side up a little: it rests on the page)
         keep('press', f, KEY_PRESS[0], KEY_PRESS[1], pose, 180.0)
         return out
 
@@ -861,11 +862,19 @@ def plan(hand, n_frames, fps, state_at, strap_u=None, held_up=False):
     root_inv = hand.rig.parent.matrix_world.inverted() if hand.rig.parent else None
 
     thumb_tip = np.array([n.startswith('thumb') for n in joint_names] * 2)
+    use_joint = np.array([True] * len(joint_names) + [not n.startswith('lowerarm') for n in joint_names])   # (not the elbow)
+    # how thick the hand is round each joint (cm): a fingertip is thin, the palm and wrist thick
+    _thick = {'thumb_01': 0.95, 'hand': 1.25, 'lowerarm': 1.4}
+    joint_cm = np.array([next((v for k_, v in _thick.items() if n.startswith(k_)), 0.62) for n in joint_names] +
+                        [next((v for k_, v in _thick.items() if n.startswith(k_)), 0.62) for n in joint_names])
+    joint_cm[len(joint_names):] = np.where(np.array([n.endswith('_03_r') for n in joint_names]), 0.68, joint_cm[len(joint_names):])
+    joint_cm[:len(joint_names)] = np.where(np.array([n.endswith('_03_r') for n in joint_names]), 0.45, joint_cm[:len(joint_names)])
 
-    def clear_page(k, f, pose, margin_cm=KEY_CLEAR_CM, straddle=False):
+    def clear_page(k, f, pose, margin_cm=KEY_CLEAR_CM, straddle=False, settle=False):
         """The hand as posed (the wrist's limits may turn it a little), moved along the page's
         normal so that no finger goes into the page thing k: all of it behind the page, or with
-        straddle (holding it by its edge) the thumb's tip in front and the rest behind."""
+        straddle (holding it by its edge) the thumb's tip in front and the rest behind; settle:
+        also down onto it (laying it flat: the hand rests on the page, not over it)."""
         grid = []
         for i in range(13):
             for j in range(15):
@@ -874,7 +883,7 @@ def plan(hand, n_frames, fps, state_at, strap_u=None, held_up=False):
         G_p = np.array([g[0] for g in grid])
         G_n = np.array([g[1] for g in grid])
         spacing = max(np.linalg.norm(G_p[1] - G_p[0]), np.linalg.norm(G_p[15] - G_p[0])) + 1e-9
-        m = margin_cm * cm
+        extra = (margin_cm - KEY_CLEAR_CM) * cm             # (more room asked for than the hand's own thickness)
         for _ in range(4):
             hand.apply(pose)
             bpy.context.view_layer.update()
@@ -885,13 +894,19 @@ def plan(hand, n_frames, fps, state_at, strap_u=None, held_up=False):
             idx = d2.argmin(1)
             sd = ((J - G_p[idx]) * G_n[idx]).sum(1)
             inpl = np.sqrt(np.maximum(d2[np.arange(len(J)), idx] - sd ** 2, 0.0))
-            on = inpl < spacing * 0.75                               # over the page, not past its edges
+            on = (inpl < spacing * 0.75) & use_joint                 # over the page, not past its edges
             front = on & thumb_tip if straddle else np.zeros_like(on)
             back = on & ~front
-            hi = -m - float(sd[back].max()) if back.any() else 1e9  # shift along n: at most this...
-            lo = m - float(sd[front].min()) if front.any() else -1e9   # ...and at least this
+            mj = joint_cm * cm + extra
+            hi = float((-mj[back] - sd[back]).min()) if back.any() else 1e9   # shift along n: at most this...
+            lo = float((mj[front] - sd[front]).max()) if front.any() else -1e9   # ...and at least this
+            if settle and back.any() and hi > 0.05 * cm and not front.any():
+                lo = hi - 0.05 * cm                              # (down until it rests on the page)
             if os.environ.get('MC_KEYDBG') and str(f) in os.environ['MC_KEYDBG'].split(','):
-                print('CLEAR', f, straddle, 'lo', round(lo / cm, 2), 'hi', round(hi / cm, 2), 'on', int(on.sum()), 'front', int(front.sum()), flush=True)
+                names2 = joint_names + [n + '.head' for n in joint_names]
+                bi_ = np.where(back)[0]
+                worst = names2[bi_[int(np.argmin(-mj[back] - sd[back]))]] if back.any() else None
+                print('CLEAR', f, straddle, 'lo', round(lo / cm, 2), 'hi', round(hi / cm, 2), 'on', int(on.sum()), 'front', int(front.sum()), 'binding', worst, round(float(sd[bi_[int(np.argmin(-mj[back] - sd[back]))]] / cm), 2) if back.any() else None, flush=True)
             if lo <= 1e-4 and hi >= -1e-4:
                 break
             shift = (min(max(0.0, lo), hi) if lo <= hi else 0.5 * (lo + hi))
@@ -941,9 +956,10 @@ def plan(hand, n_frames, fps, state_at, strap_u=None, held_up=False):
             if order[i] in ('release', 'push'):                  # (the thumb's root is thicker)
                 seq[f] = clear_behind(k, f, seq[f], KEY_CLEAR_CM + (0.5 if order[i] == 'release' else 0.0))
         for f in range(cur['land'] + 1, cur['done'] + 1):          # flat on it, a short stroke down
+            KEY_DEBUG[f] = ('press', 'press', 1.0, 180.0)
             v = _smooth((f - cur['land']) / max(1, cur['done'] - cur['land']))
             pr = dict(K['press'], at=(K['press']['at'][0] + SMOOTH_STROKE[0] * v, K['press']['at'][1] + SMOOTH_STROKE[1] * v))
-            seq[f], phases[f] = clear_behind(k, f, key_pose_at(k, f, pr, pr, 0.0)), f'smooth {k}'
+            seq[f], phases[f] = clear_page(k, f, key_pose_at(k, f, pr, pr, 0.0), settle=True), f'smooth {k}'
         return seq, phases
 
     for cur in info:
@@ -1114,7 +1130,11 @@ def plan(hand, n_frames, fps, state_at, strap_u=None, held_up=False):
             return pose
         if KEY_TURN:                                             # as Arthur: the lower right corner, thumb on top
             k = min(turned_count(f), n_sheets - 1)
-            pt, fr, _ = where(k, f, 1.0, KEY_REST_UP)
+            if turned_count(f) >= n_sheets:                      # every page turned: the back board on the right
+                pt, fr = hand.page_at(n_sheets - 1, 0.0, 0.0, 1.0, KEY_REST_UP)
+                pt = np.array(pt) - np.array(fr[2]) * G.PITCH
+            else:
+                pt, fr, _ = where(k, f, 1.0, KEY_REST_UP)
             p, e_in, n = np.array(pt), np.array(fr[0]), np.array(fr[2])
             target = p + e_in * (KEY_EDGE_IN_CM if held_up else KEY_EDGE_IN_TABLE_CM) * cm
             if held_up:
@@ -1253,12 +1273,13 @@ def plan(hand, n_frames, fps, state_at, strap_u=None, held_up=False):
     # (the smoothing may bring a finger back into a page being turned: keep them clear of it)
     for f, (ka, kb, u, _deg) in KEY_DEBUG.items():
         ph = LAST_PHASES[f] if f < n_frames else ''
-        if f >= n_frames or not ph.startswith('turn '):
+        if f >= n_frames or not ph.startswith(('turn ', 'smooth ')):
             continue
         k = int(ph.split()[1])
         straddle = ka in ('reach', 'lift') or (ka == 'upright' and u < 0.45)
         out[f] = clear_page(k, f, out[f], KEY_CLEAR_CM * (0.7 if straddle else 1.0) +
-                            (0.5 if ka == 'release' else 0.0), straddle)
+                            (0.5 if ka == 'release' else 0.0), straddle,
+                            settle=ka == 'press' or (ka == 'push' and u > 0.55))
     # a free hand is never perfectly still: a slow, tiny drift (not while it touches the book)
     free = np.array([1.0 if ph in ('free', 'hold') else 0.0 for ph in LAST_PHASES])
     if len(free) > 3:

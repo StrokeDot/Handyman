@@ -22,15 +22,26 @@ import journal_geom as G  # noqa: E402
 import journal_scene as JS  # noqa: E402
 
 MAX_INFLUENCES = 4
+HERE = os.path.dirname(os.path.abspath(__file__))
+HAND_DIR = os.path.join(HERE, 'resources', 'hand')
+
+
+def _resource(name):
+    path = os.path.join(HAND_DIR, name)
+    return path if os.path.exists(path) else None
 
 
 def _mesh_data(ob, bone_index, smooth_levels):
-    """(rest positions in the mesh's own space, corner -> vertex, corner UVs, bone ids, weights)."""
+    """(rest positions in the mesh's own space, corner -> vertex, corner UVs, bone ids, weights,
+    per-vertex tangents along the picture's x with the bitangent's sign in w)."""
     mods = {m.type: m for m in ob.modifiers}
     keep = {}
     for m in ob.modifiers:
         keep[m.name] = m.show_viewport
-        m.show_viewport = m.type == 'SUBSURF' and smooth_levels > 0
+        # the rest shape as the render has it (calmed, thick cloth, smoothed), not yet bent
+        # (the sleeve's mesh is already fine: thickening and smoothing it would make it far
+        # too heavy to bend live)
+        m.show_viewport = (m.type == 'SUBSURF' and smooth_levels > 0) or m.type == 'SMOOTH'
         if m.type == 'SUBSURF':
             m.levels = smooth_levels
     dg = bpy.context.evaluated_depsgraph_get()
@@ -39,6 +50,18 @@ def _mesh_data(ob, bone_index, smooth_levels):
     me.calc_loop_triangles()
     pos = np.array([v.co[:] for v in me.vertices], np.float32)
     uv_layer = me.uv_layers.get('hand') or me.uv_layers.get('uv') or me.uv_layers.active
+    tan = np.zeros((len(me.vertices), 4), np.float32)
+    try:                                       # for the relief pictures (normal maps) in the live view
+        me.calc_tangents(uvmap=uv_layer.name)
+        for lp in me.loops:
+            t = lp.tangent
+            tan[lp.vertex_index, :3] += (t.x, t.y, t.z)
+            tan[lp.vertex_index, 3] += lp.bitangent_sign
+        ln = np.linalg.norm(tan[:, :3], axis=1, keepdims=True)
+        tan[:, :3] /= np.maximum(ln, 1e-9)
+        tan[:, 3] = np.where(tan[:, 3] >= 0.0, 1.0, -1.0)
+    except Exception:
+        tan[:] = 0.0
     corners, uvs = [], []
     for tri in me.loop_triangles:
         for li in tri.loops:
@@ -57,7 +80,7 @@ def _mesh_data(ob, bone_index, smooth_levels):
     for m in ob.modifiers:
         m.show_viewport = keep[m.name]
     _ = mods
-    return pos, np.array(corners, np.int32), np.array(uvs, np.float32), bi, bw
+    return pos, np.array(corners, np.int32), np.array(uvs, np.float32), bi, bw, tan
 
 
 def _skin_picture(hand, out_dir, tag):
@@ -105,9 +128,10 @@ def main():
             if ob.type != 'MESH':
                 continue
             part = 'sleeve' if ob.name.startswith('Sleeve') else 'skin'
-            pos, corners, uvs, bi, bw = _mesh_data(ob, index, 0 if part == 'sleeve' else 1)
+            pos, corners, uvs, bi, bw, tan = _mesh_data(ob, index, 0 if part == 'sleeve' else 1)
             key = f'{tag}_{part}'
             data[key + '_pos'], data[key + '_corner'], data[key + '_uv'] = pos, corners, uvs
+            data[key + '_tan'] = tan
             data[key + '_bi'], data[key + '_bw'] = bi, bw
             # per bone: mesh space -> armature rest -> (posed) -> book space
             B = [rig.data.bones[n].matrix_local.inverted() @ rig.matrix_world.inverted() @ ob.matrix_world
@@ -126,10 +150,18 @@ def main():
                     mats[key][f, i] = np.array(A @ P[i] @ B[i], np.float32)
         for key, m in mats.items():
             data[key + '_mats'] = m
+        own_skin = job.get('hand_skin')
         meta['hands'].append(dict(tag=tag, parts=[k for k, _ in parts],
-                                  skin_picture=job.get('hand_skin') or _skin_picture(h, os.path.dirname(out_path), tag),
-                                  skin_is_photo=not job.get('hand_skin'),
-                                  sleeve_picture=job.get('hand_sleeve')))
+                                  skin_picture=own_skin or _resource('live_albedo.png') or
+                                  _skin_picture(h, os.path.dirname(out_path), tag),
+                                  skin_is_photo=not own_skin,
+                                  # the render's skin baked into pictures (relief, creases, gloss)
+                                  skin_normal=None if own_skin else _resource('live_normal.png'),
+                                  skin_rough_ao=None if own_skin else _resource('live_rough_ao.png'),
+                                  skin_baked=bool(not own_skin and _resource('live_albedo.png')),
+                                  sleeve_picture=job.get('hand_sleeve') or _resource('live_cloth_albedo.png'),
+                                  sleeve_is_cloth=not job.get('hand_sleeve'),
+                                  sleeve_normal=_resource('live_cloth_normal.png')))
     data['meta'] = np.frombuffer(json.dumps(meta).encode('utf-8'), np.uint8)
     tmp = out_path + '.part.npz'
     np.savez_compressed(tmp, **data)

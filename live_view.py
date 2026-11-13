@@ -846,7 +846,10 @@ class LiveView(QOpenGLWidget):
                     shadow_z = (G.TB + turned * G.PITCH + 0.003, G.TB + (G.N_SHEETS - turned) * G.PITCH + 0.003)
                 held_up = self.values.get('hand_left', True) and self.values.get('hand_left_style') == 'under'
                 clip = (-(G.WC + G.SPINE_GAP + 0.05), G.WC + 0.02, -G.HC / 2, G.HC / 2) if held_up else None
-                hands.draw(self.frame, sun=(0.45, -0.55, 0.85), shadow_z=shadow_z, shadow_clip=clip)
+                # the shadow falls away from the book's own key light (as in the render), the
+                # light high enough that a hand on the page casts it close under itself
+                sun = key / np.linalg.norm(key) + np.array((0.0, 0.0, 1.4))
+                hands.draw(self.frame, sun=tuple(sun / np.linalg.norm(sun)), shadow_z=shadow_z, shadow_clip=clip)
             except Exception:
                 self.hands = None
             finally:
