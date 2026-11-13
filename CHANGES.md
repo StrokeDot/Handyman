@@ -1,5 +1,8 @@
 # Changes
 
+## 0.27.3
+- The new page grip from 0.27.2 (fingers curled behind the page, as filmed) is now actually included - 0.27.2 shipped without it.
+
 ## 0.27.2
 - **The hand's grip on the page is taken from a real hand**: filmed page turns were tracked finger by finger, and while the hand holds a page's edge the middle finger now curls round behind the edge and the ring and little finger tuck loosely towards the palm, as a real hand does - before, they stayed almost straight and stiff. Thumb and index (the grip itself) are unchanged, so the page is held exactly as before.
 

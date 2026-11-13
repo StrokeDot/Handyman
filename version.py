@@ -2,7 +2,7 @@
 APP_NAME = 'MotionCraft'
 # the app's earlier name: its folders and settings are carried over on first start
 OLD_NAME = 'Handyman'
-APP_VERSION = '0.27.2'
+APP_VERSION = '0.27.3'
 # GitHub's permanent repository ID: update checks keep working even if the repo is renamed.
 REPO_ID = 1423040943
 
