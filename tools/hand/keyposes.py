@@ -52,7 +52,9 @@ def key_pose(name, hand, page, cm):
                     fw = R @ rest_fwd
                     W = P - R @ (hand.clamp0 - hand.wrist0)
                     wz = (W.z * hand.s - Vector(target).z) / cm          # wrist height over the grip, cm
-                    c = hand._bend(P, R, hand.clamp0) + low * 4.0 * max(0.0, wz) \
+                    wy = (W.y * hand.s - Vector(target).y) / cm          # wrist below (-) / above the grip, cm
+                    c = hand._bend(P, R, hand.clamp0) + low * 4.0 * max(0.0, wz + 3.0) \
+                        + 6.0 * max(0.0, abs(wy) - 1.5) \
                         + 80.0 * max(0.0, fw.dot(-fin) + 0.2)            # fingers must point in, not out
                     if best is None or c < best[0]:
                         best = (c, R, wz)
@@ -68,7 +70,7 @@ def key_pose(name, hand, page, cm):
         return hand.pose(Vector(pads), R, amount, 1.0)
 
     if name in ('rest', 'reach', 'lift'):
-        at = {'rest': 0.3, 'reach': 0.36, 'lift': 0.4}[name]
+        at = {'rest': 0.4, 'reach': 0.4, 'lift': 0.42}[name]
         p, (e_in, e_edge, n) = page(1.0, at)
         p, e_in, n = (np.array(v, float) for v in (p, e_in, n))
         target = p + e_in * 0.2 * cm - n * 0.03 * cm       # just in from the edge, at the paper
@@ -89,7 +91,8 @@ def key_pose(name, hand, page, cm):
         p, (e_in, e_edge, n) = page(0.6, 0.06)
         p, n = np.array(p, float), np.array(n, float)
         return flat(p - n * gap * 2, (-0.55, 0.8, -0.1), -n, -0.8)
-    if name == 'return':                                   # back up the right side, outside the book
+    if name == 'return':                                   # back holding the book's right edge, as at rest
+        return key_pose('rest', hand, page, cm)
         p = np.array((1.0 + 3.0 * cm, -hand.half_h + 0.25 * 2 * hand.half_h, -1.5 * cm))
         return flat(p, (-0.9, 0.3, -0.3), (0.3, 0, 1), -0.4)
 
@@ -101,9 +104,9 @@ def plan(hand, n_frames, fps, state_at, strap_u=None, held_up=False):
     out = orig_plan(hand, n_frames, fps, state_at, strap_u, held_up)
     cm = 1.0 / hand.pw
 
-    def angle(f):
+    def angle(f, along=1.0):
         ts, cw = state_at(f)[:2]
-        _, fr = hand.page_at(0, ts[0], cw[0], 1.0, 0.42)
+        _, fr = hand.page_at(0, ts[0], cw[0], along, 0.42)
         n = fr[2]
         return math.degrees(float(np.clip(math.atan2(-n[0], n[2]), 0.0, math.pi)))
     angs = [angle(f) for f in range(n_frames)]
@@ -111,11 +114,12 @@ def plan(hand, n_frames, fps, state_at, strap_u=None, held_up=False):
     land = next(f for f, a in enumerate(angs) if a > 179.0)
     FRAMES.update(rest=2, reach=start - 1, press=land, exit=land + 5, **{'return': land + 12})
     for k, d in TARGET_DEG.items():
-        FRAMES[k] = min(range(start, land + 1), key=lambda f: abs(angs[f] - d))
+        FRAMES[k] = min(range(start, land + 1), key=lambda f: abs(angle(f, 0.6) - d))
     for k in KEYS:
         f = FRAMES[k]
         ts, cw = state_at(f)[:2]
-        pose = key_pose(k, hand, lambda along, up: hand.page_at(0, ts[0], cw[0], along, up), cm)
+        sh = 1 if k == 'return' else 0                     # back on the next page, the top one on the right
+        pose = key_pose(k, hand, lambda along, up: hand.page_at(sh, ts[sh], cw[sh], along, up), cm)
         if pose is not None:
             out[f] = pose
         REPORT[k] = dict(frame=f, page_deg=round(angs[f], 1))
@@ -125,7 +129,7 @@ def plan(hand, n_frames, fps, state_at, strap_u=None, held_up=False):
 H.plan = plan
 import journal_scene as JS  # noqa: E402
 
-job = json.load(open(job_path))
+job = dict(json.load(open(job_path)), turn_style='pushed')
 # first pass: only work out the frames (render nothing), then render just those
 JS.hand_scene = H
 sys.argv = ['x', '--', job_path]
@@ -145,7 +149,7 @@ def _probe():
 
 
 _probe()
-job2 = dict(job, frames=[FRAMES[k] for k in KEYS], out_dir=OUT, width=960, height=540, samples=16,
+job2 = dict(job, turn_style='pushed', frames=[FRAMES[k] for k in KEYS], out_dir=OUT, width=960, height=540, samples=16,
             cam=dict(job['cam'], zoom=float(os.environ.get('ZOOM', '1.5')), tilt=float(os.environ.get('TILT', '89')), turn=float(os.environ.get('TURN', '0'))))
 os.makedirs(OUT, exist_ok=True)
 json.dump(job2, open(os.path.join(OUT, 'job.json'), 'w'))
