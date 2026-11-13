@@ -608,11 +608,11 @@ class Studio(QMainWindow):
         self.loop.setToolTip('Start again from the beginning when playback reaches the end')
         self.loop.setChecked(True)
         self.loop.toggled.connect(lambda on: setattr(self.live, 'loop', on) if self.live else None)
-        self.drag_pages = QCheckBox('Turn pages by hand')
+        self.drag_pages = QCheckBox('Drag pages with the mouse')
         self.drag_pages.setToolTip('Left-drag a page in the live view to turn it')
         self.drag_pages.toggled.connect(lambda on: setattr(self.live, 'drag_pages', on) if self.live else None)
         self.record = QCheckBox('Record turns')
-        self.record.setToolTip('While on, each page you turn by hand is added to the animation')
+        self.record.setToolTip('While on, each page you drag with the mouse is added to the animation')
         self.show_where = QCheckBox('Page numbers')
         self.show_where.setToolTip('Show which pages are open, in the corner of the live view (never in the video)')
         self.show_where.setChecked(True)
@@ -766,7 +766,8 @@ class Studio(QMainWindow):
         self.turn_style = QComboBox()
         for label, key in (('Natural (smooth arc)', 'natural'),
                            ('Corner peel (like After Effects)', 'corner peel'),
-                           ('Quick and light', 'quick')):
+                           ('Quick and light', 'quick'),
+                           ('Pushed by hand (like Arthur Morgan)', 'pushed')):
             self.turn_style.addItem(label, key)
         self.turn_style.setToolTip('How each page moves as it turns')
         self.turn_style.currentIndexChanged.connect(self._schedule_live)
@@ -1677,14 +1678,21 @@ class Studio(QMainWindow):
                     smoothness=self.smooth.value() / 100, recorded_clips=self.recorded_clips,
                     clip_list=self.edited_clips, transform=self._transform(),
                     page_shape=self.page_shape.currentData() or 'flat',
-                    turn_style=self.turn_style.currentData() or 'natural',
+                    turn_style=self._turn_style(),
                     hand=self.hand_turns.isChecked(), hand_left=self.hand_left.isChecked(),
                     hand_left_style=self.hand_left_style.currentData() or 'on', hand_size=self.hand_size.value(),
                     hand_skin=self.hand_skin.currentData() or '', hand_sleeve=self.hand_sleeve.currentData() or '',
                     page_fits=self._page_fits())
 
+    def _turn_style(self):
+        """The page turn style; with the hand turning the pages the default smooth arc becomes the
+        hand's push (the page stands up straight and is pushed over by the palm)."""
+        style = self.turn_style.currentData() or 'natural'
+        return 'pushed' if style == 'natural' and self.hand_turns.isChecked() else style
+
     def _state(self):
         v = self._values()
+        v['turn_style'] = self.turn_style.currentData() or 'natural'     # the choice itself, not the hand's
         v.update(resolution=self.resolution.currentText(), mov=self.mov.isChecked(), webm=self.webm.isChecked(),
                  keep_png=self.keep_png.isChecked(), mov_size=self.mov_size.currentData() or 'small',
                  book=self._book().get('folder') or '',

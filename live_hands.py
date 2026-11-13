@@ -12,7 +12,9 @@ except Exception:  # live_view reports a missing OpenGL
 
 SUEDE_RGB = (0.36, 0.23, 0.15)
 SLEEVE_TILE_M = 0.09
-SHADOW_ALPHA = 0.13      # each of the soft shadow's passes, where the hand touches the page
+SHADOW_ALPHA = 0.085     # each of the soft shadow's passes, where the hand touches the page
+SHADOW_SOFT = 0.22       # ...each pass also moved sideways this much per unit of the light's shift (a soft edge
+                         # even where the hand touches the page, not a sharp dark copy of the fingertips)
 SHADOW_FADE = 0.45       # ...gone this high above it (book units: a page is 1 wide)
 
 
@@ -154,7 +156,8 @@ class LiveHands:
                 # different heights (z = (height left of the spine, height right of it))
                 zi = np.where(v[:, 0:1] < 0.0, z[0], z[1]).astype(np.float32) if np.ndim(z) else np.full((len(v), 1), z, np.float32)
                 t = (v[:, 2:3] - zi) / d[2]
-                p = np.ascontiguousarray(np.concatenate([v[:, :2] - t * d[:2], zi], 1), np.float32)
+                p = np.ascontiguousarray(np.concatenate([v[:, :2] - t * d[:2] + np.array((jx, jy), np.float32) * SHADOW_SOFT, zi], 1),
+                                         np.float32)
                 # dark where the hand is close to the page, fading as it rises (and spreading:
                 # the light's small shifts move the high parts' shadow further)
                 h = np.maximum(v[:, 2:3] - zi, 0.0)

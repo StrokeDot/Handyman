@@ -324,6 +324,12 @@ TURN_STYLES = {
         E=pchip([0.0, 0.08, 0.50, 0.90, 1.0], [0.0, 0.03, 0.50, 0.98, 1.0]),
         B=pchip([0.0, 0.15, 0.40, 0.65, 0.85, 1.0], [0.0, 0.35, 0.40, -0.25, -0.08, 0.0]),
         LEAD=0.10, SIG=1.6),
+    # pushed by a hand (as Arthur Morgan turns his journal's pages): the fingers lift the edge, the
+    # page stands up straight (no twist), the palm pushes it over from behind so its edge trails
+    'pushed': dict(
+        E=pchip([0.0, 0.10, 0.22, 0.50, 0.76, 0.90, 1.0], [0.0, 0.02, 0.10, 0.50, 0.90, 1.0, 1.0]),
+        B=pchip([0.0, 0.10, 0.24, 0.40, 0.55, 0.70, 0.86, 1.0], [0.0, 0.30, 0.30, 0.0, -0.28, -0.28, -0.08, 0.0]),
+        LEAD=0.03, SIG=1.4),
 }
 
 
