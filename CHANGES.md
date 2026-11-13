@@ -1,5 +1,8 @@
 # Changes
 
+## 0.27.2
+- **The hand's grip on the page is taken from a real hand**: filmed page turns were tracked finger by finger, and while the hand holds a page's edge the middle finger now curls round behind the edge and the ring and little finger tuck loosely towards the palm, as a real hand does - before, they stayed almost straight and stiff. Thumb and index (the grip itself) are unchanged, so the page is held exactly as before.
+
 ## 0.27.1
 - **Turning a page back looks natural now**: the hand comes over the book, palm down, and takes the left page by its edge - fingers up along the edge on top of the page, the thumb slipping in under it from outside - lifts it and carries it back, then lets go, pushes it over and lays it on the right. Before, it came from under the page with the palm up and passed through the paper.
 - On the way over to the left page the hand first slides out from the book's edge (its fingers clear of the book), goes high over it, and comes in to the left edge from outside.
