@@ -82,6 +82,10 @@ def key_pose(name, hand, page, cm):
         # the fingers under it, the wrist out beyond the corner (cm from the grip: right, down, below)
         return clamp(target, -n, fingers, None if name != 'reach' else hand.clamp_amount * 0.6,
                      wrist_at=(4.0, -7.0, -2.0))
+    if name == 'upright':                                  # as in the game: the standing page held near its
+        p, (e_in, e_edge, n) = page(0.86, 0.42)            # free edge between the thumb (on its front) and the
+        p, e_edge, n = (np.array(v, float) for v in (p, e_edge, n))   # fingers (behind it), fingers up the book,
+        return clamp(p, -n, e_edge, amount=0.75, wrist_at=(3.0, -9.0, -3.0))   # the back of the hand towards us
     if name in ('upright', 'push', 'press'):
         at = {'upright': (0.74, 0.68), 'push': (0.62, 0.6), 'press': (0.62, 0.36)}[name]
         p, (e_in, e_edge, n) = page(*at)
