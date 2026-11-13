@@ -129,11 +129,20 @@ class ClipTimeline:
         return self._turns[k].start
 
     def progress(self, frame, k):
-        return self._turns[k].raw(frame)
+        events = getattr(self, '_sheet_events', None)
+        if events is None:
+            return self._turns[k].raw(frame)
+        value = 0.0                                  # turned forward (to 1) and back (to 0) in turn
+        for clip, way in events[k]:
+            if frame < clip.start:
+                break
+            r = clip.raw(frame)
+            value = r if way > 0 else 1.0 - r
+        return value
 
     def active_turn(self, frame):
-        for k, c in enumerate(self._turns):
-            if 0.0 < c.raw(frame) < 1.0:
+        for k in range(self.turns):
+            if 0.0 < self.progress(frame, k) < 1.0:
                 return k
         return None
 
@@ -159,6 +168,20 @@ class ClipTimeline:
         obj._open = next((c for c in obj.clips if c.kind == 'open'), None)
         obj._turns = sorted((c for c in obj.clips if c.kind == 'turn'), key=lambda c: c.start)
         obj.turns = len(obj._turns)
+        # 'turn' turns the next sheet over to the left; 'turn_back' brings the last one turned
+        # back to the right (the same sheet moves again, the other way)
+        obj._sheet_events = [[] for _ in range(obj.turns)]
+        stack, nxt = [], 0
+        for c in sorted((c for c in obj.clips if c.kind in ('turn', 'turn_back')), key=lambda c: c.start):
+            if c.kind == 'turn' and nxt < obj.turns:
+                obj._sheet_events[nxt].append((c, 1))
+                stack.append(nxt)
+                nxt += 1
+            elif c.kind == 'turn_back' and stack:
+                k = stack.pop()
+                obj._sheet_events[k].append((c, -1))
+                nxt = k                                  # (the next turn turns this sheet again)
+        obj.turns = len(obj._sheet_events)
         obj.end = int(end)
         obj.frames = max((c.end for c in obj.clips), default=0) + 1 + obj.end
         obj.start = obj._open.start if obj._open else 0

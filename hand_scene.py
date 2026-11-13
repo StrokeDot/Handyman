@@ -50,15 +50,23 @@ KEY_REST_UP = 0.28                  # between turns: the thumb on the book's rig
 KEY_EDGE_IN_CM = -0.3               # ...this far in from the edge (book held up: the fingers go under it)
 KEY_EDGE_IN_TABLE_CM = -0.5         # (book on a table: the fingers down its side, not under it)
 KEY_EDGE_WRIST_CM = (4.0, -7.0, -2.0)   # ...the wrist out beyond the lower right corner (right, up, up; cm)
+KEY_CONTACT_IN_CM = 0.6             # holding the page: thumb and finger this far in from its free edge...
+KEY_BACK_CONTACT_IN_CM = 0.0        # (turning back: right at the edge, deep in the bent fingers)
+KEY_CONTACT_UP = 0.42               # ...this share up it, from lifting it until letting go (no sliding)
+OVER_S = 0.55                       # going over the book to turn a page back takes this long...
+OVER_CM = 7.0                       # ...this high over the book
+KEY_BACK_HOOK_CM = -0.9            # ...the grip this far past the left page's edge (hooking it)
+KEY_BACK_WRIST_CM = (5.0, -5.0, 4.0)    # turning a page back: the wrist over the book, right of the grip
 KEY_LIFT_IN_CM = 1.2                # lifting: the page this deep between thumb and fingers (thumb pad on it)
 KEY_LIFT_UNDER_CM = 0.5            # (the fingers this far under the page, clear of it)
 KEY_LIFT_DEG = 25.0                 # lifting: at this page angle
-KEY_UPRIGHT = (1.0, 0.55, 0.3, 0.4)     # standing page: by its free edge this share up; fingers closed; thumb gap cm
+KEY_UPRIGHT = (1.0, 0.55, 0.6, -0.3)     # standing page: by its free edge this share up; fingers closed; thumb gap cm
 KEY_UPRIGHT_WRIST_CM = (3.0, -9.0, -3.0)
 KEY_RELEASE_DEG = 118.0             # the thumb has slipped off past the edge by this angle...
 KEY_RELEASE_CM = (-3.8, 0.0, -3.0)  # ...this far (out past the free edge, behind the page; page frame, cm)
 KEY_PUSH = (0.62, 0.6, 145.0, 1.3, 7.0, 0.0)  # pushing over: pads here (along, up) at this angle, gap cm, roll, fingers
 KEY_WEB_CM = 1.0                    # holding a page by its edge: the web between thumb and finger this far past it
+KEY_SKIN_CM = 0.12                  # ...and the skin itself at least this far
 KEY_CLEAR_CM = 0.8                  # behind a page: every finger joint at least this far off it (finger thickness)
 KEY_UNDER_CM = 3.0                  # back to the corner grip from this far under the (held up) book
 KEY_PRESS_ROLL = 9.0               # ...turned this much about the fingers, so the thumb lies on the page with them
@@ -520,7 +528,8 @@ class Hand:
         return [tuple(float(x) for x in point), tuple(R @ self.rest_frame.col[0]),
                 tuple(R @ self.rest_frame.col[1]), float(amount), float(anchor)]
 
-    def edge_clamp(self, target, thumb_to_index, fingers, amount=None, wrist_at=None, max_tilt=70):
+    def edge_clamp(self, target, thumb_to_index, fingers, amount=None, wrist_at=None, max_tilt=70, wrist_w=3.0,
+                   back_up=None):
         """Holding an edge between the thumb and the fingers (part-closed), as Arthur Morgan holds
         his journal and its pages: thumb on the side `thumb_to_index` points away from, fingers
         pointing roughly `fingers`. The grip may tilt; the most natural one is taken, with the
@@ -541,8 +550,13 @@ class Hand:
                     fw = R @ rest_fwd
                     W = (P - R @ (self.clamp0 - self.wrist0)) * self.s
                     off = (W - target) / cm                       # wrist from the grip, cm
-                    c = self._bend(P, R, self.clamp0) + 80.0 * max(0.0, fw.dot(-fin) + 0.2)
-                    c += 3.0 * (off - Vector(wrist_at)).length if wrist_at is not None else 4.0 * max(0.0, off.z)
+                    bend = self._bend(P, R, self.clamp0)
+                    c = bend + 80.0 * max(0.0, fw.dot(-fin) + 0.2)
+                    if back_up is not None:                         # (the back of the hand towards this)
+                        c += 40.0 * max(0.0, 0.55 - (R @ self.rest_frame.col[1]).dot(back_up))
+                    c += 12.0 * max(0.0, bend - (MAX_BEND - 12.0))      # (a wrist bent past what it can do
+                    #  would be turned back by apply(), and the grip would leave the edge)
+                    c += wrist_w * (off - Vector(wrist_at)).length if wrist_at is not None else 4.0 * max(0.0, off.z)
                     if best is None or c < best[0]:
                         best = (c, R)
         R = best[1]
@@ -699,15 +713,27 @@ def plan(hand, n_frames, fps, state_at, strap_u=None, held_up=False):
     progs = [state_at(f) for f in range(n_frames)]
     thetas = [p[2] if len(p) > 2 else math.pi for p in progs]
     turns = []                      # (thing, start frame, latest let-go frame)
+    ways = {}                       # (thing, start frame) -> +1 turned over to the left, -1 turned back
     n_sheets = len(progs[0][0]) if progs else 0
     for k in range(n_sheets):
         series = [p[0][k] for p in progs]
-        if series[0] >= 1.0 - 1e-6:
-            continue                # already turned when the video starts
-        start = next((f for f, t in enumerate(series) if t > 1e-4), None)
-        if start is None:
-            continue
-        turns.append((k, start, next((f for f, t in enumerate(series) if t >= RELEASE), n_frames - 1)))
+        f = 1
+        while f < n_frames:                                      # every movement of the sheet, either way
+            if abs(series[f] - series[f - 1]) < 1e-6:
+                f += 1
+                continue
+            start, t0 = f - 1, series[f - 1]
+            way = 1 if series[f] > t0 else -1
+            end = f
+            while end + 1 < n_frames and abs(series[end + 1] - series[end]) >= 1e-6:
+                end += 1
+            if way > 0:
+                rel = next((g for g in range(start, end + 1) if series[g] >= RELEASE), end)
+            else:
+                rel = next((g for g in range(start, end + 1) if series[g] <= 1.0 - RELEASE), end)
+            turns.append((k, start, rel))
+            ways[(k, start)] = way
+            f = end + 1
     if strap_u and strap_u[0] < 1.0:                          # a journal's strap: undo it first
         s_start = next((f for f, u in enumerate(strap_u) if u > 1e-4), None)
         if s_start is not None:
@@ -741,8 +767,12 @@ def plan(hand, n_frames, fps, state_at, strap_u=None, held_up=False):
     for k, start, rel in turns:
         if k != 'strap':
             g = grab_of(k)
-            rel = next((f for f in range(start, rel + 1)
-                        if where(k, f, *g)[2] >= math.radians(RELEASE_DEG)), rel)
+            if ways.get((k, start), 1) > 0:
+                rel = next((f for f in range(start, rel + 1)
+                            if where(k, f, *g)[2] >= math.radians(RELEASE_DEG)), rel)
+            else:
+                rel = next((f for f in range(start, rel + 1)
+                            if where(k, f, *g)[2] <= math.pi - math.radians(RELEASE_DEG)), rel)
         released.append((k, start, rel))
     kept = []                       # pages faster than a hand could take them (a fast flip) turn alone
     for t in released:
@@ -758,8 +788,12 @@ def plan(hand, n_frames, fps, state_at, strap_u=None, held_up=False):
             land = next((f for f, th in enumerate(thetas) if f > rel and th >= math.pi * 0.99), rel + press_full)
         else:
             series = [p[0][k] for p in progs]
-            land = next((f for f, t in enumerate(series) if f > rel and t >= 0.985), rel + press_full)
-        info.append(dict(k=k, start=start, rel=rel, land=min(n_frames - 1, max(land, rel + 2))))
+            if ways.get((k, start), 1) > 0:
+                land = next((f for f, t in enumerate(series) if f > rel and t >= 0.985), rel + press_full)
+            else:
+                land = next((f for f, t in enumerate(series) if f > rel and t <= 0.015), rel + press_full)
+        info.append(dict(k=k, start=start, rel=rel, land=min(n_frames - 1, max(land, rel + 2)),
+                         way=ways.get((k, start), 1)))
     # share out the time between one turn's landing and the next turn's start
     for i, cur in enumerate(info):
         cur.setdefault('lead', lead_full)
@@ -783,63 +817,88 @@ def plan(hand, n_frames, fps, state_at, strap_u=None, held_up=False):
     L_lay = hand.lay_rotation()
     keys_local = {}
 
-    def page_angle(k, f):
-        return where(k, f, 0.6, 0.42)[2]
+    def page_angle(k, f, way=1):
+        """How far along its turn thing k is at frame f (radians, 0 .. pi): the page's angle when
+        turned over, measured the other way when turned back."""
+        th = where(k, f, 0.6, 0.42)[2]
+        return th if way > 0 else math.pi - th
+
+    def eff_frame(k, f, along, up, way):
+        """(point, towards the spine, up the page, the side the thumb is on) on thing k: the page's
+        front when turning it over, its back when turning it back."""
+        p, fr, _ = where(k, f, along, up)
+        return np.array(p), np.array(fr[0]), np.array(fr[1]), np.array(fr[2]) * way
 
     def build_keys(k, cur):
         """Arthur Morgan's page turn as key poses, each kept in the page's own frame at a spot on
         the page (so the hand goes wherever the page goes): the thumb on the page's edge with the
         fingers under it (reach, lift), the standing page held by its free edge between the thumb
-        (in front) and the fingers (behind), the thumb slipping off past the edge, the open hand
-        pushing the page over from behind, and lying flat on it as it lands."""
+        and the fingers - at the same spot on the page as when it was lifted, so the grip never
+        slides - the thumb slipping off past the edge, the open hand pushing the page on from
+        behind, and lying flat on it as it lands. Turning a page back is the same movement from
+        the other side (the hand reaches over to the left page's edge and brings it back)."""
+        way = cur.get('way', 1)
         span = range(cur['start'], cur['land'] + 1)
-        ang = {f: page_angle(k, f) for f in span}
+        ang = {f: page_angle(k, f, way) for f in span}
 
         def at_deg(d):
             return min(span, key=lambda f: abs(ang[f] - math.radians(d)))
 
-        def frame_np(f, along, up):
-            p, fr, _ = where(k, f, along, up)
-            return np.array(p), np.array(fr[0]), np.array(fr[1]), np.array(fr[2])
-
         out = {}
 
         def keep(name, f, along, up, pose, deg):
-            p, e_in, e_edge, n = frame_np(f, along, up)
+            p, e_in, e_edge, n = eff_frame(k, f, along, up, way)
             F = np.stack([e_in, e_edge, n], 1)                     # page frame -> book
             out[name] = dict(deg=deg, at=(along, up), off=F.T @ (np.array(pose[0]) - p),
                              fwd=F.T @ np.array(pose[1]), up=F.T @ np.array(pose[2]), amount=pose[3], anchor=pose[4])
+            if pose[4] < 0.5:                                      # held between thumb and finger: where
+                R = _frame(Vector(pose[1]), Vector(pose[2])) @ hand.rest_frame.transposed()   # the grip is
+                out[name]['grip'] = F.T @ (np.array(pose[0]) - np.array(R @ (hand.pinch0 - hand.clamp0)) * hand.s - p)
 
         f0 = cur['start']
-        for name, along, up, deg in (('reach', 1.0, KEY_EDGE_UP[0], 0.0), ('lift', 1.0, KEY_EDGE_UP[1], KEY_LIFT_DEG)):
-            f = f0 if name == 'reach' else at_deg(deg)
-            p, e_in, e_edge, n = frame_np(f, along, up)
-            target = p + e_in * ((KEY_EDGE_IN_CM if held_up else KEY_EDGE_IN_TABLE_CM) if name == 'reach'
-                                 else KEY_LIFT_IN_CM) * cm
-            # reaching: the whole book between thumb and fingers (as at rest); lifting: just the page
-            target = target - n * (0.5 if (name == 'reach' and held_up) else KEY_LIFT_UNDER_CM) * cm
-            fingers = e_in - n * 0.35 + np.array((0.0, 0.15, 0.0))
-            pose = hand.edge_clamp(target, -n, fingers, None if name == 'lift' else hand.clamp_amount * 0.6,
-                                   wrist_at=KEY_EDGE_WRIST_CM)
-            keep(name, f, along, up, pose, deg)
-        f = at_deg(90.0)                                           # the standing page, by its free edge
-        p, e_in, e_edge, n = frame_np(f, 1.0, KEY_UPRIGHT[1])
-        pose = hand.edge_clamp(p + n * KEY_UPRIGHT[3] * cm, -n, e_edge, amount=KEY_UPRIGHT[2],
-                               wrist_at=KEY_UPRIGHT_WRIST_CM, max_tilt=20)
-        keep('upright', f, 1.0, KEY_UPRIGHT[1], pose, 90.0)
+        contact = (1.0 - (KEY_CONTACT_IN_CM if way > 0 else KEY_BACK_CONTACT_IN_CM) * cm, KEY_CONTACT_UP)  # where thumb and finger hold the page
+        # reaching: the thumb on the edge (turning back: hooking the left page's edge from above)
+        p, e_in, e_edge, n = eff_frame(k, f0, 1.0, KEY_EDGE_UP[0], way)
+        if way > 0:
+            target = p + e_in * (KEY_EDGE_IN_CM if held_up else KEY_EDGE_IN_TABLE_CM) * cm
+            target = target - n * (0.5 if held_up else KEY_LIFT_UNDER_CM) * cm
+            fingers, wrist = e_in - n * 0.35 + np.array((0.0, 0.15, 0.0)), KEY_EDGE_WRIST_CM
+        else:
+            target = p + e_in * KEY_BACK_HOOK_CM * cm + n * 0.1 * cm   # (thumb on the page, finger down its edge)
+            fingers, wrist = -e_in * 0.85 + np.array((0.0, 0.35, 0.0)) - n * 0.35, KEY_BACK_WRIST_CM
+        keep('reach', f0, 1.0, KEY_EDGE_UP[0],
+             hand.edge_clamp(target, -n, fingers, hand.clamp_amount * 0.6, wrist_at=wrist,
+                             wrist_w=3.0 if way > 0 else 1.0), 0.0)
+        # lifting: the page alone between thumb (on top) and fingers (under it), at the contact
+        f = at_deg(KEY_LIFT_DEG)
+        p, e_in, e_edge, n = eff_frame(k, f, *contact, way)
+        fingers = (e_in + np.array((0.0, 0.15, 0.0)) if way > 0 else -e_in * 0.6 + np.array((0.0, 0.6, 0.0))) - n * 0.35
+        pose = hand.edge_clamp(p - n * KEY_LIFT_UNDER_CM * cm, -n, fingers, wrist_at=wrist, wrist_w=3.0 if way > 0 else 1.0,
+                               amount=KEY_UPRIGHT[2] if way > 0 else None)   # (closed as when it stands: no sliding)
+        keep('lift', f, *contact, pose, KEY_LIFT_DEG)
+        # the standing page, held at the same spot (the hand turns about the grip, never slides)
+        f = at_deg(90.0)
+        p, e_in, e_edge, n = eff_frame(k, f, *contact, way)
+        if way > 0:
+            pose = hand.edge_clamp(p + n * KEY_UPRIGHT[3] * cm, -n, e_edge, amount=KEY_UPRIGHT[2],
+                                   wrist_at=KEY_UPRIGHT_WRIST_CM, max_tilt=20)
+            keep('upright', f, *contact, pose, 90.0)
+        else:                                                      # (carried as it was lifted)
+            out['upright'] = dict(out['lift'], deg=90.0)
         up = out['upright']                                        # the thumb slips off past the edge
         out['release'] = dict(up, deg=KEY_RELEASE_DEG, off=up['off'] + np.array(KEY_RELEASE_CM) * cm)
         f = at_deg(KEY_PUSH[2])
-        p, e_in, e_edge, n = frame_np(f, *KEY_PUSH[:2])
-        pose = hand.flat_pose(p - n * KEY_PUSH[3] * cm, e_edge - e_in * 0.35, -n, KEY_PUSH[5], KEY_PUSH[4])
+        p, e_in, e_edge, n = eff_frame(k, f, *KEY_PUSH[:2], way)
+        pose = hand.flat_pose(p - n * KEY_PUSH[3] * cm, e_edge - e_in * 0.35 * way, -n, KEY_PUSH[5], KEY_PUSH[4] * way)
         keep('push', f, KEY_PUSH[0], KEY_PUSH[1], pose, KEY_PUSH[2])
         f = cur['land']
-        p, e_in, e_edge, n = frame_np(f, *KEY_PRESS)
-        pose = hand.flat_pose(p - n * PAD_GAP, np.array((-0.6, 0.8, 0.0)), -n, -1.0, KEY_PRESS_ROLL)   # (thumb side up a little: it rests on the page)
+        p, e_in, e_edge, n = eff_frame(k, f, *KEY_PRESS, way)
+        fingers = np.array((-0.6, 0.8, 0.0)) if way > 0 else np.array((-0.25, 0.97, 0.0))
+        pose = hand.flat_pose(p - n * PAD_GAP, fingers, -n, -1.0, KEY_PRESS_ROLL)   # (thumb side up a little: it rests on the page)
         keep('press', f, KEY_PRESS[0], KEY_PRESS[1], pose, 180.0)
         return out
 
-    def key_pose_at(k, f, a, b, u, stage=False):
+    def key_pose_at(k, f, a, b, u, stage=False, way=1):
         """Between key poses a and b (share u), on thing k at frame f."""
         w = _smoother(u)
         along = a['at'][0] + (b['at'][0] - a['at'][0]) * w
@@ -849,11 +908,17 @@ def plan(hand, n_frames, fps, state_at, strap_u=None, held_up=False):
             off = a['off'] + np.array((d[0] * _smoother(u / 0.4), d[1] * w, d[2] * _smoother((u - 0.4) / 0.6)))
         else:
             off = a['off'] + (b['off'] - a['off']) * w
-        p, fr, _ = where(k, f, along, upv)
-        F = np.stack([np.array(fr[0]), np.array(fr[1]), np.array(fr[2])], 1)
+        p, e_in, e_edge, n = eff_frame(k, f, along, upv, way)
+        F = np.stack([e_in, e_edge, n], 1)
         Ra, Rb = _frame(Vector(tuple(F @ a['fwd'])), Vector(tuple(F @ a['up']))), \
             _frame(Vector(tuple(F @ b['fwd'])), Vector(tuple(F @ b['up'])))
         m = _slerp_m(Ra, Rb, w)
+        if 'grip' in a and 'grip' in b and not stage:              # turning about the grip itself: the
+            g = a['grip'] + (b['grip'] - a['grip']) * w            # thumb and finger stay on their spot
+            R = m @ hand.rest_frame.transposed()
+            point = np.array(p) + F @ g + np.array(R @ (hand.pinch0 - hand.clamp0)) * hand.s
+            return [tuple(point), tuple(m.col[0]), tuple(m.col[1]),
+                    a['amount'] + (b['amount'] - a['amount']) * w, a['anchor'] + (b['anchor'] - a['anchor']) * w]
         return [tuple(np.array(p) + F @ off), tuple(m.col[0]), tuple(m.col[1]),
                 a['amount'] + (b['amount'] - a['amount']) * w, a['anchor'] + (b['anchor'] - a['anchor']) * w]
 
@@ -861,7 +926,9 @@ def plan(hand, n_frames, fps, state_at, strap_u=None, held_up=False):
                    if b.name.split('_')[0] in ('thumb', 'index', 'middle', 'ring', 'pinky', 'hand', 'lowerarm')]
     root_inv = hand.rig.parent.matrix_world.inverted() if hand.rig.parent else None
 
-    thumb_tip = np.array([n.startswith('thumb') for n in joint_names] * 2)
+    thumb_tip = np.array([n.startswith(('thumb_02', 'thumb_03')) for n in joint_names] * 2)
+    is_palm = np.array([n.startswith('hand') for n in joint_names] + [False] * len(joint_names))   # (knuckles)
+    is_finger = np.array([n.split('_')[0] in ('index', 'middle', 'ring', 'pinky') for n in joint_names] * 2)
     use_joint = np.array([True] * len(joint_names) + [not n.startswith('lowerarm') for n in joint_names])   # (not the elbow)
     # how thick the hand is round each joint (cm): a fingertip is thin, the palm and wrist thick
     _thick = {'thumb_01': 0.95, 'hand': 1.25, 'lowerarm': 1.4}
@@ -870,7 +937,25 @@ def plan(hand, n_frames, fps, state_at, strap_u=None, held_up=False):
     joint_cm[len(joint_names):] = np.where(np.array([n.endswith('_03_r') for n in joint_names]), 0.68, joint_cm[len(joint_names):])
     joint_cm[:len(joint_names)] = np.where(np.array([n.endswith('_03_r') for n in joint_names]), 0.45, joint_cm[:len(joint_names)])
 
-    def clear_page(k, f, pose, margin_cm=KEY_CLEAR_CM, straddle=False, settle=False):
+    # a sample of the skin's points, by which part of the hand they belong to (1 thumb's end,
+    # 2 a finger, 3 the palm, 0 the rest), to keep the skin itself off the page
+    skin_ob = next((o for o in hand.objects if o.type == 'MESH' and not o.name.startswith('Sleeve')), None)
+    skin_pts, skin_kind = None, None
+    if skin_ob is not None and KEY_TURN:
+        for m_ in skin_ob.modifiers:
+            if m_.type == 'SUBSURF':
+                m_.show_viewport = False                         # (the plain mesh: fast, same vertex numbers)
+        gnames = {g.index: g.name for g in skin_ob.vertex_groups}
+        kinds = []
+        for v in skin_ob.data.vertices:
+            g = gnames.get(max(v.groups, key=lambda x: x.weight).group, '') if v.groups else ''
+            kinds.append(1 if g.startswith(('thumb_02', 'thumb_03')) else
+                         2 if g.split('_')[0] in ('index', 'middle', 'ring', 'pinky') else 3 if g.startswith('hand') else 0)
+        kinds = np.array(kinds)
+        skin_pts = np.where(kinds > 0)[0][::3]
+        skin_kind = kinds[skin_pts]
+
+    def clear_page(k, f, pose, margin_cm=KEY_CLEAR_CM, straddle=False, settle=False, way=1):
         """The hand as posed (the wrist's limits may turn it a little), moved along the page's
         normal so that no finger goes into the page thing k: all of it behind the page, or with
         straddle (holding it by its edge) the thumb's tip in front and the rest behind; settle:
@@ -879,7 +964,7 @@ def plan(hand, n_frames, fps, state_at, strap_u=None, held_up=False):
         for i in range(13):
             for j in range(15):
                 p, fr, _ = where(k, f, 0.03 + 0.94 * i / 12, 0.03 + 0.94 * j / 14)
-                grid.append((np.array(p), np.array(fr[2])))
+                grid.append((np.array(p), np.array(fr[2]) * way))   # (the thumb's side counts as front)
         G_p = np.array([g[0] for g in grid])
         G_n = np.array([g[1] for g in grid])
         spacing = max(np.linalg.norm(G_p[1] - G_p[0]), np.linalg.norm(G_p[15] - G_p[0])) + 1e-9
@@ -890,20 +975,38 @@ def plan(hand, n_frames, fps, state_at, strap_u=None, held_up=False):
             M = (root_inv if root_inv is not None else Matrix.Identity(4)) @ hand.rig.matrix_world
             J = np.array([(M @ hand.rig.pose.bones[n].tail)[:] for n in joint_names] +
                          [(M @ hand.rig.pose.bones[n].head)[:] for n in joint_names])
+            if skin_pts is not None:                             # the skin itself, not just the bones
+                dg = bpy.context.evaluated_depsgraph_get()
+                ev = skin_ob.evaluated_get(dg)
+                me = ev.to_mesh()
+                Ms = np.array((root_inv if root_inv is not None else Matrix.Identity(4)) @ skin_ob.matrix_world)
+                co = np.empty(len(me.vertices) * 3, np.float32)
+                me.vertices.foreach_get('co', co)
+                ev.to_mesh_clear()
+                Vs = co.reshape(-1, 3)[skin_pts] @ Ms[:3, :3].T + Ms[:3, 3]
+                J = np.concatenate([J, Vs])
             d2 = ((J[:, None, :] - G_p[None]) ** 2).sum(2)
             idx = d2.argmin(1)
             sd = ((J - G_p[idx]) * G_n[idx]).sum(1)
             inpl = np.sqrt(np.maximum(d2[np.arange(len(J)), idx] - sd ** 2, 0.0))
-            on = (inpl < spacing * 0.75) & use_joint                 # over the page, not past its edges
-            front = on & thumb_tip if straddle else np.zeros_like(on)
-            back = on & ~front
-            mj = joint_cm * cm + extra
+            nj = 2 * len(joint_names)
+            ext = (lambda a, b: np.concatenate([a, b]) if skin_pts is not None else a)
+            use_all = ext(use_joint, np.ones(len(J) - nj, bool))
+            on = (inpl < spacing * 0.75) & use_all                   # over the page, not past its edges
+            thumb_tip_a, is_finger_a, is_palm_a = (ext(thumb_tip, skin_kind == 1), ext(is_finger, skin_kind == 2),
+                                                   ext(is_palm, skin_kind == 3))
+            mj_all = ext(joint_cm * cm, np.full(len(J) - nj, KEY_SKIN_CM * cm)) + extra
+            front = on & thumb_tip_a if straddle else np.zeros_like(on)
+            # (holding the page's edge: only the fingers must be behind it - the palm, the wrist and
+            # the arm can be on either side, going round the edge)
+            back = on & ~front & (is_finger_a if straddle else np.ones_like(on))
+            mj = mj_all
             hi = float((-mj[back] - sd[back]).min()) if back.any() else 1e9   # shift along n: at most this...
             lo = float((mj[front] - sd[front]).max()) if front.any() else -1e9   # ...and at least this
             if settle and back.any() and hi > 0.05 * cm and not front.any():
                 lo = hi - 0.05 * cm                              # (down until it rests on the page)
             if os.environ.get('MC_KEYDBG') and str(f) in os.environ['MC_KEYDBG'].split(','):
-                names2 = joint_names + [n + '.head' for n in joint_names]
+                names2 = joint_names + [n + '.head' for n in joint_names] + ['skin%d' % kk for kk in (skin_kind if skin_pts is not None else [])]
                 bi_ = np.where(back)[0]
                 worst = names2[bi_[int(np.argmin(-mj[back] - sd[back]))]] if back.any() else None
                 print('CLEAR', f, straddle, 'lo', round(lo / cm, 2), 'hi', round(hi / cm, 2), 'on', int(on.sum()), 'front', int(front.sum()), 'binding', worst, round(float(sd[bi_[int(np.argmin(-mj[back] - sd[back]))]] / cm), 2) if back.any() else None, flush=True)
@@ -920,46 +1023,48 @@ def plan(hand, n_frames, fps, state_at, strap_u=None, held_up=False):
                 e_in = np.array(fr_e[0])
                 past = -float((web - np.array(e_pt)) @ e_in)         # how far the web is past the free edge
                 deficit = KEY_WEB_CM * cm - past
-                if lo > hi:
+                inward = float(np.dot(np.array(pose[1]), e_in)) > 0.2   # (fingers pointing in over the page)
+                # only when thumb and finger cannot both clear the page: sliding the grip out is a
+                # last resort (it would make the fingers slip on the paper)
+                if lo > hi and inward:
                     deficit = max(deficit, min(lo - hi, 1.0 * cm))
-                if deficit > 1e-4:
-                    move = move - e_in * min(deficit, 1.5 * cm)
+                    move = move - e_in * min(max(deficit, 0.0), 1.0 * cm)
             if not move.any():
                 break
             pose = [tuple(np.array(pose[0]) + move)] + list(pose[1:])
         return pose
 
-    def clear_behind(k, f, pose, margin_cm=KEY_CLEAR_CM):
-        return clear_page(k, f, pose, margin_cm)
+    def clear_behind(k, f, pose, margin_cm=KEY_CLEAR_CM, way=1):
+        return clear_page(k, f, pose, margin_cm, way=way)
 
     def key_turn(cur):
-        k = cur['k']
-        if not keys_local:
-            keys_local.update(build_keys(k, cur))
-        K = keys_local
+        k, way = cur['k'], cur.get('way', 1)
+        if way not in keys_local:
+            keys_local[way] = build_keys(k, cur)
+        K = keys_local[way]
         order = ['reach', 'lift', 'upright', 'release', 'push', 'press']
         seq, phases = {}, {}
         for f in range(cur['arrive'], cur['start'] + 1):
-            seq[f], phases[f] = key_pose_at(k, f, K['reach'], K['reach'], 0.0), f'reach {k}'
+            seq[f], phases[f] = key_pose_at(k, f, K['reach'], K['reach'], 0.0, way=way), f'reach {k}'
         top = 0.0
         for f in range(cur['start'], cur['done'] + 1):
             KEY_DEBUG.pop(f, None)
         end_turn = min(cur['land'], cur['done'])                 # (no time to lay it: off it early)
         for f in range(cur['start'] + 1, end_turn + 1):
-            top = max(top, math.degrees(page_angle(k, f)))         # never back: the hand only goes on
+            top = max(top, math.degrees(page_angle(k, f, way)))    # never back: the hand only goes on
             i = max(0, max(j for j in range(len(order) - 1) if K[order[j]]['deg'] <= top))
             a, b = K[order[i]], K[order[i + 1]]
             u = min(1.0, (top - a['deg']) / max(1e-6, b['deg'] - a['deg']))
-            seq[f] = key_pose_at(k, f, a, b, u, stage=order[i] == 'upright')
+            seq[f] = key_pose_at(k, f, a, b, u, stage=order[i] == 'upright', way=way)
             phases[f] = f'turn {k}'
-            KEY_DEBUG[f] = (order[i], order[i + 1], round(u, 2), round(top, 1))
+            KEY_DEBUG[f] = (order[i], order[i + 1], round(u, 2), round(top, 1), way)
             if order[i] in ('release', 'push'):                  # (the thumb's root is thicker)
-                seq[f] = clear_behind(k, f, seq[f], KEY_CLEAR_CM + (0.5 if order[i] == 'release' else 0.0))
+                seq[f] = clear_behind(k, f, seq[f], KEY_CLEAR_CM + (0.5 if order[i] == 'release' else 0.0), way)
         for f in range(cur['land'] + 1, cur['done'] + 1):          # flat on it, a short stroke down
-            KEY_DEBUG[f] = ('press', 'press', 1.0, 180.0)
+            KEY_DEBUG[f] = ('press', 'press', 1.0, 180.0, way)
             v = _smooth((f - cur['land']) / max(1, cur['done'] - cur['land']))
             pr = dict(K['press'], at=(K['press']['at'][0] + SMOOTH_STROKE[0] * v, K['press']['at'][1] + SMOOTH_STROKE[1] * v))
-            seq[f], phases[f] = clear_page(k, f, key_pose_at(k, f, pr, pr, 0.0), settle=True), f'smooth {k}'
+            seq[f], phases[f] = clear_page(k, f, key_pose_at(k, f, pr, pr, 0.0, way=way), settle=True, way=way), f'smooth {k}'
         return seq, phases
 
     for cur in info:
@@ -1083,6 +1188,7 @@ def plan(hand, n_frames, fps, state_at, strap_u=None, held_up=False):
     # page to the right one, and holds the book again. When turns come too fast for that, the
     # way back is cut short (straight to the next page along the bottom, or straight across).
     ret_n, slide_n = max(2, round(RETURN_S * fps)), max(2, round(SLIDE_S * fps))
+    over_n = max(3, round(OVER_S * fps))
     skim = SKIM_CM * cm
     hold_cache = {}
 
@@ -1211,6 +1317,23 @@ def plan(hand, n_frames, fps, state_at, strap_u=None, held_up=False):
         """From holding the right side, up along the edge to the page (low, no arc)."""
         return _blend(hold, arrive_pose, u, SLIDE_LIFT_CM * cm)
 
+    def over_book(start, end, u):
+        """From `start` to `end` up and over the book (to turn a page back the hand goes over to
+        the left page): first up off the book, across above it, down onto the edge."""
+        p0, p3 = np.array(start[0]), np.array(end[0])
+        top = max(p0[2], p3[2]) + OVER_CM * cm
+        p1 = p0 + np.array((1.5 * cm, 0.0, 0.0))
+        p1[2] = top
+        p2 = p3.copy()
+        p2[2] = top
+        w = _smoother(u)
+        q = (1 - w) ** 3 * p0 + 3 * (1 - w) ** 2 * w * p1 + 3 * (1 - w) * w ** 2 * p2 + w ** 3 * p3   # (Bezier)
+        wr = _smoother(min(1.0, max(0.0, (u - 0.25) / 0.55)))      # (up off the paper before it turns)
+        m = _slerp_m(_frame(start[1], start[2]), _frame(end[1], end[2]), wr)
+        return [tuple(q), tuple(m.col[0]), tuple(m.col[1]), start[3] + (end[3] - start[3]) * wr,
+                start[4] + (end[4] - start[4]) * wr]
+
+    way_of = {id(seq): cur.get('way', 1) for cur, (seq, _) in zip(info, seqs)}
     by_item = []                                                 # (first frame, last frame, thing, seq)
     for cur, (seq, _) in zip(info, seqs):
         by_item.append((min(seq), max(seq), cur['k'], seq))
@@ -1226,16 +1349,30 @@ def plan(hand, n_frames, fps, state_at, strap_u=None, held_up=False):
         # before the first: holding the book, then sliding up to it
         a, seq = by_item[0][0], by_item[0][3]
         h = hold_pose(0, flipping(0, a))
+        back_first = way_of[id(seq)] < 0
+        sn = over_n if back_first else slide_n
         for f in range(0, a):
-            u = (f - (a - slide_n)) / slide_n
-            out[f] = slide_in(h, seq[a], u) if u > 0 else list(h)
+            u = (f - (a - sn)) / sn
+            out[f] = (over_book(h, seq[a], u) if back_first else slide_in(h, seq[a], u)) if u > 0 else list(h)
             LAST_PHASES[f] = 'slide' if u > 0 else 'hold'
         # between two
         for (_, b, k_prev, sb), (a, _, _, sa) in zip(by_item, by_item[1:]):
             gap = a - b - 1
             if gap <= 0:
                 continue
-            if k_prev == 'strap' or gap < max(3, round(FAST_BACK_S * fps)):
+            if way_of[id(sa)] < 0:                               # to turn one back: over the book
+                if gap > ret_n + over_n + 2 and k_prev != 'strap':   # (time to hold the book first)
+                    h = hold_pose(b + ret_n, flipping(b, a))
+                    for f, p in zip(range(b + 1, b + ret_n + 1), along_bottom(sb[b], h, b, b + ret_n, k_prev)):
+                        out[f], LAST_PHASES[f] = p, 'back'
+                    for f in range(b + ret_n + 1, a):
+                        u = (f - (a - over_n)) / over_n
+                        out[f] = over_book(h, sa[a], u) if u > 0 else list(h)
+                        LAST_PHASES[f] = 'slide' if u > 0 else 'hold'
+                else:
+                    for f in range(b + 1, a):
+                        out[f], LAST_PHASES[f] = over_book(sb[b], sa[a], (f - b) / (a - b)), 'free'
+            elif k_prev == 'strap' or gap < max(3, round(FAST_BACK_S * fps)):
                 for f in range(b + 1, a):                        # too quick: straight across
                     out[f] = _blend(sb[b], sa[a], (f - b) / (a - b), TRAVEL_LIFT)
                     LAST_PHASES[f] = 'free'
@@ -1271,7 +1408,7 @@ def plan(hand, n_frames, fps, state_at, strap_u=None, held_up=False):
     # off) the speed and the turning carry on smoothly instead of starting or stopping dead
     out = _smooth_poses(out, JOIN_SMOOTH_S * fps)
     # (the smoothing may bring a finger back into a page being turned: keep them clear of it)
-    for f, (ka, kb, u, _deg) in KEY_DEBUG.items():
+    for f, (ka, kb, u, _deg, way) in KEY_DEBUG.items():
         ph = LAST_PHASES[f] if f < n_frames else ''
         if f >= n_frames or not ph.startswith(('turn ', 'smooth ')):
             continue
@@ -1279,7 +1416,7 @@ def plan(hand, n_frames, fps, state_at, strap_u=None, held_up=False):
         straddle = ka in ('reach', 'lift') or (ka == 'upright' and u < 0.45)
         out[f] = clear_page(k, f, out[f], KEY_CLEAR_CM * (0.7 if straddle else 1.0) +
                             (0.5 if ka == 'release' else 0.0), straddle,
-                            settle=ka == 'press' or (ka == 'push' and u > 0.55))
+                            settle=ka == 'press' or (ka == 'push' and u > 0.55), way=way)
     # a free hand is never perfectly still: a slow, tiny drift (not while it touches the book)
     free = np.array([1.0 if ph in ('free', 'hold') else 0.0 for ph in LAST_PHASES])
     if len(free) > 3:
