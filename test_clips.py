@@ -99,3 +99,25 @@ if __name__ == '__main__':
         if name.startswith('test_'):
             fn()
             print('ok', name)
+
+
+def test_turn_back_brings_the_last_page_back():
+    from clips import Clip, ClipTimeline
+    tl = ClipTimeline.from_clips([Clip('turn', 0, 10), Clip('turn', 20, 10), Clip('turn_back', 40, 10)], 30)
+    assert tl.turns == 2
+    assert tl.progress(35, 1) == 1.0 and tl.progress(35, 0) == 1.0
+    assert 0.0 < tl.progress(45, 1) < 1.0 and tl.progress(45, 0) == 1.0     # the second sheet comes back
+    assert tl.progress(55, 1) == 0.0
+    assert tl.active_turn(45) == 1
+
+
+def test_editor_adds_a_turn_back_after_a_clip():
+    from clips import Clip
+    from timeline_edit import TimelineEditor
+    e = TimelineEditor([Clip('turn', 10, 30), Clip('turn', 50, 30)])
+    assert e.add_turn_back(0)
+    kinds = [c.kind for c in e.clips()]
+    assert kinds == ['turn', 'turn_back', 'turn']
+    a, b, c = e.clips()
+    assert b.start > a.end and c.start > b.end                              # nothing overlaps
+    assert e.undo() and [c.kind for c in e.clips()] == ['turn', 'turn']

@@ -16,3 +16,11 @@ Run with Python that has Blender's `bpy` module (and numpy, scipy, Pillow):
    redoes only the relief, `CLOTH_ONLY=1` only the cloth.
 
 `pose_test.py hand.blend out_prefix` renders the three finger poses from three sides, for checking.
+
+## Testing a page turn
+
+`turn_test.py base_job.json out_dir [--durations 0.5,1.0,2.0] [--style under|on] [--render]` - an
+isolated scene with one page turned over and then back, at each speed; measures whether thumb and
+finger stay on the same spot of the paper while holding it (slip), how far they are from it, the
+hand cutting through any page, and that every frame is the same whichever way you scrub; with
+`--render` it renders the key moments of both turns.

@@ -1,5 +1,12 @@
 # Changes
 
+## 0.27.0
+- **Pages can now be turned back**: in the Timeline panel, select a clip and press **Turn back** - the last page turned comes back to the right (same speed and smoothness, after a short pause). The live view and the video both show it.
+- **The hand turns pages back too**: it goes up and over the book to the left page's edge, takes hold of it, carries it back, lets go and lays it down on the right, then returns to the book's corner. (First version - see below.)
+- **The hand's grip no longer slides on the page**: from lifting the page until it stands up, thumb and finger stay on the same spot of the paper and the hand turns about that spot (measured: about 1 cm of movement, before up to 6 cm), with the fingers kept as closed as they hold it.
+- The hand is now kept off the page by its actual skin, not only its bones, so fingers cut into the paper less.
+- Known limit of turning back: while reaching for the left page and lifting it, the hand comes from under the page edge and parts of the palm and thumb still pass through the paper; this is being worked on.
+
 ## 0.26.0
 - **The hand looks much better in the live view**:
   - The skin now uses the same skin as the rendered video, baked into pictures: its real colour (less orange), the fine wrinkles on the knuckles and the back of the hand, darker creases between the fingers, and glossier nails.

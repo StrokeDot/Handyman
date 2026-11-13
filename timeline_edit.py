@@ -91,6 +91,25 @@ class TimelineEditor:
         self.selected = index + 1
         return True
 
+    def add_turn_back(self, index):
+        """After clip `index`, turn the last turned page back again (same speed and smoothness,
+        a short pause first); later clips move later to make room."""
+        if not (0 <= index < len(self._clips)):
+            return False
+        self._push()
+        src = self._clips[index]
+        length = src.duration if src.kind in ('turn', 'turn_back') else max(
+            [c.duration for c in self._clips if c.kind == 'turn'] or [30])
+        gap = max(1, length // 2)
+        c = copy.copy(src)
+        c.kind, c.start, c.duration, c.params = 'turn_back', src.start + src.duration + gap, length, {}
+        for later in self._clips[index + 1:]:
+            if later.start <= c.start + c.duration:
+                later.start += c.duration + gap
+        self._clips.insert(index + 1, c)
+        self.selected = index + 1
+        return True
+
     def trim(self, index, start=None, duration=None):
         if not (0 <= index < len(self._clips)):
             return False

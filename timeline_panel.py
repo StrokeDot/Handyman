@@ -36,7 +36,7 @@ class TimelinePanel(QWidget):
         lay.addWidget(self.list, 1)
 
         row = QHBoxLayout()
-        for text, fn in (('Delete', self._delete), ('Duplicate', self._dup),
+        for text, fn in (('Delete', self._delete), ('Duplicate', self._dup), ('Turn back', self._back),
                          ('Undo', self._undo), ('Redo', self._redo)):
             b = QPushButton(text)
             b.clicked.connect(fn)
@@ -124,6 +124,13 @@ class TimelinePanel(QWidget):
 
     def _dup(self):
         if self.editor.selected is not None and self.editor.duplicate(self.editor.selected):
+            self.refresh()
+            self.changed.emit()
+
+    def _back(self):
+        """After the selected clip (or the last one), turn the page back again."""
+        idx = self.editor.selected if self.editor.selected is not None else len(self.editor.clips()) - 1
+        if self.editor.add_turn_back(idx):
             self.refresh()
             self.changed.emit()
 
