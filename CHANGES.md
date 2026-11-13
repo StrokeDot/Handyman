@@ -1,5 +1,17 @@
 # Changes
 
+## 0.25.0
+- **The hand now turns pages the way Arthur Morgan does in Red Dead Redemption 2**, built from key poses taken from the game frame by frame:
+  - Waiting: it holds the book at its lower right corner - the thumb lying on the page near the edge, the fingers underneath, the wrist out beyond the corner.
+  - Turning: the thumb lifts the page's edge, then the hand holds the standing page by its free edge (thumb in front, fingers behind, the back of the hand towards you), the thumb slips off past the edge, the open hand pushes the page over from behind and lays it flat on the left.
+  - After the page is down the hand slides off the bottom of the book and comes back to the same corner for the next page.
+  - The fingers no longer go through the page: every frame is checked and the hand kept clear of the page it is turning.
+  - The hand follows your page turn and pause timing.
+- **New page turn style "Pushed by hand (like Arthur Morgan)"**: the page stands up straight and is pushed over, instead of being peeled from its corner. It is used automatically when the hand turns the pages (unless you picked another style).
+- Holding the book up ("Under the book"), the right arm now comes from the near side, level with the book, instead of reaching over it from above.
+- Softer hand shadows in the live view (no more dark smudges under the fingertips).
+- The old mouse option "Turn pages by hand" is now called "Drag pages with the mouse", so it is not confused with the 3D hand.
+
 ## 0.24.0
 - **The turning hand follows the Red Dead Redemption 2 journal more closely** (compared side by side with the game, frame by frame):
   - While waiting, the right hand now rests off the book's right side, only its fingertips on the edge, about two-thirds up - mostly out of the way, as Arthur's.
