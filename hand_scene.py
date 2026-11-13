@@ -43,7 +43,14 @@ PRESS_S = 0.12                     # time smoothing the turned page down
 PRESS_ALONG, PRESS_UP = 0.6, 0.3    # where it smooths: share of the way from spine to edge, up the page
 RIGHT_HOLD = (0.995, 0.6)           # between turns the right hand holds the book here (share of the page: from the spine, up)
 HOLD_EXTRA_CM = 0.35                # ...resting this much higher (its thumb clear of the pages)
-RIGHT_FINGERS = -0.35               # ...its fingers nearly flat on the edge
+PUSH_AT = (0.72, 0.45)              # pushing a page over: the finger pads on its back here (from the spine, up)
+PUSH_FROM_DEG = (55.0, 95.0)        # ...taking over from the fingertips as the page goes from this angle to this
+PUSH_FINGERS = -0.9                 # ...the hand open and flat
+CATCH_FINGERS = -0.3                # reaching the page: fingers open and nearly straight (never clawed)
+CLAMP_GAP_M = 0.025                 # holding a book's edge: this far between thumb and index tips
+EDGE_GRIP = (0.2, 0.33)             # held up: thumb this far in on the right edge (cm), this share up the book
+CLOSED_HOLD = (0.72, 0.28)          # the closed book: the hand lies on its cover here (from the spine, up)
+RIGHT_FINGERS = -0.55              # ...its fingers nearly flat on the edge
 RETURN_S = 0.6                      # after laying a page down it is back holding the book in this long
 SLIDE_S = 0.3                       # ...and slides up the edge to the next page in this long
 SLIDE_LIFT_CM = 1.4                 # ...barely lifting
@@ -53,7 +60,7 @@ SKIM_CM = 0.8                       # coming back along the bottom it skims this
 BELOW_CM = (4.0, 7.0, 2.5)          # ...down off the bottom edge this far, then along below the book this far out and up
 OUTSIDE_CM = (5.0, 0.35, 3.0)       # ...and up the right side: this far out, this share up the book, this high
 BOTTOM_PATH = (0.45, 0.1, 0.55)     # ...over the left page this far from the spine, this far up, then the right page
-BACK_FINGERS = -0.3                 # ...fingers relaxed and open
+BACK_FINGERS = -0.5                 # ...fingers relaxed and open
 WITHDRAW_MIN_S = 0.9                # a pause at least this long: the hand goes back below the book and waits
 WITHDRAW_TRAVEL_S = 0.45            # ...taking about this long each way
 WAIT_CM = (0.62, -8.0, 2.5)         # where it waits: this share of the page's width from the spine, cm below the bottom edge, cm up
@@ -77,7 +84,7 @@ UNDER_UP = 0.58                     # ...this share of the way up the book
 UNDER_YAW = (60, 104)               # ...fingers pointing away up the book (degrees: 90 = straight up it)
 UNDER_GAP_CM = 0.35                 # ...this far below the book's underside
 UNDER_FINGERS = -0.6                # ...fingers nearly flat against it
-LEFT_FINGERS = -0.5                 # the holding hand's fingers lie nearly flat on the book
+LEFT_FINGERS = -0.65                # the holding hand's fingers lie nearly flat on the book
 LEFT_HOLD_CLOSED = (0.22, 0.035)    # ...and the closed book here, near the spine
 HAND_LEN_CM = 28.0                  # fingertips to wrist and the bare forearm below the sleeve
 HANDS_APART_CM = 9.0                # the left hand keeps about this far from the right one
@@ -165,6 +172,17 @@ class Hand:
         # thumb -> index across the pinch: the page passes between them, thumb on its front
         self.pinch_axis0 = (pbs['index_03_r'].tail - pbs['thumb_03_r'].tail).normalized()
         self.pinch_gap = (pbs['index_03_r'].tail - pbs['thumb_03_r'].tail).length
+        # holding something thicker (a book's edge) between thumb and index: the fingers closed
+        # only part way, so the gap between the tips is about CLAMP_GAP_M
+        best = None
+        for w in [x / 20.0 for x in range(4, 19)]:
+            self._fingers(w)
+            bpy.context.view_layer.update()
+            t, i = pbs['thumb_03_r'].tail.copy(), pbs['index_03_r'].tail.copy()
+            if best is None or abs((i - t).length - CLAMP_GAP_M) < abs(best[1] - CLAMP_GAP_M):
+                best = (w, (i - t).length, (t + i) / 2, (i - t).normalized())
+        w, self.clamp_gap, self.clamp0, self.clamp_axis0 = best
+        self.clamp_amount = (w - LOOSE) / (1.0 - LOOSE)          # (as apply() maps a finger amount)
         # a hand touches with its finger pads (index and middle fingertips, palm side): where they
         # are with the fingers flat and with them relaxed
         pads = {}
@@ -599,7 +617,7 @@ def _blend(a, b, u, lift=0.0):
     return [tuple(p), tuple(m.col[0]), tuple(m.col[1]), a[3] + (b[3] - a[3]) * w, a[4] + (b[4] - a[4]) * w]
 
 
-def plan(hand, n_frames, fps, state_at, strap_u=None):
+def plan(hand, n_frames, fps, state_at, strap_u=None, held_up=False):
     """The hand's pose for every frame: [(point, fwd, up, finger amount, anchor)].
     state_at(f) sets the book's shape for frame f and returns (progress list, curve weights, cover
     angle). Per page (as in Red Dead Redemption 2's journal): come down onto the page's edge and
@@ -724,7 +742,22 @@ def plan(hand, n_frames, fps, state_at, strap_u=None):
         seq, phases = {}, {}
         Fs = [_fmat(fr) for fr in frs]
         L_catches = [F.transposed() @ hand.catch_rotation(pts[j], frs[j]) for j, F in enumerate(Fs)]
-        L_pinches = [F.transposed() @ hand.grip_rotation(frs[j], angles[j], side) for j, F in enumerate(Fs)]
+        if k == 'strap':
+            L_pinches = [F.transposed() @ hand.grip_rotation(frs[j], angles[j], side) for j, F in enumerate(Fs)]
+        else:
+            # Arthur does not pinch a page: his fingers lift its edge, then his open hand presses
+            # flat on the page's back and pushes it over (and lays it down the same way)
+            # (fingers along the page towards its free edge while it stands up, like a hand pushing a
+            # door; swinging round to point up the page, as when it is laid down, as it comes down)
+            L_pinches = []
+            for j in range(len(Fs)):
+                t = min(1.0, max(0.0, (lift[j] - math.pi / 2) / (math.pi / 2)))
+                fl = Vector((-1.0, 0.25, -LAY_TILT)).lerp(Vector((-0.35, 0.85, -LAY_TILT)), t).normalized()
+                L_pinches.append(_frame(fl, (0.0, 0.0, 1.0)) @ hand.rest_frame.transposed())
+            push_pts = []
+            for j, f in enumerate(frames):
+                pp, pf, _ = where(k, f, PUSH_AT[0], PUSH_AT[1], 0.0)
+                push_pts.append(np.array(pp) - np.array(pf[2]) * PAD_GAP)
         wcs, wc = [], 0.0
         z_rest = pts[0][2]
         for j in range(len(frames)):
@@ -732,9 +765,10 @@ def plan(hand, n_frames, fps, state_at, strap_u=None):
             # (real centimetres, whatever the book's size), and never in a snap
             lifted_cm = (pts[j][2] - z_rest) / cm
             target = _smooth(lift[j] / math.radians(catch_deg))
-            if k != 'strap':                                     # (a strap's tongue is short: by angle only)
-                lo, hi = COVER_PINCH_LIFT_CM if k == 'cover' else PINCH_LIFT_CM   # (a board is thick)
-                target = min(target, _smooth((lifted_cm - lo) / (hi - lo)))
+            if k != 'strap':
+                # the flat hand takes over from the fingertips as the page comes upright
+                target = _smooth((lift[j] - math.radians(PUSH_FROM_DEG[0])) /
+                                 math.radians(PUSH_FROM_DEG[1] - PUSH_FROM_DEG[0]))
             wc = min(target, wc + 1.0 / max(1, round(0.25 * fps)))
             wcs.append(wc)
         if len(wcs) > 3:                                         # ease the closing in and out
@@ -745,7 +779,11 @@ def plan(hand, n_frames, fps, state_at, strap_u=None):
             n = np.array(frs[j][2])
             touch = _smooth((f - arrive) / max(1, pinch))        # settling the fingertips on it
             pt = np.array(pts[j]) + n * PAD_GAP * (1 - wc)
-            seq[f] = hand.pose(pt, R, 0.15 * touch * (1 - wc) + wc, 1 - wc)
+            if k == 'strap':
+                seq[f] = hand.pose(pt, R, CATCH_FINGERS * touch * (1 - wc) + wc, 1 - wc)   # open fingers, then the pinch
+            else:                                                # fingertips lift it, then the flat hand pushes
+                pt = pt * (1 - wc) + push_pts[j] * wc
+                seq[f] = hand.pose(pt, R, CATCH_FINGERS * touch * (1 - wc) + PUSH_FINGERS * wc, 1.0)
             phases[f] = f'hold {k}'
         last = seq[rel]
         if k == 'strap':                                         # let go and lift away as it falls
@@ -806,16 +844,47 @@ def plan(hand, n_frames, fps, state_at, strap_u=None):
         """Does any page turn on its own (a fast flip) between frames f0 and f1?"""
         return any(0.0 < t < 1.0 for f in range(max(0, f0), min(n_frames, f1 + 1)) for t in progs[f][0])
 
+    def edge_grip(f):
+        """Holding the open book up by its right edge, as Arthur does between turns: the thumb
+        resting on top of the edge, the fingers underneath, the hand outside the book."""
+        k = min(turned_count(f), n_sheets - 1)
+        pt, fr, _ = where(k, f, 1.0, EDGE_GRIP[1])
+        top = np.array(pt)
+        target = Vector((top[0] - EDGE_GRIP[0] * cm, top[1], top[2] * 0.5))   # between thumb (on top) and fingers (below)
+        a = Vector((0.0, 0.0, -1.0))                              # thumb above -> index below
+        P = target / hand.s
+
+        def rot(d):
+            f_ = Quaternion(a, math.radians(d)) @ Vector((-1.0, 0.0, 0.0))
+            return _basis(a, f_) @ _basis(hand.clamp_axis0, hand.rest_frame.col[0]).transposed()
+
+        def cost(d):
+            R = rot(d)
+            into = (R @ hand.rest_frame.col[0]).x                 # < 0: the fingers point in, under the book
+            return hand._bend(P, R, hand.clamp0) + 60.0 * max(0.0, into + 0.5)
+        d = min(range(-180, 180, 6), key=cost)
+        R = rot(d)
+        # pose() places the full pinch's point: shift so the part-closed grip's point is on the edge
+        point = target + (R @ (hand.pinch0 - hand.clamp0)) * hand.s
+        return hand.pose(point, R, hand.clamp_amount, 0.0)
+
     def hold_pose(f, away=False):
         """Holding the book's right side at frame f (away: just off it, clear of pages flipping)."""
         key = (thetas[f] < math.pi * 0.99, turned_count(f), away)
         if key in hold_cache:
             return hold_cache[key]
-        if thetas[f] < math.pi * 0.99:                           # the closed book: on the cover
-            pt, fr = hand.cover_at(0.0, RIGHT_HOLD[0], RIGHT_HOLD[1], 1.0)
-        else:
-            k = min(turned_count(f), n_sheets - 1)
-            pt, fr, _ = where(k, f, RIGHT_HOLD[0], RIGHT_HOLD[1])
+        if thetas[f] < math.pi * 0.99:                           # the closed book: lying on its cover
+            pt, fr = hand.cover_at(0.0, CLOSED_HOLD[0], CLOSED_HOLD[1], 1.0)
+            p = np.array(pt) + np.array(fr[2]) * (PAD_GAP + HOLD_EXTRA_CM * cm)
+            pose = hand.natural_pose(p, amount=RIGHT_FINGERS, anchor=1.0, yaws=range(100, 161, 5))
+            hold_cache[key] = pose
+            return pose
+        if held_up and not away:                                 # held up: by its right edge
+            pose = edge_grip(f)
+            hold_cache[key] = pose
+            return pose
+        k = min(turned_count(f), n_sheets - 1)                   # on a table: fingertips on the right edge
+        pt, fr, _ = where(k, f, RIGHT_HOLD[0], RIGHT_HOLD[1])
         p = np.array(pt) + np.array(fr[2]) * (PAD_GAP + HOLD_EXTRA_CM * cm)
         if away:
             p = p + np.array((3.5, -1.0, 2.5)) * cm
