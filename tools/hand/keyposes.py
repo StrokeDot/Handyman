@@ -21,6 +21,8 @@ job_path, OUT = sys.argv[1], sys.argv[2]
 KEYS = ['rest', 'reach', 'lift', 'upright', 'push', 'press', 'exit', 'return']
 TARGET_DEG = {'lift': 30.0, 'upright': 90.0, 'push': 140.0}
 FRAMES = {}
+PUSH = dict(gap=1.3, roll=7, amount=0.0)   # checked: whole hand behind the page (allcross)
+UP = dict(along=1.0, amount=0.3, shift=0.4, tilt=20)   # checked: thumb 0.4 cm in front, fingers 0.3 cm behind (pagecross)
 REPORT = {}
 
 
@@ -35,7 +37,7 @@ def key_pose(name, hand, page, cm):
     gap = H.PAD_GAP_CM * cm
     rest_fwd = hand.rest_frame.col[0]
 
-    def clamp(target, thumb_to_index, fingers, amount=None, low=1.0, wrist_at=None):
+    def clamp(target, thumb_to_index, fingers, amount=None, low=1.0, wrist_at=None, max_tilt=70):
         # thumb on one side of an edge, fingers on the other (part-closed grip), as Arthur holds
         # paper. The grip's axis may tilt: pick the one that keeps the wrist low and natural.
         from mathutils import Quaternion
@@ -43,7 +45,7 @@ def key_pose(name, hand, page, cm):
         perp = a0.orthogonal().normalized()
         P = Vector(target) / hand.s
         best = None
-        for tilt in range(0, 71, 10):
+        for tilt in range(0, max_tilt + 1, 10):
             for az in range(0, 360, 30 if tilt else 360):
                 a = Quaternion(a0, math.radians(az)) @ (Quaternion(perp, math.radians(tilt)) @ a0)
                 for d in range(0, 360, 15):
@@ -60,13 +62,17 @@ def key_pose(name, hand, page, cm):
                     if best is None or c < best[0]:
                         best = (c, R, wz)
         _, R, wz = best
-        print('CLAMP wrist above grip cm', round(wz, 1))
+        print('CLAMP wrist above grip cm', round(wz, 1), 'axis', tuple(round(x, 2) for x in (R @ hand.clamp_axis0)))
         point = Vector(target) + (R @ (hand.pinch0 - hand.clamp0)) * hand.s
         return hand.pose(point, R, hand.clamp_amount if amount is None else amount, 0.0)
 
-    def flat(pads, fingers, back, amount=-0.9):
+    def flat(pads, fingers, back, amount=-0.9, roll=0.0):
         f, u = _unit(fingers), _unit(back)
         f = _unit(f - u * float(f @ u))
+        if roll:                                           # turned about the fingers (thumb side up)
+            side = np.cross(f, u)
+            r = math.radians(roll)
+            u = _unit(u * math.cos(r) + side * math.sin(r))
         R = H._frame(Vector(f), Vector(u)) @ hand.rest_frame.transposed()
         return hand.pose(Vector(pads), R, amount, 1.0)
 
@@ -83,9 +89,10 @@ def key_pose(name, hand, page, cm):
         return clamp(target, -n, fingers, None if name != 'reach' else hand.clamp_amount * 0.6,
                      wrist_at=(4.0, -7.0, -2.0))
     if name == 'upright':                                  # as in the game: the standing page held near its
-        p, (e_in, e_edge, n) = page(0.86, 0.42)            # free edge between the thumb (on its front) and the
+        p, (e_in, e_edge, n) = page(UP['along'], 0.42)     # free edge between the thumb (on its front) and the
         p, e_edge, n = (np.array(v, float) for v in (p, e_edge, n))   # fingers (behind it), fingers up the book,
-        return clamp(p, -n, e_edge, amount=0.75, wrist_at=(3.0, -9.0, -3.0))   # the back of the hand towards us
+        p = p + n * UP['shift'] * cm                       # the back of the hand towards us
+        return clamp(p, -n, e_edge, amount=UP['amount'], wrist_at=(3.0, -9.0, -3.0), max_tilt=UP.get('tilt', 70))
     if name in ('upright', 'push', 'press'):
         at = {'upright': (0.74, 0.68), 'push': (0.62, 0.6), 'press': (0.62, 0.36)}[name]
         p, (e_in, e_edge, n) = page(*at)
@@ -94,6 +101,8 @@ def key_pose(name, hand, page, cm):
             fingers = np.array((-0.6, 0.8, 0.0))           # up and to the left, flat
         else:
             fingers = e_edge - e_in * 0.35                 # up the book, a little towards the free edge
+        if name == 'push':
+            return flat(p - n * PUSH['gap'] * cm, fingers, -n, PUSH.get('amount', -0.9), PUSH['roll'])
         return flat(p - n * gap, fingers, -n, {'upright': -0.85, 'push': -0.9, 'press': -1.0}[name])
     if name == 'exit':                                     # sliding down off the bottom of the left page
         p, (e_in, e_edge, n) = page(0.6, 0.06)
