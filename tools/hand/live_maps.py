@@ -126,7 +126,7 @@ def cloth(out_dir, n=1024, seed=7):
     mottle = _periodic_noise(n, 6.0, rng)                     # broad patches
     height = 0.55 * weave + 0.18 * nap + 0.12 * streak + 0.15 * mottle
     shade = 1.0 + 0.055 * mottle + 0.05 * nap + 0.08 * (weave - 0.5)
-    base = np.array((0.37, 0.24, 0.155), np.float32)          # warm brown (the suede's colour, as the live view shows it)
+    base = np.array((0.205, 0.158, 0.118), np.float32)        # dark greyish-brown wool (an Arthur Morgan coat)
     albedo = np.clip(base[None, None, :] * shade[:, :, None], 0, 1)
     gy, gx = np.gradient(np.pad(height, 1, mode='wrap'))
     gx, gy = gx[1:-1, 1:-1], gy[1:-1, 1:-1]

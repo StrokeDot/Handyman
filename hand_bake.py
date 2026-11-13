@@ -62,11 +62,15 @@ def _mesh_data(ob, bone_index, smooth_levels):
         tan[:, 3] = np.where(tan[:, 3] >= 0.0, 1.0, -1.0)
     except Exception:
         tan[:] = 0.0
-    corners, uvs = [], []
+    corners, uvs, ctan = [], [], []
+    have_tan = bool(np.any(tan[:, :3]))
     for tri in me.loop_triangles:
         for li in tri.loops:
             corners.append(me.loops[li].vertex_index)
             uvs.append(uv_layer.data[li].uv[:] if uv_layer else (0.0, 0.0))
+            if have_tan:                      # (per corner: right on both sides of a picture's seam)
+                lp = me.loops[li]
+                ctan.append((lp.tangent.x, lp.tangent.y, lp.tangent.z, 1.0 if lp.bitangent_sign >= 0 else -1.0))
     names = {g.index: g.name for g in ob.vertex_groups}
     bi = np.zeros((len(me.vertices), MAX_INFLUENCES), np.int16)
     bw = np.zeros((len(me.vertices), MAX_INFLUENCES), np.float32)
@@ -80,7 +84,8 @@ def _mesh_data(ob, bone_index, smooth_levels):
     for m in ob.modifiers:
         m.show_viewport = keep[m.name]
     _ = mods
-    return pos, np.array(corners, np.int32), np.array(uvs, np.float32), bi, bw, tan
+    return pos, np.array(corners, np.int32), np.array(uvs, np.float32), bi, bw, tan, \
+        (np.array(ctan, np.float32) if ctan else None)
 
 
 def _skin_picture(hand, out_dir, tag):
@@ -128,10 +133,12 @@ def main():
             if ob.type != 'MESH':
                 continue
             part = 'sleeve' if ob.name.startswith('Sleeve') else 'skin'
-            pos, corners, uvs, bi, bw, tan = _mesh_data(ob, index, 0 if part == 'sleeve' else 1)
+            pos, corners, uvs, bi, bw, tan, ctan = _mesh_data(ob, index, 0 if part == 'sleeve' else 1)
             key = f'{tag}_{part}'
             data[key + '_pos'], data[key + '_corner'], data[key + '_uv'] = pos, corners, uvs
             data[key + '_tan'] = tan
+            if ctan is not None:
+                data[key + '_ctan'] = ctan
             data[key + '_bi'], data[key + '_bw'] = bi, bw
             # per bone: mesh space -> armature rest -> (posed) -> book space
             B = [rig.data.bones[n].matrix_local.inverted() @ rig.matrix_world.inverted() @ ob.matrix_world
@@ -151,6 +158,16 @@ def main():
         for key, m in mats.items():
             data[key + '_mats'] = m
         own_skin = job.get('hand_skin')
+        glove = bool(job.get('hand_glove')) and not own_skin and _resource('live_glove_albedo.png')
+        if glove:                                     # Arthur Morgan's leather gloves (glove_maps.py)
+            meta['hands'].append(dict(tag=tag, parts=[k for k, _ in parts],
+                                      skin_picture=_resource('live_glove_albedo.png'), skin_is_photo=False,
+                                      skin_is_glove=True, skin_normal=_resource('live_glove_normal.png'),
+                                      skin_rough_ao=_resource('live_glove_rough_ao.png'), skin_baked=True,
+                                      sleeve_picture=job.get('hand_sleeve') or _resource('live_cloth_albedo.png'),
+                                      sleeve_is_cloth=not job.get('hand_sleeve'),
+                                      sleeve_normal=_resource('live_cloth_normal.png')))
+            continue
         meta['hands'].append(dict(tag=tag, parts=[k for k, _ in parts],
                                   skin_picture=own_skin or _resource('live_albedo.png') or
                                   _skin_picture(h, os.path.dirname(out_path), tag),
