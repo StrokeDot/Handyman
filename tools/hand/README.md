@@ -24,3 +24,12 @@ isolated scene with one page turned over and then back, at each speed; measures 
 finger stay on the same spot of the paper while holding it (slip), how far they are from it, the
 hand cutting through any page, and that every frame is the same whichever way you scrub; with
 `--render` it renders the key moments of both turns.
+
+## Finger poses from a filmed page turn
+
+`capture.py video.mp4 hand_landmarker.task out_dir` - tracks a real hand turning pages (filmed
+from above) with MediaPipe's hand landmarker (`pip install mediapipe`; the model file is Google's,
+Apache-2.0, downloaded separately and never shipped with the app) and writes each finger's bend
+while holding the page's edge, pushing it over, pressing and returning, plus how long each part
+took, an overlay sheet to check the tracking and the curves over time. `hand_scene.CAPTURED_GRIP`
+came from it. Game footage with gloved hands is not tracked: film a bare hand.
