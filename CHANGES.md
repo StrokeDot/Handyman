@@ -1,5 +1,14 @@
 # Changes
 
+## 0.26.0
+- **The hand looks much better in the live view**:
+  - The skin now uses the same skin as the rendered video, baked into pictures: its real colour (less orange), the fine wrinkles on the knuckles and the back of the hand, darker creases between the fingers, and glossier nails.
+  - Pictures stay smooth and clean when the hand is small on screen (no more grainy shimmer).
+  - The sleeve is now real-looking cloth: a fine woven fabric with a soft brushed surface, instead of a flat brown tube; its lumpy folds were calmed (also in the rendered video).
+- **Shadows fixed**: no more grey "ghost hands" next to the fingers. The shadow now falls the same way as the book's own light, lies close under the hand, and darkens the paper in a warm tone instead of turning it grey-green.
+- While laying a page down, the hand now rests on the page instead of hovering over it.
+- After the last page, the hand now goes back to the book's lower right corner (it used to stay on the left page).
+
 ## 0.25.0
 - **The hand now turns pages the way Arthur Morgan does in Red Dead Redemption 2**, built from key poses taken from the game frame by frame:
   - Waiting: it holds the book at its lower right corner - the thumb lying on the page near the edge, the fingers underneath, the wrist out beyond the corner.
