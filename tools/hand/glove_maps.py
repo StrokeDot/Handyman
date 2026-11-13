@@ -1,4 +1,5 @@
-"""Arthur Morgan style leather gloves for the hand (step 7): pictures on the hand's own UV map, made
+"""Arthur Morgan style leather gloves for the hand (step 7): pictures on the hand's UV map 'glove'
+(an even unwrap of the hand made for them - the skin's own map squeezes a few faces), made
 from the hand mesh itself (no outside pictures), so the glove fits the hand exactly:
 
     live_glove_albedo.png     dark, worn brown leather - lighter and greyer where it rubs (the
@@ -21,12 +22,12 @@ import numpy as np
 from mathutils import Vector
 
 HEM_CM = 5.0            # the glove reaches this far past the wrist towards the elbow
-LEATHER = np.array((0.155, 0.112, 0.082))        # dark brown leather (as RDR2's, in the live view)
-WORN = np.array((0.36, 0.30, 0.25))              # rubbed pale grey-brown
-CREASE = np.array((0.075, 0.055, 0.042))
+LEATHER = np.array((0.245, 0.212, 0.182))        # grey-brown worn leather (sampled from RDR2's glove)
+WORN = np.array((0.40, 0.375, 0.345))            # rubbed pale grey
+CREASE = np.array((0.12, 0.10, 0.088))
 
 
-def raster(ob, size):
+def raster(ob, size, uv_name='glove'):
     """Per texel: the rest position (metres, mesh space) of the surface there, and a mask - from
     the mesh as the live view draws it (smoothed once: its picture coordinates shift a little)."""
     keep = {m.name: m.show_viewport for m in ob.modifiers}
@@ -37,7 +38,7 @@ def raster(ob, size):
     ev = ob.evaluated_get(bpy.context.evaluated_depsgraph_get())
     me = ev.to_mesh()
     me.calc_loop_triangles()
-    uvl = me.uv_layers['hand'].data
+    uvl = me.uv_layers[uv_name].data
     P = np.zeros((size, size, 3), np.float32)
     N = np.zeros((size, size, 3), np.float32)
     M = np.zeros((size, size), bool)
@@ -103,6 +104,43 @@ def repair_skin_maps(out_dir):
         print('repaired', name, flush=True)
 
 
+def noise3(P, scale, seed=0):
+    """Smooth value noise over the surface's own 3D positions (metres; features about scale apart):
+    the same on both sides of any edge of the picture's islands. The lattice is turned at random
+    (no grain lined up with the axes). About -1..1."""
+    rot = np.linalg.qr(np.random.default_rng(seed + 101).standard_normal((3, 3)))[0]
+    p = (P.reshape(-1, 3).astype(np.float64) @ rot) / scale
+    i = np.floor(p).astype(np.int64)
+    f = p - i
+    f = f * f * (3 - 2 * f)
+    i = i + 1_000_000
+
+    def h(dx, dy, dz):                       # an integer hash of the lattice point (even, no streaks)
+        x = (i[:, 0] + dx) * 73856093 ^ (i[:, 1] + dy) * 19349663 ^ (i[:, 2] + dz) * 83492791 ^ (seed * 2654435761)
+        x = (x ^ (x >> 13)) * 1274126177
+        x = x ^ (x >> 16)
+        return (x & 0xFFFFFF).astype(np.float64) / float(0xFFFFFF)
+    x00 = h(0, 0, 0) * (1 - f[:, 0]) + h(1, 0, 0) * f[:, 0]
+    x10 = h(0, 1, 0) * (1 - f[:, 0]) + h(1, 1, 0) * f[:, 0]
+    x01 = h(0, 0, 1) * (1 - f[:, 0]) + h(1, 0, 1) * f[:, 0]
+    x11 = h(0, 1, 1) * (1 - f[:, 0]) + h(1, 1, 1) * f[:, 0]
+    y0 = x00 * (1 - f[:, 1]) + x10 * f[:, 1]
+    y1 = x01 * (1 - f[:, 1]) + x11 * f[:, 1]
+    v = y0 * (1 - f[:, 2]) + y1 * f[:, 2]
+    return (v.reshape(P.shape[:2]) * 2.0 - 1.0).astype(np.float32)
+
+
+def fbm3(P, scale, octaves=3, seed=0):
+    out = np.zeros(P.shape[:2], np.float32)
+    amp, tot = 1.0, 0.0
+    for o in range(octaves):
+        out += amp * noise3(P, scale / 2 ** o, seed + o)
+        tot += amp
+        amp *= 0.5
+    out /= tot
+    return (out - out.mean()) / (out.std() + 1e-9)
+
+
 def main():
     from PIL import Image
     from scipy import ndimage
@@ -134,6 +172,9 @@ def main():
     crease_h = np.zeros((size, size), np.float32)
     wear = np.zeros((size, size), np.float32)
     on_finger = np.zeros((size, size), bool)                        # (seams run along the fingers only)
+    finger_along = np.zeros((size, size), np.float32)               # (cm along the finger there)
+    wobble = fbm3(P, 0.004, 2, seed=11)
+    uneven = np.clip(0.55 + 0.45 * fbm3(P, 0.005, 2, seed=13), 0.1, 1.0)
     for f in ('thumb', 'index', 'middle', 'ring', 'pinky'):
         for k in (1, 2, 3):
             h0, h1 = (np.array(v) for v in bone[f'{f}_0{k}_r'])
@@ -143,32 +184,30 @@ def main():
             radial = np.linalg.norm(d - np.outer(d.reshape(-1, 3) @ ax, ax).reshape(d.shape), axis=2) * 100.0
             near = np.exp(-(along / (0.55 if k > 1 else 0.8)) ** 2) * (radial < 1.6)
             seg = np.linalg.norm(h1 - h0) * 100.0
-            on_finger |= (along > (0.4 if k == 1 else -0.2)) & (along < seg + 0.3) & (radial < 1.3) & (f != 'thumb' or k > 1)
+            here = (along > (0.4 if k == 1 else -0.2)) & (along < seg + 0.3) & (radial < 1.3) & (f != 'thumb' or k > 1)
+            on_finger |= here
+            finger_along = np.where(here, along + 10.0 * k, finger_along)
             # creases: fine ridges across the finger at the joint, deeper on the palm side
             depth = 0.6 + 0.4 * np.clip(-back, 0, 1)
-            crease_h += near * depth * (0.5 + 0.5 * np.cos(along * 2 * np.pi / 0.32))
+            wob = along + 0.09 * wobble                             # (wavy, uneven - not rings)
+            crease_h += near * depth * uneven * (0.5 + 0.5 * np.cos(wob * 2 * np.pi / 0.36))
             if k == 1 or k == 2:                                    # knuckles rub pale on the back
                 wear += np.exp(-(along / 0.9) ** 2 - (radial / 1.6) ** 2 * 0.0) * np.clip(back, 0, 1) * (radial < 1.8)
         tip = np.array(bone[f'{f}_03_r'][1])
         dt = np.linalg.norm(P - tip, axis=2) * 100.0
         wear += np.exp(-(dt / 1.1) ** 2) * 1.2                      # finger ends and pads
     wear += 0.35 * np.exp(-((t - 6.0) / 3.0) ** 2) * np.clip(-back, 0, 1)   # the palm's heel
-    rng = np.random.default_rng(11)
-    mott = periodic_noise(size, size / 60.0, rng)
+    mott = fbm3(P, 0.012, 3, seed=1)
     wear = np.clip(wear * (0.75 + 0.35 * mott), 0, 1) * glove
     # ---- grain: pebbled leather (cells), a finer pore, and broad wrinkles
-    grain = np.abs(periodic_noise(size, size / 9.0, rng))           # ~0.5 mm pebbles
-    pore = periodic_noise(size, size / 3.5, rng)
-    broad = periodic_noise(size, size / 120.0, rng)
-    # ---- seams: stitched lines along the islands' edges (the fingers' sides), inside the glove
-    dist = ndimage.distance_transform_edt(M)                        # texels from an island's edge
-    mm = 1.0 / (0.022 * size / 100.0) if False else None
-    tex_mm = 0.1 * size / 2048.0 * 22.0                             # (about 4.5 texels per mm at 2048)
-    on_finger &= np.abs(back) < 0.55                                # (the fingers' sides, not their backs)
-    seam = glove & (dist > 0) & (dist < 2.4 * tex_mm) & on_finger
-    groove = np.exp(-((dist - 1.6 * tex_mm) / (0.45 * tex_mm)) ** 2) * seam
-    yy, xx = np.mgrid[0:size, 0:size]
-    stitch = (np.sin((xx + yy) * 2 * np.pi / (3.2 * tex_mm)) > 0.2) * np.exp(-((dist - 2.6 * tex_mm) / (0.5 * tex_mm)) ** 2) * glove * on_finger
+    grain = 1.0 - np.abs(fbm3(P, 0.0013, 2, seed=2))                # ~0.6 mm pebbles (on the surface itself)
+    pore = fbm3(P, 0.0007, 1, seed=5)
+    broad = fbm3(P, 0.009, 3, seed=7)
+    # ---- seams: down each finger's sides (where its surface turns from the back to the palm), a
+    # groove with a row of stitches beside it
+    side_band = glove & on_finger
+    groove = np.exp(-(back / 0.05) ** 2) * side_band
+    stitch = (np.sin(finger_along * 2 * np.pi / 0.32) > 0.15) * np.exp(-((np.abs(back) - 0.13) / 0.035) ** 2) * side_band
     # ---- the hem: a rolled edge, then the skin beyond
     hem = np.exp(-((t + HEM_CM - 0.35) / 0.25) ** 2) * M
     # ---- height and normal (texels: rows are v upwards, as built)
@@ -189,23 +228,17 @@ def main():
     col = col * (1 - 0.6 * np.clip(crease_h, 0, 1)[..., None]) + CREASE * 0.6 * np.clip(crease_h, 0, 1)[..., None]
     col = col * (1 - 0.5 * groove[..., None])
     col = col + np.array((0.42, 0.36, 0.28)) * 0.45 * stitch[..., None]      # pale thread
-    skin = np.asarray(Image.open(os.path.join(out_dir, 'live_albedo.png')).convert('RGB'), np.float32)[::-1] / 255.0
+    skin = np.array((0.60, 0.44, 0.35))                                         # (the arm under the sleeve)
     edge = np.clip((t + HEM_CM) / 0.15, 0, 1)[..., None]                       # glove .. skin at the hem
     col = col * edge + skin * (1 - edge)
-    ra_skin = np.asarray(Image.open(os.path.join(out_dir, 'live_rough_ao.png')).convert('RGB'), np.float32)[::-1] / 255.0
-    rough = 0.62 - 0.22 * wear + 0.15 * np.clip(crease_h, 0, 1) + 0.04 * pore
-    rough = rough * edge[..., 0] + ra_skin[..., 1] * (1 - edge[..., 0])
-    ao = ra_skin[..., 0]
+    rough = 0.74 - 0.16 * wear + 0.12 * np.clip(crease_h, 0, 1) + 0.04 * pore      # (matte, almost suede)
+    rough = rough * edge[..., 0] + 0.5 * (1 - edge[..., 0])
+    ao = 1.0 - 0.3 * np.clip(crease_h, 0, 1) - 0.4 * groove
     n = n * edge + np.array((0.0, 0.0, 1.0)) * (1 - edge)
-    # (outside the islands: copied from well inside the nearest island - never its seams or a
-    # neighbour's - so a texel just past an edge looks like plain leather there)
-    inner = ndimage.binary_erosion(M, iterations=4)
+    # (outside the islands: copied from just inside the nearest island)
+    inner = ndimage.binary_erosion(M, iterations=2)
     col, rough, ao = fill_out(col, inner), fill_out(rough, inner), fill_out(ao, inner)
-    n = np.where(M[..., None] & inner[..., None], n, np.where(M[..., None], n, np.array((0.0, 0.0, 1.0))))
-    near_edge = M & ~inner
-    n[near_edge] = n[near_edge] * 0.4 + np.array((0.0, 0.0, 0.6))
-    n /= np.linalg.norm(n, axis=2, keepdims=True)
-    col[near_edge] = fill_out(col, inner)[near_edge] * 0.5 + col[near_edge] * 0.5
+    n = fill_out(n, inner)
 
     def save(px, name):
         a = np.clip(px[::-1] * 255.0 + 0.5, 0, 255).astype(np.uint8)
@@ -214,7 +247,7 @@ def main():
     save(np.clip(col, 0, 1), 'live_glove_albedo.png')
     save(n * 0.5 + 0.5, 'live_glove_normal.png')
     save(np.stack([ao, np.clip(rough, 0, 1), np.zeros_like(ao)], 2), 'live_glove_rough_ao.png')
-    _ = (Vector, mm)
+    _ = Vector
 
 
 if __name__ == '__main__':

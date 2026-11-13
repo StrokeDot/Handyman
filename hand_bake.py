@@ -31,7 +31,7 @@ def _resource(name):
     return path if os.path.exists(path) else None
 
 
-def _mesh_data(ob, bone_index, smooth_levels):
+def _mesh_data(ob, bone_index, smooth_levels, uv_name=None):
     """(rest positions in the mesh's own space, corner -> vertex, corner UVs, bone ids, weights,
     per-vertex tangents along the picture's x with the bitangent's sign in w)."""
     mods = {m.type: m for m in ob.modifiers}
@@ -49,7 +49,8 @@ def _mesh_data(ob, bone_index, smooth_levels):
     me = ev.to_mesh()
     me.calc_loop_triangles()
     pos = np.array([v.co[:] for v in me.vertices], np.float32)
-    uv_layer = me.uv_layers.get('hand') or me.uv_layers.get('uv') or me.uv_layers.active
+    uv_layer = (me.uv_layers.get(uv_name) if uv_name else None) or me.uv_layers.get('hand') or \
+        me.uv_layers.get('uv') or me.uv_layers.active
     tan = np.zeros((len(me.vertices), 4), np.float32)
     try:                                       # for the relief pictures (normal maps) in the live view
         me.calc_tangents(uvmap=uv_layer.name)
@@ -133,7 +134,8 @@ def main():
             if ob.type != 'MESH':
                 continue
             part = 'sleeve' if ob.name.startswith('Sleeve') else 'skin'
-            pos, corners, uvs, bi, bw, tan, ctan = _mesh_data(ob, index, 0 if part == 'sleeve' else 1)
+            glove_uv = 'glove' if (part == 'skin' and job.get('hand_glove') and not job.get('hand_skin')) else None
+            pos, corners, uvs, bi, bw, tan, ctan = _mesh_data(ob, index, 0 if part == 'sleeve' else 1, glove_uv)
             key = f'{tag}_{part}'
             data[key + '_pos'], data[key + '_corner'], data[key + '_uv'] = pos, corners, uvs
             data[key + '_tan'] = tan
