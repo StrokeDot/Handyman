@@ -1,5 +1,10 @@
 # Changes
 
+## 0.27.1
+- **Turning a page back looks natural now**: the hand comes over the book, palm down, and takes the left page by its edge - fingers up along the edge on top of the page, the thumb slipping in under it from outside - lifts it and carries it back, then lets go, pushes it over and lays it on the right. Before, it came from under the page with the palm up and passed through the paper.
+- On the way over to the left page the hand first slides out from the book's edge (its fingers clear of the book), goes high over it, and comes in to the left edge from outside.
+- Measured in the test scene (one page over and back, at 0.5, 1 and 2 second turns): the hand cutting through a page dropped from up to 107 skin pieces in 44 frames to about 20 in 9 frames (2 s turns: a short moment as the hand leaves the book).
+
 ## 0.27.0
 - **Pages can now be turned back**: in the Timeline panel, select a clip and press **Turn back** - the last page turned comes back to the right (same speed and smoothness, after a short pause). The live view and the video both show it.
 - **The hand turns pages back too**: it goes up and over the book to the left page's edge, takes hold of it, carries it back, lets go and lays it down on the right, then returns to the book's corner. (First version - see below.)

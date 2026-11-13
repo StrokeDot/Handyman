@@ -112,6 +112,7 @@ def measure(job):
         slip = max(np.linalg.norm(lt - lt[0], axis=1).max(), np.linalg.norm(li - li[0], axis=1).max()) / cm
         res['forward' if way > 0 else 'back'] = dict(
             frames=[carry[0], carry[-1]], slip_cm=round(float(slip), 2),
+            grip='thumb on top, fingers under' if way > 0 else 'fingers on top, thumb under',
             thumb_cm=[round(float(min(sd_t)), 2), round(float(max(sd_t)), 2)],
             finger_cm=[round(float(min(sd_i)), 2), round(float(max(sd_i)), 2)],
             lag=round(float(np.median(lagr)), 2) if lagr else None)
