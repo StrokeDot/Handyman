@@ -35,7 +35,7 @@ def key_pose(name, hand, page, cm):
     gap = H.PAD_GAP_CM * cm
     rest_fwd = hand.rest_frame.col[0]
 
-    def clamp(target, thumb_to_index, fingers, amount=None, low=1.0):
+    def clamp(target, thumb_to_index, fingers, amount=None, low=1.0, wrist_at=None):
         # thumb on one side of an edge, fingers on the other (part-closed grip), as Arthur holds
         # paper. The grip's axis may tilt: pick the one that keeps the wrist low and natural.
         from mathutils import Quaternion
@@ -54,7 +54,8 @@ def key_pose(name, hand, page, cm):
                     wz = (W.z * hand.s - Vector(target).z) / cm          # wrist height over the grip, cm
                     wy = (W.y * hand.s - Vector(target).y) / cm          # wrist below (-) / above the grip, cm
                     c = hand._bend(P, R, hand.clamp0) + low * 4.0 * max(0.0, wz + 3.0) \
-                        + 6.0 * max(0.0, abs(wy) - 1.5) \
+                        + (6.0 * max(0.0, abs(wy) - 1.5) if wrist_at is None else
+                           3.0 * ((W * hand.s - Vector(target)) / cm - Vector(wrist_at)).length) \
                         + 80.0 * max(0.0, fw.dot(-fin) + 0.2)            # fingers must point in, not out
                     if best is None or c < best[0]:
                         best = (c, R, wz)
@@ -70,14 +71,17 @@ def key_pose(name, hand, page, cm):
         return hand.pose(Vector(pads), R, amount, 1.0)
 
     if name in ('rest', 'reach', 'lift'):
-        at = {'rest': 0.4, 'reach': 0.4, 'lift': 0.42}[name]
+        at = {'rest': 0.28, 'reach': 0.32, 'lift': 0.36}[name]
         p, (e_in, e_edge, n) = page(1.0, at)
         p, e_in, n = (np.array(v, float) for v in (p, e_in, n))
         target = p + e_in * 0.2 * cm - n * 0.03 * cm       # just in from the edge, at the paper
         if name == 'rest':                                 # the whole block: thumb on top, fingers under
             target = p + e_in * 0.25 * cm + np.array((0, 0, -0.5 * cm))
         fingers = e_in * 1.0 - n * 0.35 + np.array((0, 0.15, 0))
-        return clamp(target, -n, fingers, None if name != 'reach' else hand.clamp_amount * 0.6)
+        # as in the game: the hand at the book's lower right corner, the thumb lying on the page,
+        # the fingers under it, the wrist out beyond the corner (cm from the grip: right, down, below)
+        return clamp(target, -n, fingers, None if name != 'reach' else hand.clamp_amount * 0.6,
+                     wrist_at=(4.0, -7.0, -2.0))
     if name in ('upright', 'push', 'press'):
         at = {'upright': (0.74, 0.68), 'push': (0.62, 0.6), 'press': (0.62, 0.36)}[name]
         p, (e_in, e_edge, n) = page(*at)
