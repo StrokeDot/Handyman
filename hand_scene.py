@@ -37,19 +37,21 @@ GRIP_IN_DEG = 35.0                  # the fingers lie along the edge, turned thi
 RELEASE = 0.97                      # (at the latest) let go at this turn progress
 RELEASE_DEG = 108.0                 # let go once the page has turned this far (past upright)
 LOOSE = 0.1                         # open fingers stay this much curled (0 = straight, 1 = pinch)
-LEAD_S = 0.3                        # be at the edge this long before the page starts to move
+LEAD_S = 0.12                       # be at the edge this long before the page starts to move
 PINCH_S = 0.15                      # time to close or open the fingers
-PRESS_S = 0.25                      # time smoothing the turned page down
+PRESS_S = 0.12                     # time smoothing the turned page down
 PRESS_ALONG, PRESS_UP = 0.6, 0.3    # where it smooths: share of the way from spine to edge, up the page
-RIGHT_HOLD = (0.985, 0.3)           # between turns the right hand holds the book here (share of the page: from the spine, up)
+RIGHT_HOLD = (0.995, 0.6)           # between turns the right hand holds the book here (share of the page: from the spine, up)
 HOLD_EXTRA_CM = 0.35                # ...resting this much higher (its thumb clear of the pages)
 RIGHT_FINGERS = -0.35               # ...its fingers nearly flat on the edge
-RETURN_S = 0.45                     # after laying a page down it is back holding the book in this long
+RETURN_S = 0.6                      # after laying a page down it is back holding the book in this long
 SLIDE_S = 0.3                       # ...and slides up the edge to the next page in this long
 SLIDE_LIFT_CM = 1.4                 # ...barely lifting
 FAST_BACK_S = 0.28                   # with less time than this between turns it goes straight across
 BACK_LIFT_CM = 1.2                  # ...rising this much on the way (clear of the book's edges)
 SKIM_CM = 0.8                       # coming back along the bottom it skims this far over the pages
+BELOW_CM = (4.0, 7.0, 2.5)          # ...down off the bottom edge this far, then along below the book this far out and up
+OUTSIDE_CM = (5.0, 0.35, 3.0)       # ...and up the right side: this far out, this share up the book, this high
 BOTTOM_PATH = (0.45, 0.1, 0.55)     # ...over the left page this far from the spine, this far up, then the right page
 BACK_FINGERS = -0.3                 # ...fingers relaxed and open
 WITHDRAW_MIN_S = 0.9                # a pause at least this long: the hand goes back below the book and waits
@@ -817,7 +819,7 @@ def plan(hand, n_frames, fps, state_at, strap_u=None):
         p = np.array(pt) + np.array(fr[2]) * (PAD_GAP + HOLD_EXTRA_CM * cm)
         if away:
             p = p + np.array((3.5, -1.0, 2.5)) * cm
-        pose = hand.natural_pose(p, amount=RIGHT_FINGERS, anchor=1.0, yaws=range(95, 181, 5))
+        pose = hand.natural_pose(p, amount=RIGHT_FINGERS, anchor=1.0, yaws=range(150, 211, 5))   # fingers to the left: hand off the book
         hold_cache[key] = pose
         return pose
 
@@ -839,14 +841,15 @@ def plan(hand, n_frames, fps, state_at, strap_u=None):
         return [tuple(point), tuple(skim_dir), tuple(upv / np.linalg.norm(upv)), BACK_FINGERS, 1.0]
 
     def along_bottom(start, end, f0, f1, k_prev):
-        """Poses from `start` (laying the page down on the left) to `end`, skimming along the
-        bottom of the book: over the left page, over the right one, then to `end`."""
-        k_right = min(turned_count(f0), n_sheets - 1)
-        w1 = surface(k_prev, f0, BOTTOM_PATH[0], BOTTOM_PATH[1])
-        w2 = surface(k_right, f0, BOTTOM_PATH[2], BOTTOM_PATH[1])
-        above = list(end)                                        # comes down onto it from just above
-        above[0] = tuple(np.array(end[0]) + np.array((0.4, 0.0, 1.6)) * cm)
-        keys = [start, skim_pose(w1), skim_pose(w2), above, end]
+        """Poses from `start` (laying the page down on the left) to `end`, as Arthur's hand goes:
+        down off the book's bottom edge, along below the book (out of the way), and up its
+        right side to `end`."""
+        top = max(np.array(start[0])[2], np.array(end[0])[2])
+        w1 = np.array((np.array(start[0])[0], -hand.half_h - BELOW_CM[0] * cm, top + 1.0 * cm))
+        w2 = np.array((0.55, -hand.half_h - BELOW_CM[1] * cm, BELOW_CM[2] * cm))
+        w3 = np.array((1.0 + OUTSIDE_CM[0] * cm, -hand.half_h + OUTSIDE_CM[1] * 2 * hand.half_h, OUTSIDE_CM[2] * cm))
+        keys = [start, skim_pose(w1), skim_pose(w2), hand.natural_pose(w3, amount=BACK_FINGERS, anchor=1.0,
+                                                                       yaws=range(150, 211, 6)), end]
         pts = [np.array(k_[0]) for k_ in keys]
         ext = [2 * pts[0] - pts[1]] + pts + [2 * pts[-1] - pts[-2]]
         # time shared by distance, so the hand moves at an even pace along the whole way

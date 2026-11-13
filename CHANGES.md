@@ -1,5 +1,12 @@
 # Changes
 
+## 0.24.0
+- **The turning hand follows the Red Dead Redemption 2 journal more closely** (compared side by side with the game, frame by frame):
+  - While waiting, the right hand now rests off the book's right side, only its fingertips on the edge, about two-thirds up - mostly out of the way, as Arthur's.
+  - The page starts to lift as soon as the hand reaches it (no more waiting at the edge first).
+  - After pressing the page down on the lower left it no longer sweeps around: it leaves downwards off the bottom edge, goes along below the book out of the way, and comes back up the right side for the next page.
+- **Better hand shadows in the live view**: dark and crisp where the hand is close to the page, fading as it rises, instead of one flat grey shape.
+
 ## 0.23.1
 - **"Under the book" rebuilt from the Red Dead Redemption 2 reference**: the left hand now holds the book from beneath with its fingers pointing away from you, up under the book, so it stays hidden - only the wrist and sleeve show below the book's bottom edge, as with Arthur's left hand. Before, its fingertips poked out from the book's right side. While the cover opens it stays under the closed part, and moves across under the left side just as the cover comes down onto it.
 

@@ -12,6 +12,8 @@ except Exception:  # live_view reports a missing OpenGL
 
 SUEDE_RGB = (0.36, 0.23, 0.15)
 SLEEVE_TILE_M = 0.09
+SHADOW_ALPHA = 0.13      # each of the soft shadow's passes, where the hand touches the page
+SHADOW_FADE = 0.45       # ...gone this high above it (book units: a page is 1 wide)
 
 
 class _Part:
@@ -143,23 +145,32 @@ class LiveHands:
         gl.glEnable(gl.GL_STENCIL_TEST)
         gl.glStencilOp(gl.GL_KEEP, gl.GL_KEEP, gl.GL_REPLACE)
         gl.glDepthMask(gl.GL_FALSE)
-        jitter = ((0, 0), (0.08, 0.03), (-0.06, 0.07), (0.04, -0.08), (-0.09, -0.03), (0.02, 0.1))
+        jitter = ((0, 0), (0.06, 0.02), (-0.04, 0.05), (0.03, -0.06), (-0.07, -0.02), (0.01, 0.08), (0.1, 0.06), (-0.09, 0.09))
         for i, (jx, jy) in enumerate(jitter):
             d = sun + np.array((jx, jy, 0.0), np.float32)
             gl.glStencilFunc(gl.GL_GREATER, i + 1, 0xFF)
-            gl.glColor4f(0.07, 0.05, 0.04, 0.055)
             for v in parts:
                 # onto the page under it: the left and the right side of an open book lie at
                 # different heights (z = (height left of the spine, height right of it))
                 zi = np.where(v[:, 0:1] < 0.0, z[0], z[1]).astype(np.float32) if np.ndim(z) else np.full((len(v), 1), z, np.float32)
                 t = (v[:, 2:3] - zi) / d[2]
                 p = np.ascontiguousarray(np.concatenate([v[:, :2] - t * d[:2], zi], 1), np.float32)
-                keep = (v[:, 2:3] > zi - 0.02)[:, 0]               # (nothing below the page casts on it)
-                if not keep.all():
-                    p = p.reshape(-1, 3, 3)[keep.reshape(-1, 3).all(1)].reshape(-1, 3)
+                # dark where the hand is close to the page, fading as it rises (and spreading:
+                # the light's small shifts move the high parts' shadow further)
+                h = np.maximum(v[:, 2:3] - zi, 0.0)
+                alpha = SHADOW_ALPHA * np.clip(1.0 - h / SHADOW_FADE, 0.0, 1.0) ** 1.5
+                col = np.ascontiguousarray(np.concatenate([np.tile(np.array([[0.06, 0.045, 0.035]], np.float32), (len(v), 1)),
+                                                           alpha.astype(np.float32)], 1), np.float32)
+                keep = (v[:, 2:3] > zi - 0.02)[:, 0] & (alpha[:, 0] > 0.002)
+                tri_keep = keep.reshape(-1, 3).any(1)
+                p = p.reshape(-1, 3, 3)[tri_keep].reshape(-1, 3)
+                col = col.reshape(-1, 3, 4)[tri_keep].reshape(-1, 4)
                 if len(p):
+                    gl.glEnableClientState(gl.GL_COLOR_ARRAY)
+                    gl.glColorPointer(4, gl.GL_FLOAT, 0, col)
                     gl.glVertexPointer(3, gl.GL_FLOAT, 0, p)
                     gl.glDrawArrays(gl.GL_TRIANGLES, 0, len(p))
+                    gl.glDisableClientState(gl.GL_COLOR_ARRAY)
         for i in range(4):
             gl.glDisable(gl.GL_CLIP_PLANE0 + i)
         gl.glDisable(gl.GL_STENCIL_TEST)
