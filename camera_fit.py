@@ -13,6 +13,9 @@ SENSOR = 36.0  # mm, Blender's default sensor width (horizontal for landscape fr
 PRESETS = {
     'Eye level (reading at a desk)': dict(tilt=50, turn=0, roll=0, lens=35),
     'Top-down (like a game journal)': dict(tilt=89, turn=0, roll=0, lens=50),
+    # from the reader's own eyes, as Arthur Morgan sees his journal: nearly straight down, the
+    # book's near edge a little wider than its far edge, the hands coming in from below
+    'First person (like Arthur Morgan)': dict(tilt=78, turn=0, roll=0, lens=35),
     'Angled': dict(tilt=60, turn=0, roll=0, lens=50),
     'Low angle': dict(tilt=32, turn=0, roll=0, lens=35),
 }

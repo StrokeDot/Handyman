@@ -653,7 +653,8 @@ def make_hands(job, root, sc, n_sheets, strap_u, held_up):
     cm = float(cm) / min(max(float(job.get('hand_size') or 1.0), 0.4), 2.0)
     # holding the book up (as Arthur Morgan does) the right arm comes up from below too
     hand = hand_scene.Hand(root, float(cm), G.H / 2,
-                           shoulder_cm=hand_scene.RIGHT_SHOULDER_UNDER_CM if held_up else None)
+                           shoulder_cm=hand_scene.RIGHT_SHOULDER_UNDER_CM if held_up else None,
+                           elbow_floor=hand_scene.RIGHT_ELBOW_UNDER_CM if held_up else True)
     # (its elbow stays up: reaching over to the left page, the forearm goes over the book, not through it)
     hand.set_look(job.get('hand_skin'), job.get('hand_sleeve'))
     hand_plan = hand_scene.plan(hand, sc.frames, job['fps'], state_at, strap_u, held_up)
