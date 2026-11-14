@@ -1,5 +1,9 @@
 # Changes
 
+## 0.29.1
+- **The hand pushes the page instead of turning over with it**: while a page turned, the hand was fixed to the page and turned with it (half a circle), so the wrist and forearm were wrung round to follow it. Now, as in Red Dead Redemption 2, the hand keeps its own angle and simply moves: it takes the bottom corner, then pushes low across towards the spine while the page rises and turns by itself, its grip sliding down the page's bottom edge; past standing it lets go. The forearm now turns only about 18 degrees during a turn (before about 70), and the page cuts into the hand in fewer frames than ever.
+- After letting go the hand comes back out from under the falling page (a little towards you) on its way to the corner.
+
 ## 0.29.0
 - **Pages are turned by the bottom corner, as in Red Dead Redemption 2**: between turns the right hand rests at the book's lower right corner (thumb on the page, fingers round the edge). To turn a page it takes the bottom corner right there, carries it up past standing and lets it go - the page falls over by itself - and goes straight back to the corner. Before, it climbed halfway up the page (near the top for the cover) and then reached after the page to push it over and press it down, which wrung the arm round.
 - **Turning a page back**: the hand slides low along the bottom of the book to the left page's lower left corner (without covering the pages), takes its tip, pulls it over and lets go just past standing.
