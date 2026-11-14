@@ -1,5 +1,9 @@
 # Changes
 
+## 0.30.1
+- **The arm comes in from the right, as Arthur Morgan's does**: the forearm used to come straight up from below, so the hand always showed its knuckles with the fingers pointing away up the page, like a fist reaching forward. Now the right shoulder sits further out and the elbow is out to the side: the forearm comes in from the lower right at an angle, the hand holds the edge side-on, and moving over the pages its fingers point left - as in the game. On the left page the sleeve now stays at the bottom edge instead of lying across the book.
+- The wrist bends hard far less often (in half as many moments) and the forearm turns less.
+
 ## 0.30.0
 - **The hand now moves with Arthur Morgan's own motion, measured from the game**: the turns are no longer made up from rules. A recording of Red Dead Redemption 2's journal was tracked frame by frame (where the thumb and fingertips are on the book, and when), and each turn - repeated many times in the recording - was averaged into one clean movement. The hand follows that path and timing:
   - turning a page: it rests on the right edge about a third of the way up, takes the page low on its bottom right, lifts it and carries it over low, lands flat on the left page's lower corner and comes back low along the bottom;
