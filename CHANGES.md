@@ -1,5 +1,11 @@
 # Changes
 
+## 0.28.0
+- **A new, artist-made hand**: the home-made hand is replaced by a sculpted, game-quality first-person arm - leather gloves with stitching, padding and wear, and a coat sleeve with real folds and a buttoned cuff. The gloves are recoloured to worn brown leather (like Arthur Morgan's). The fingers bend cleanly into the page grip, the hand rests flat, and the forearm turns smoothly along its length.
+- The model is "Hand With Gloves" by JUST (@teenjust500) on Sketchfab, CC BY 4.0 - credited with links in **Settings > Sources**.
+- The live view always bakes the hands again after the hand model changes (no old cached hand).
+- Still to come: the page-turning movement re-made for this hand and a first-person camera like Arthur Morgan's (when the page stands up, the arm can still rise in front of the current camera).
+
 ## 0.27.3
 - The new page grip from 0.27.2 (fingers curled behind the page, as filmed) is now actually included - 0.27.2 shipped without it.
 

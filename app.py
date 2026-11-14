@@ -29,6 +29,14 @@ import encode
 import paths
 import templates
 import updater
+
+# Work by others that the app uses, with credit (shown in Settings > Sources)
+SOURCES_HTML = (
+    'Hand and sleeve 3D model: <b>"Hand With Gloves"</b> by '
+    '<a href="https://sketchfab.com/teenjust500">JUST (@teenjust500)</a> on Sketchfab '
+    '(<a href="https://sketchfab.com/3d-models/hand-with-gloves-5a6a434b8ec943ffacc581358781eecb">the model</a>), '
+    'licensed <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. '
+    'Rigged for MotionCraft and the gloves recoloured to brown leather.')
 from book_dialog import BookDialog
 from journal_dialog import JournalDialog, check_size, required_size
 from image_fit import ImageFitDialog, auto_adjust
@@ -944,6 +952,14 @@ class Studio(QMainWindow):
         ul.addLayout(row)
         ul.addWidget(QLabel(f'Version {APP_VERSION}'))
         sv.addWidget(upd)
+        src = QGroupBox('Sources')
+        srl = QVBoxLayout(src)
+        credits = QLabel(SOURCES_HTML)
+        credits.setWordWrap(True)
+        credits.setOpenExternalLinks(True)
+        credits.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        srl.addWidget(credits)
+        sv.addWidget(src)
         sv.addStretch(1)
         tabs.addTab(st, 'Settings')
 

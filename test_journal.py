@@ -409,3 +409,9 @@ def test_only_a_journal_can_have_a_strap():
     _, _, tip1, _, _ = G.strap_points(1.0)
     assert tip0[0] < G.XB + G.WC and tip0[2] > 0.05          # fastened: lies over the closed front cover
     assert tip1[0] > G.XB + G.WC and abs(tip1[2]) < 1e-6      # undone: flat on the table to the right
+
+
+def test_the_hand_models_artist_is_credited_with_a_link():
+    import app
+    assert 'https://sketchfab.com/teenjust500' in app.SOURCES_HTML
+    assert 'CC BY 4.0' in app.SOURCES_HTML and 'Hand With Gloves' in app.SOURCES_HTML
