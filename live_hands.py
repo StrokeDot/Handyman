@@ -258,7 +258,7 @@ class LiveHands:
             else:
                 tex = self._texture(h.get('sleeve_picture'))
                 nrm = self._texture(h.get('sleeve_normal'), 1024)
-                if tex or nrm:
+                if (tex or nrm) and not h.get('sleeve_uv_native'):
                     uv = part.uv / SLEEVE_TILE_M             # the sleeve's UVs are in metres
                 kind = 1
             base = SUEDE_RGB if name == 'sleeve' else (0.78, 0.58, 0.46)

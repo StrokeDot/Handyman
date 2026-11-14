@@ -142,11 +142,15 @@ def hand_bake_key(job):
             'mov', 'webm', 'keep_png', 'hand_bake_out', 'images'}
     keep = {k: v for k, v in job.items() if k not in skip}
     keep['page_total'] = len(job.get('images') or [])
-    try:
-        stamp = os.path.getmtime(HAND_BAKE_SCRIPT.parent / 'hand_scene.py')
-    except OSError:
-        stamp = 0
-    raw = json.dumps(keep, sort_keys=True, default=str) + str(stamp)
+    # (a new hand model, or new movement code, means baking again)
+    stamp = []
+    for rel in ('hand_scene.py', 'hand_bake.py', os.path.join('resources', 'hand', 'hand.blend')):
+        try:
+            p = HAND_BAKE_SCRIPT.parent / rel
+            stamp.append(f'{os.path.getmtime(p)}:{os.path.getsize(p)}')
+        except OSError:
+            stamp.append('0')
+    raw = json.dumps(keep, sort_keys=True, default=str) + '|'.join(stamp)
     return hashlib.sha1(raw.encode('utf-8')).hexdigest()[:20]
 
 

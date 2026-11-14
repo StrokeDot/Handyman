@@ -130,11 +130,13 @@ def main():
         index = {n: i for i, n in enumerate(bones)}
         A = root_inv @ rig.matrix_world
         parts = []
+        # a gloved hand (the artist-made one, import_fps_arms.py) always wears its gloves
+        gloved = bool(h.info.get('gloved')) or bool(job.get('hand_glove') and not job.get('hand_skin'))
         for ob in h.objects:
             if ob.type != 'MESH':
                 continue
             part = 'sleeve' if ob.name.startswith('Sleeve') else 'skin'
-            glove_uv = 'glove' if (part == 'skin' and job.get('hand_glove') and not job.get('hand_skin')) else None
+            glove_uv = 'glove' if (part == 'skin' and gloved) else None
             pos, corners, uvs, bi, bw, tan, ctan = _mesh_data(ob, index, 0 if part == 'sleeve' else 1, glove_uv)
             key = f'{tag}_{part}'
             data[key + '_pos'], data[key + '_corner'], data[key + '_uv'] = pos, corners, uvs
@@ -160,15 +162,18 @@ def main():
         for key, m in mats.items():
             data[key + '_mats'] = m
         own_skin = job.get('hand_skin')
-        glove = bool(job.get('hand_glove')) and not own_skin and _resource('live_glove_albedo.png')
-        if glove:                                     # Arthur Morgan's leather gloves (glove_maps.py)
+        glove = gloved and _resource('live_glove_albedo.png')
+        if glove:                                     # leather gloves (import_fps_arms.py --live)
+            own_sleeve = _resource('live_sleeve_albedo.png') if h.info.get('gloved') else None
             meta['hands'].append(dict(tag=tag, parts=[k for k, _ in parts],
                                       skin_picture=_resource('live_glove_albedo.png'), skin_is_photo=False,
                                       skin_is_glove=True, skin_normal=_resource('live_glove_normal.png'),
                                       skin_rough_ao=_resource('live_glove_rough_ao.png'), skin_baked=True,
-                                      sleeve_picture=job.get('hand_sleeve') or _resource('live_cloth_albedo.png'),
-                                      sleeve_is_cloth=not job.get('hand_sleeve'),
-                                      sleeve_normal=_resource('live_cloth_normal.png')))
+                                      sleeve_picture=job.get('hand_sleeve') or own_sleeve or _resource('live_cloth_albedo.png'),
+                                      sleeve_is_cloth=not job.get('hand_sleeve') and not own_sleeve,
+                                      sleeve_uv_native=bool(own_sleeve and not job.get('hand_sleeve')),
+                                      sleeve_normal=(_resource('live_sleeve_normal.png') if own_sleeve
+                                                     else _resource('live_cloth_normal.png'))))
             continue
         meta['hands'].append(dict(tag=tag, parts=[k for k, _ in parts],
                                   skin_picture=own_skin or _resource('live_albedo.png') or

@@ -297,7 +297,10 @@ def test_the_hand_option_reaches_the_render_and_its_model_ships():
         assert bb.make_job(settings, book, [], tmp)['hand'] is True
         assert bb.make_job(dict(settings, hand=False), book, [], tmp)['hand'] is False
     hand = Path(__file__).parent / 'resources' / 'hand' / 'hand.blend'
-    assert hand.exists() and hand.stat().st_size > 1_000_000
+    assert hand.exists() and hand.stat().st_size > 200_000
+    for pic in ('live_glove_albedo.png', 'live_glove_normal.png', 'live_glove_rough_ao.png',
+                'live_sleeve_albedo.png', 'live_sleeve_normal.png', 'fps_glove_hardknuckle_Base_color.png'):
+        assert (hand.parent / pic).stat().st_size > 1000          # (its pictures ship beside it)
     assert (Path(__file__).parent / 'hand_scene.py').exists()
 
 

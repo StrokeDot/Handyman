@@ -47,6 +47,10 @@ for f in FINGERS:
         sp = (up - y * up.dot(y)).normalized()      # sideways swing about the palm's normal
         spread_axes[name] = list(M.transposed() @ sp)
 
+# a rig may bring the true bending axes of some joints (posed by its artist; import_fps_arms.py)
+for name, ax_ in info.get('axis_hint', {}).items():
+    axes[name] = list(Vector(ax_).normalized())
+
 for pb in rig.pose.bones:
     pb.rotation_mode = 'QUATERNION'
 
@@ -94,7 +98,12 @@ def thumb_cost(x):
 
 
 best = None
-for x0 in ([10, 20, 20, -25, 35, 45], [20, 30, 30, -35, 40, 50], [0, 10, 10, -15, 30, 40], [15, 25, 30, 0, 40, 50], [35, -10, 0, 0, 45, 55]):
+hint = info.get('angle_hint', {})
+starts = []
+if hint:
+    starts.append([hint.get('thumb_01_r', 20), hint.get('thumb_02_r', 20), hint.get('thumb_03_r', 20), 0,
+                   hint.get('index_01_r', 35), 40])
+for x0 in starts + [[10, 20, 20, -25, 35, 45], [20, 30, 30, -35, 40, 50], [0, 10, 10, -15, 30, 40], [15, 25, 30, 0, 40, 50], [35, -10, 0, 0, 45, 55]]:
     r = minimize(thumb_cost, x0, method='Nelder-Mead', options=dict(maxiter=800, xatol=0.05, fatol=1e-8))
     if best is None or r.fun < best.fun:
         best = r
