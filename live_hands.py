@@ -27,6 +27,7 @@ class _Part:
         self.bw = data[key + '_bw'].astype(np.float32)
         self.mats = data[key + '_mats']                     # frames x bones x 4 x 4
         self.tan = data[key + '_tan'] if key + '_tan' in data else None   # (older bakes: none)
+        self.ctan = data[key + '_ctan'] if key + '_ctan' in data else None   # per corner (newer bakes)
         self.idx = np.arange(len(self.corner), dtype=np.uint32)
         t = self.corner.reshape(-1, 3)
         self.tris = t
@@ -62,7 +63,12 @@ class _Part:
         n /= np.linalg.norm(n, axis=1, keepdims=True) + 1e-12
         out = (np.ascontiguousarray(v[self.corner], np.float32), np.ascontiguousarray(n[self.corner], np.float32))
         tan = None
-        if self.tan is not None and np.any(self.tan[:, :3]):
+        if self.ctan is not None and len(self.ctan) == len(self.corner):
+            # per corner: each side of a picture's seam keeps its own direction
+            t = np.einsum('cij,cj->ci', self._Mv[self.corner][:, :, :3], self.ctan[:, :3])
+            t /= np.linalg.norm(t, axis=1, keepdims=True) + 1e-12
+            tan = np.ascontiguousarray(np.concatenate([t, self.ctan[:, 3:4]], 1), np.float32)
+        elif self.tan is not None and np.any(self.tan[:, :3]):
             t = np.einsum('vij,vj->vi', self._Mv[:, :, :3], self.tan[:, :3])     # bent with the skin
             t /= np.linalg.norm(t, axis=1, keepdims=True) + 1e-12
             tan = np.ascontiguousarray(np.concatenate([t, self.tan[:, 3:4]], 1)[self.corner], np.float32)
@@ -239,7 +245,11 @@ class LiveHands:
             if name == 'skin':
                 tex = self._texture(h.get('skin_picture'))
                 photo = bool(tex and h.get('skin_is_photo'))
-                if tex and not photo:
+                glove = bool(tex and h.get('skin_is_glove'))
+                if glove:                                   # leather gloves made for this hand
+                    nrm = self._texture(h.get('skin_normal'))
+                    ra = self._texture(h.get('skin_rough_ao'))
+                elif tex and not photo:
                     uv = part.uv * 4.0                      # a glove's leather, repeated
                 if photo:
                     nrm = self._texture(h.get('skin_normal'))
@@ -248,7 +258,7 @@ class LiveHands:
             else:
                 tex = self._texture(h.get('sleeve_picture'))
                 nrm = self._texture(h.get('sleeve_normal'), 1024)
-                if tex or nrm:
+                if (tex or nrm) and not h.get('sleeve_uv_native'):
                     uv = part.uv / SLEEVE_TILE_M             # the sleeve's UVs are in metres
                 kind = 1
             base = SUEDE_RGB if name == 'sleeve' else (0.78, 0.58, 0.46)
@@ -275,7 +285,7 @@ class LiveHands:
                 gl.glUniform1i(gl.glGetUniformLocation(prog, 'raTex'), 2)
                 gl.glUniform1i(gl.glGetUniformLocation(prog, 'useTex'), 1 if tex else 0)
                 gl.glUniform1i(gl.glGetUniformLocation(prog, 'useNrm'), 1 if use_nrm else 0)
-                gl.glUniform1i(gl.glGetUniformLocation(prog, 'useRA'), 1 if ra and kind == 0 else 0)
+                gl.glUniform1i(gl.glGetUniformLocation(prog, 'useRA'), 1 if ra and kind in (0, 2) else 0)
                 gl.glUniform1i(gl.glGetUniformLocation(prog, 'baked'), 1 if h.get('skin_baked') else 0)
                 gl.glUniform1i(gl.glGetUniformLocation(prog, 'kind'), kind)
                 gl.glUniform3f(gl.glGetUniformLocation(prog, 'base'), *base)

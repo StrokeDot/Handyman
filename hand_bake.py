@@ -31,7 +31,7 @@ def _resource(name):
     return path if os.path.exists(path) else None
 
 
-def _mesh_data(ob, bone_index, smooth_levels):
+def _mesh_data(ob, bone_index, smooth_levels, uv_name=None):
     """(rest positions in the mesh's own space, corner -> vertex, corner UVs, bone ids, weights,
     per-vertex tangents along the picture's x with the bitangent's sign in w)."""
     mods = {m.type: m for m in ob.modifiers}
@@ -49,7 +49,8 @@ def _mesh_data(ob, bone_index, smooth_levels):
     me = ev.to_mesh()
     me.calc_loop_triangles()
     pos = np.array([v.co[:] for v in me.vertices], np.float32)
-    uv_layer = me.uv_layers.get('hand') or me.uv_layers.get('uv') or me.uv_layers.active
+    uv_layer = (me.uv_layers.get(uv_name) if uv_name else None) or me.uv_layers.get('hand') or \
+        me.uv_layers.get('uv') or me.uv_layers.active
     tan = np.zeros((len(me.vertices), 4), np.float32)
     try:                                       # for the relief pictures (normal maps) in the live view
         me.calc_tangents(uvmap=uv_layer.name)
@@ -62,11 +63,15 @@ def _mesh_data(ob, bone_index, smooth_levels):
         tan[:, 3] = np.where(tan[:, 3] >= 0.0, 1.0, -1.0)
     except Exception:
         tan[:] = 0.0
-    corners, uvs = [], []
+    corners, uvs, ctan = [], [], []
+    have_tan = bool(np.any(tan[:, :3]))
     for tri in me.loop_triangles:
         for li in tri.loops:
             corners.append(me.loops[li].vertex_index)
             uvs.append(uv_layer.data[li].uv[:] if uv_layer else (0.0, 0.0))
+            if have_tan:                      # (per corner: right on both sides of a picture's seam)
+                lp = me.loops[li]
+                ctan.append((lp.tangent.x, lp.tangent.y, lp.tangent.z, 1.0 if lp.bitangent_sign >= 0 else -1.0))
     names = {g.index: g.name for g in ob.vertex_groups}
     bi = np.zeros((len(me.vertices), MAX_INFLUENCES), np.int16)
     bw = np.zeros((len(me.vertices), MAX_INFLUENCES), np.float32)
@@ -80,7 +85,8 @@ def _mesh_data(ob, bone_index, smooth_levels):
     for m in ob.modifiers:
         m.show_viewport = keep[m.name]
     _ = mods
-    return pos, np.array(corners, np.int32), np.array(uvs, np.float32), bi, bw, tan
+    return pos, np.array(corners, np.int32), np.array(uvs, np.float32), bi, bw, tan, \
+        (np.array(ctan, np.float32) if ctan else None)
 
 
 def _skin_picture(hand, out_dir, tag):
@@ -124,14 +130,19 @@ def main():
         index = {n: i for i, n in enumerate(bones)}
         A = root_inv @ rig.matrix_world
         parts = []
+        # a gloved hand (the artist-made one, import_fps_arms.py) always wears its gloves
+        gloved = bool(h.info.get('gloved')) or bool(job.get('hand_glove') and not job.get('hand_skin'))
         for ob in h.objects:
             if ob.type != 'MESH':
                 continue
             part = 'sleeve' if ob.name.startswith('Sleeve') else 'skin'
-            pos, corners, uvs, bi, bw, tan = _mesh_data(ob, index, 0 if part == 'sleeve' else 1)
+            glove_uv = 'glove' if (part == 'skin' and gloved) else None
+            pos, corners, uvs, bi, bw, tan, ctan = _mesh_data(ob, index, 0 if part == 'sleeve' else 1, glove_uv)
             key = f'{tag}_{part}'
             data[key + '_pos'], data[key + '_corner'], data[key + '_uv'] = pos, corners, uvs
             data[key + '_tan'] = tan
+            if ctan is not None:
+                data[key + '_ctan'] = ctan
             data[key + '_bi'], data[key + '_bw'] = bi, bw
             # per bone: mesh space -> armature rest -> (posed) -> book space
             B = [rig.data.bones[n].matrix_local.inverted() @ rig.matrix_world.inverted() @ ob.matrix_world
@@ -151,6 +162,19 @@ def main():
         for key, m in mats.items():
             data[key + '_mats'] = m
         own_skin = job.get('hand_skin')
+        glove = gloved and _resource('live_glove_albedo.png')
+        if glove:                                     # leather gloves (import_fps_arms.py --live)
+            own_sleeve = _resource('live_sleeve_albedo.png') if h.info.get('gloved') else None
+            meta['hands'].append(dict(tag=tag, parts=[k for k, _ in parts],
+                                      skin_picture=_resource('live_glove_albedo.png'), skin_is_photo=False,
+                                      skin_is_glove=True, skin_normal=_resource('live_glove_normal.png'),
+                                      skin_rough_ao=_resource('live_glove_rough_ao.png'), skin_baked=True,
+                                      sleeve_picture=job.get('hand_sleeve') or own_sleeve or _resource('live_cloth_albedo.png'),
+                                      sleeve_is_cloth=not job.get('hand_sleeve') and not own_sleeve,
+                                      sleeve_uv_native=bool(own_sleeve and not job.get('hand_sleeve')),
+                                      sleeve_normal=(_resource('live_sleeve_normal.png') if own_sleeve
+                                                     else _resource('live_cloth_normal.png'))))
+            continue
         meta['hands'].append(dict(tag=tag, parts=[k for k, _ in parts],
                                   skin_picture=own_skin or _resource('live_albedo.png') or
                                   _skin_picture(h, os.path.dirname(out_path), tag),

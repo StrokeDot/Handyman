@@ -1,5 +1,27 @@
 # How resources/hand/hand.blend is made
 
+The hand is an artist-made first-person arm: **"Hand With Gloves" by JUST (@teenjust500)**,
+Sketchfab, licensed CC BY 4.0
+(https://sketchfab.com/3d-models/hand-with-gloves-5a6a434b8ec943ffacc581358781eecb). Credit it
+wherever the app's credits are shown.
+
+From the model's download (HandWithGloves.blend + its textures folder), with Python that has
+Blender's `bpy` module (and numpy, scipy, Pillow):
+
+1. `import_fps_arms.py HandWithGloves.blend textures_dir resources/hand/hand.blend 0.1946` - keeps
+   the right arm, renames its bones to the app's, scales it to a real hand, copies its pictures
+   (`fps_*.png`) beside it and writes the measurements the app reads.
+2. `finger_rig.py resources/hand/hand.blend resources/hand/hand.blend` - finger bending axes (the
+   thumb's from the artist's own posed hand) and the flat / relaxed / pinch poses.
+3. `import_fps_arms.py --measure resources/hand/hand.blend` - the grip's measurements with those poses.
+4. `import_fps_arms.py --live resources/hand` - the live view's pictures: the glove recoloured to
+   worn brown leather (Arthur Morgan's), its relief, the sleeve's cloth; the render uses the same.
+
+`hand_studio.py base_job.json out/hands.npz` bakes both hands in still poses (no book animation)
+for checking the model in the live view's own drawing.
+
+## The earlier, home-made hand (no longer used)
+
 Run with Python that has Blender's `bpy` module (and numpy, scipy, Pillow):
 
 1. `build_hand2.py` - builds the hand and sleeve from the MPFB2 base mesh (CC0): male shape,

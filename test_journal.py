@@ -297,7 +297,10 @@ def test_the_hand_option_reaches_the_render_and_its_model_ships():
         assert bb.make_job(settings, book, [], tmp)['hand'] is True
         assert bb.make_job(dict(settings, hand=False), book, [], tmp)['hand'] is False
     hand = Path(__file__).parent / 'resources' / 'hand' / 'hand.blend'
-    assert hand.exists() and hand.stat().st_size > 1_000_000
+    assert hand.exists() and hand.stat().st_size > 200_000
+    for pic in ('live_glove_albedo.png', 'live_glove_normal.png', 'live_glove_rough_ao.png',
+                'live_sleeve_albedo.png', 'live_sleeve_normal.png', 'fps_glove_hardknuckle_Base_color.png'):
+        assert (hand.parent / pic).stat().st_size > 1000          # (its pictures ship beside it)
     assert (Path(__file__).parent / 'hand_scene.py').exists()
 
 
@@ -406,3 +409,9 @@ def test_only_a_journal_can_have_a_strap():
     _, _, tip1, _, _ = G.strap_points(1.0)
     assert tip0[0] < G.XB + G.WC and tip0[2] > 0.05          # fastened: lies over the closed front cover
     assert tip1[0] > G.XB + G.WC and abs(tip1[2]) < 1e-6      # undone: flat on the table to the right
+
+
+def test_the_hand_models_artist_is_credited_with_a_link():
+    import app
+    assert 'https://sketchfab.com/teenjust500' in app.SOURCES_HTML
+    assert 'CC BY 4.0' in app.SOURCES_HTML and 'Hand With Gloves' in app.SOURCES_HTML

@@ -96,7 +96,9 @@ WAIT_CM = (0.62, -8.0, 2.5)         # where it waits: this share of the page's w
 TRAVEL_LIFT_CM = 3.9                # moving between pages the hand rises this much and comes down onto the next
 ENTER_S = 0.6                       # time to come in at the start, or go out at the end
 ELBOW_ABOVE_CM = 6.0                # the elbow stays at least this high above the table
-MAX_BEND = 85.0                     # degrees the wrist may bend away from the forearm's line
+TWIST_ELBOW = 0.1                   # how much of the hand's roll the forearm's elbow end takes
+TWIST_SHARE = (('lowerarm_twist_01_r', 0.45), ('lowerarm_twist_02_r', 0.8))   # ...and along it
+MAX_BEND = 85.0                    # degrees the wrist may bend away from the forearm's line
 SKIN_TILE_M = 0.07                  # a skin/glove picture covers this many metres of hand
 SLEEVE_TILE_M = 0.09                # a sleeve picture covers this many metres of sleeve
 LAST_PHASES = []                    # what the hand is doing on each frame (for checks)
@@ -403,8 +405,16 @@ class Hand:
         if x_want.length > 1e-6:
             x_want.normalize()
             ang = math.atan2(x_now.cross(x_want).dot(ydir), x_now.dot(x_want))
-            R2 = Quaternion(ydir, ang).to_matrix() @ R2
+        else:
+            ang = 0.0
+        # the forearm turns gradually: hardly at the elbow, fully at the wrist (twist bones share it)
+        twists = [n for n, _ in TWIST_SHARE if n in pbs]
+        lo_share = TWIST_ELBOW if twists else 1.0
+        R2 = Quaternion(ydir, ang * lo_share).to_matrix() @ R2
         pbs['lowerarm_r'].matrix = Matrix.Translation(E) @ R2.to_4x4()
+        for n, share in TWIST_SHARE:
+            if n in pbs:
+                pbs[n].rotation_quaternion = Quaternion((0.0, 1.0, 0.0), ang * (share - lo_share))
         bpy.context.view_layer.update()
         pbs['hand_r'].matrix = Matrix.Translation(W) @ H.to_4x4()
         bpy.context.view_layer.update()
