@@ -144,7 +144,8 @@ def hand_bake_key(job):
     keep['page_total'] = len(job.get('images') or [])
     # (a new hand model, or new movement code, means baking again)
     stamp = []
-    for rel in ('hand_scene.py', 'hand_bake.py', os.path.join('resources', 'hand', 'hand.blend')):
+    for rel in ('hand_scene.py', 'hand_capture.py', 'hand_bake.py', os.path.join('resources', 'hand', 'hand.blend'),
+                os.path.join('resources', 'hand', 'rdr2_turns.npz')):
         try:
             p = HAND_BAKE_SCRIPT.parent / rel
             stamp.append(f'{os.path.getmtime(p)}:{os.path.getsize(p)}')
