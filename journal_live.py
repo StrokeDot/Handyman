@@ -12,6 +12,8 @@ import cover_shape
 import journal_geom as G
 
 try:
+    import OpenGL
+    OpenGL.ERROR_CHECKING = False      # (checking every call roughly doubles each call's cost while drawing)
     from OpenGL import GL as gl
 except Exception:  # the caller (live_view) already reports a missing OpenGL
     gl = None
