@@ -1,0 +1,4 @@
+ok test_first_spread_frame_is_the_open_book_not_a_turn
+ok test_new_leather_book_selects_calibrated_template
+ok test_preview_render_produces_the_image_the_widget_loads
+ALL 3 INTEGRATION TESTS PASSED

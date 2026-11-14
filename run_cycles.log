@@ -1,0 +1,53 @@
+cycles eye: FAILED in 0s
+00:00.339  cycles           | WARNING CUEW initialization failed: Error opening the library
+00:00.340  cycles           | WARNING HIPEW initialization failed: Error opening HIP dynamic library
+INFO Cycles on CPU (no GPU found)
+INFO Cycles tuned: 24 samples (adaptive), persistent data, denoiser OPENIMAGEDENOISE
+ERROR expected str, bytes or os.PathLike object, not NoneType
+/home/runner/work/Handyman/Handyman/journal_scene.py:37: DeprecationWarning: 'Material.use_nodes' is expected to be removed in Blender 6.0
+  mat.use_nodes = True
+Traceback (most recent call last):
+  File "/home/runner/work/Handyman/Handyman/journal_scene.py", line 807, in <module>
+    main()
+    ~~~~^^
+  File "/home/runner/work/Handyman/Handyman/journal_scene.py", line 702, in main
+    root, pivot, sp, core, obs, strap = build(job)
+                                        ~~~~~^^^^^
+  File "/home/runner/work/Handyman/Handyman/journal_scene.py", line 495, in build
+    for m in (page_material(f'Page{2 * k + 1:03d}', paper_odd, get(2 * k)),
+              ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/Handyman/Handyman/journal_scene.py", line 385, in page_material
+    base.image = image(paper)
+                 ~~~~~^^^^^^^
+  File "/home/runner/work/Handyman/Handyman/journal_scene.py", line 29, in image
+    p = os.path.abspath(p)
+  File "<frozen posixpath>", line 375, in abspath
+TypeError: expected str, bytes or os.PathLike object, not NoneType
+
+cycles top: FAILED in 0s
+00:00.349  cycles           | WARNING CUEW initialization failed: Error opening the library
+00:00.349  cycles           | WARNING HIPEW initialization failed: Error opening HIP dynamic library
+INFO Cycles on CPU (no GPU found)
+INFO Cycles tuned: 24 samples (adaptive), persistent data, denoiser OPENIMAGEDENOISE
+ERROR expected str, bytes or os.PathLike object, not NoneType
+/home/runner/work/Handyman/Handyman/journal_scene.py:37: DeprecationWarning: 'Material.use_nodes' is expected to be removed in Blender 6.0
+  mat.use_nodes = True
+Traceback (most recent call last):
+  File "/home/runner/work/Handyman/Handyman/journal_scene.py", line 807, in <module>
+    main()
+    ~~~~^^
+  File "/home/runner/work/Handyman/Handyman/journal_scene.py", line 702, in main
+    root, pivot, sp, core, obs, strap = build(job)
+                                        ~~~~~^^^^^
+  File "/home/runner/work/Handyman/Handyman/journal_scene.py", line 495, in build
+    for m in (page_material(f'Page{2 * k + 1:03d}', paper_odd, get(2 * k)),
+              ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/Handyman/Handyman/journal_scene.py", line 385, in page_material
+    base.image = image(paper)
+                 ~~~~~^^^^^^^
+  File "/home/runner/work/Handyman/Handyman/journal_scene.py", line 29, in image
+    p = os.path.abspath(p)
+  File "<frozen posixpath>", line 375, in abspath
+TypeError: expected str, bytes or os.PathLike object, not NoneType
+
+sheet written
