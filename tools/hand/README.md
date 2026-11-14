@@ -55,3 +55,15 @@ Apache-2.0, downloaded separately and never shipped with the app) and writes eac
 while holding the page's edge, pushing it over, pressing and returning, plus how long each part
 took, an overlay sheet to check the tracking and the curves over time. `hand_scene.CAPTURED_GRIP`
 came from it. Game footage with gloved hands is not tracked: film a bare hand.
+
+## The hand's path relative to the book, from a video
+
+1. `capture.py video.mp4 hand_landmarker.task out/` - the hand's 21 points per frame (track.npz).
+2. `book_track.py video.mp4 ref_time_s "x,y x,y x,y x,y" 15 book.npz out/track.npz` - the open
+   spread's four outer corners (top-left, top-right, bottom-right, bottom-left), marked once on the
+   frame at ref_time_s, followed through every frame by the book's own texture (the hand masked out).
+3. `hand3d.py book.npz out/track.npz focal_px spread_w_m spread_h_m hand3d.npz [palm_m]` - every
+   hand point in the book's coordinates (camera pose from the book's corners, the hand's pose from
+   its points; its size held constant). The path across the page, the timing and the hand's tilt are
+   reliable from one camera; its height above the page is not (+-10 cm at arm's length) - a second
+   camera from the side, filming at the same time, would measure that too.
