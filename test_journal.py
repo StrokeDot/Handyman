@@ -415,3 +415,15 @@ def test_the_hand_models_artist_is_credited_with_a_link():
     import app
     assert 'https://sketchfab.com/teenjust500' in app.SOURCES_HTML
     assert 'CC BY 4.0' in app.SOURCES_HTML and 'Hand With Gloves' in app.SOURCES_HTML
+
+
+def test_captured_turn_motion_ships():
+    """The page turns captured from RDR2 are packaged and well formed."""
+    import os
+    import numpy as np
+    d = np.load(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources', 'hand', 'rdr2_turns.npz'))
+    for k in ('fwd', 'back'):
+        assert d[k].shape[1] == 6 and len(d[k]) > 30 and np.isfinite(d[k]).all()
+        a, b = d[k + '_marks']
+        assert a < b
+    assert 0.9 < float(d['rest'][0]) < 1.1          # resting on the right edge

@@ -63,6 +63,7 @@ jobs:
           --add-data "journal_scene.py;."
           --add-data "journal_geom.py;."
           --add-data "hand_scene.py;."
+          --add-data "hand_capture.py;."
           --add-data "hand_bake.py;."
           --add-data "clips.py;."
           --add-data "resources;resources"
@@ -89,6 +90,8 @@ jobs:
           test -f dist/MotionCraft/_internal/journal_scene.py
           test -f dist/MotionCraft/_internal/journal_geom.py
           test -f dist/MotionCraft/_internal/hand_scene.py
+          test -f dist/MotionCraft/_internal/hand_capture.py
+          test -f dist/MotionCraft/_internal/resources/hand/rdr2_turns.npz
           test -f dist/MotionCraft/_internal/resources/hand/hand.blend
           test -f dist/MotionCraft/_internal/gltf_export.py
           test -f dist/MotionCraft/_internal/resources/viewer/viewer.html

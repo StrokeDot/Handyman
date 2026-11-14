@@ -1,5 +1,13 @@
 # Changes
 
+## 0.30.0
+- **The hand now moves with Arthur Morgan's own motion, measured from the game**: the turns are no longer made up from rules. A recording of Red Dead Redemption 2's journal was tracked frame by frame (where the thumb and fingertips are on the book, and when), and each turn - repeated many times in the recording - was averaged into one clean movement. The hand follows that path and timing:
+  - turning a page: it rests on the right edge about a third of the way up, takes the page low on its bottom right, lifts it and carries it over low, lands flat on the left page's lower corner and comes back low along the bottom;
+  - turning back: low along the bottom to the left page's lower corner, fingers on top and thumb tucked under, brings the page over and lets it go on the right, back to resting.
+- The hand stays in the lower part of the book the whole time (it no longer climbs to the top of the page), and its fingers stay on the page it holds without going through it.
+- The forearm turns only as much as a real one (between -44 and +16 degrees), and the elbow moves smoothly with the hand.
+- How the motion was captured is in tools/hand/rdr2_capture (the same steps work on a video of a real hand).
+
 ## 0.29.2
 - **The page-turn movement is back to how it was in 0.29.0**: the "push the page" change in 0.29.1 looked worse, so it has been undone. Everything else is unchanged.
 

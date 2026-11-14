@@ -657,7 +657,12 @@ def make_hands(job, root, sc, n_sheets, strap_u, held_up):
                            elbow_floor=hand_scene.RIGHT_ELBOW_UNDER_CM if held_up else True)
     # (its elbow stays up: reaching over to the left page, the forearm goes over the book, not through it)
     hand.set_look(job.get('hand_skin'), job.get('hand_sleeve'))
-    hand_plan = hand_scene.plan(hand, sc.frames, job['fps'], state_at, strap_u, held_up)
+    if job.get('hand_motion', 'rdr2') == 'rdr2' and not strap_u:
+        # Arthur Morgan's own motion, captured from the game (hand_capture.py)
+        import hand_capture
+        hand_plan = hand_capture.plan_rdr2(hand, sc.frames, job['fps'], state_at, strap_u, held_up)
+    else:
+        hand_plan = hand_scene.plan(hand, sc.frames, job['fps'], state_at, strap_u, held_up)
     left = left_plan = None
     if job.get('hand_left', True):                 # the left hand holds the book
         style = 'under' if held_up else 'on'
