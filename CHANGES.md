@@ -1,5 +1,9 @@
 # Changes
 
+## 0.28.2
+- **Dragging with the mouse opens and closes the covers**: on a closed book, pulling left opens the front cover (before, a page came off over the closed cover). Pulling right turns the last page back, and closes the cover once you are back at the start. What you drag to stays shown until you play or move the timeline.
+- **Turning the view around the book is much smoother**: moving the camera no longer rebuilds the whole live view after every pause (the book, its page shapes and the timeline were all made again each time); the camera's framing is worked out directly instead of by trial; the hands' soft shadow is kept while the frame does not change; and the drawing no longer checks every graphics call for errors. About 5 times less work per picture on the computer's side.
+
 ## 0.28.1
 - **The live view's hands are ready about 5 times faster**: working out the hand's movement (the step that starts Blender after you change something) went from about 110 seconds to about 22 on the test timeline. The movement is exactly the same as before - the time was going into working out the same page shapes over and over, which are now remembered.
 

@@ -6,6 +6,8 @@ import json
 import numpy as np
 
 try:
+    import OpenGL
+    OpenGL.ERROR_CHECKING = False      # (checking every call roughly doubles each call's cost while drawing)
     from OpenGL import GL as gl
 except Exception:  # live_view reports a missing OpenGL
     gl = None
@@ -185,12 +187,39 @@ class LiveHands:
         gl.glEnable(gl.GL_STENCIL_TEST)
         gl.glStencilOp(gl.GL_KEEP, gl.GL_KEEP, gl.GL_REPLACE)
         gl.glDepthMask(gl.GL_FALSE)
+        # (the shadow depends on the hands' pose and the light, not on the camera: worked out once
+        # per frame and kept, so turning the view around a still frame only draws it again)
+        key = (getattr(self, '_frame_now', None), tuple(id(v) for v in parts), tuple(float(x) for x in sun),
+               tuple(np.ravel(z).tolist()) if np.ndim(z) else float(z))
+        if getattr(self, '_shadow_key', None) != key:
+            self._shadow_key, self._shadow_passes = key, self._shadow_geometry(parts, sun, z)
+        for i, pass_ in enumerate(self._shadow_passes):
+            gl.glStencilFunc(gl.GL_GREATER, i + 1, 0xFF)
+            for p, col in pass_:
+                gl.glEnableClientState(gl.GL_COLOR_ARRAY)
+                gl.glColorPointer(4, gl.GL_FLOAT, 0, col)
+                gl.glVertexPointer(3, gl.GL_FLOAT, 0, p)
+                gl.glDrawArrays(gl.GL_TRIANGLES, 0, len(p))
+                gl.glDisableClientState(gl.GL_COLOR_ARRAY)
+        for i in range(4):
+            gl.glDisable(gl.GL_CLIP_PLANE0 + i)
+        gl.glDisable(gl.GL_STENCIL_TEST)
+        gl.glDepthMask(gl.GL_TRUE)
+        gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)   # (as the rest of the view expects)
+        gl.glDisable(gl.GL_BLEND)
+        gl.glEnableClientState(gl.GL_NORMAL_ARRAY)
+        gl.glEnable(gl.GL_LIGHTING)
+
+    @staticmethod
+    def _shadow_geometry(parts, sun, z):
+        """The shadow's passes: per pass, (projected triangles, their colours) for each hand part."""
         # the light's small shifts (a soft light, not a point): a disc of directions
         jitter = [(0.0, 0.0)] + [(r * np.cos(a), r * np.sin(a)) for r, k in ((0.06, 5), (0.13, 8))
                                  for a in np.linspace(0.0, 2 * np.pi, k, endpoint=False) + r * 7.0]
+        passes = []
         for i, (jx, jy) in enumerate(jitter):
             d = sun + np.array((jx, jy, 0.0), np.float32)
-            gl.glStencilFunc(gl.GL_GREATER, i + 1, 0xFF)
+            out = []
             for v in parts:
                 # onto the page under it: the left and the right side of an open book lie at
                 # different heights (z = (height left of the spine, height right of it))
@@ -210,21 +239,12 @@ class LiveHands:
                 p = p.reshape(-1, 3, 3)[tri_keep].reshape(-1, 3)
                 col = col.reshape(-1, 3, 4)[tri_keep].reshape(-1, 4)
                 if len(p):
-                    gl.glEnableClientState(gl.GL_COLOR_ARRAY)
-                    gl.glColorPointer(4, gl.GL_FLOAT, 0, col)
-                    gl.glVertexPointer(3, gl.GL_FLOAT, 0, p)
-                    gl.glDrawArrays(gl.GL_TRIANGLES, 0, len(p))
-                    gl.glDisableClientState(gl.GL_COLOR_ARRAY)
-        for i in range(4):
-            gl.glDisable(gl.GL_CLIP_PLANE0 + i)
-        gl.glDisable(gl.GL_STENCIL_TEST)
-        gl.glDepthMask(gl.GL_TRUE)
-        gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)   # (as the rest of the view expects)
-        gl.glDisable(gl.GL_BLEND)
-        gl.glEnableClientState(gl.GL_NORMAL_ARRAY)
-        gl.glEnable(gl.GL_LIGHTING)
+                    out.append((np.ascontiguousarray(p, np.float32), np.ascontiguousarray(col, np.float32)))
+            passes.append(out)
+        return passes
 
     def draw(self, frame, sun=(0.45, -0.55, 0.85), shadow_z=None, shadow_clip=None):
+        self._frame_now = round(float(frame), 3)
         gl.glEnableClientState(gl.GL_VERTEX_ARRAY)
         gl.glEnableClientState(gl.GL_NORMAL_ARRAY)
         gl.glDisable(gl.GL_CULL_FACE)

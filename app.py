@@ -403,7 +403,7 @@ class Studio(QMainWindow):
         self.book_combo = QComboBox()
         self.book_combo.setToolTip('Which book design to use')
         self.book_combo.currentIndexChanged.connect(self._update_summary)
-        self.book_combo.currentIndexChanged.connect(self._camera_changed)
+        self.book_combo.currentIndexChanged.connect(self._book_or_size_changed)
         self.book_combo.currentIndexChanged.connect(self._update_engine_ui)
         self.book_combo.activated.connect(self._template_chosen)
         bl.addWidget(self.book_combo)
@@ -877,7 +877,7 @@ class Studio(QMainWindow):
         out = QGroupBox('Video')
         f = QFormLayout(out)
         self.resolution = self._combo(RESOLUTIONS)
-        self.resolution.currentTextChanged.connect(self._camera_changed)
+        self.resolution.currentTextChanged.connect(self._book_or_size_changed)
         self.fps = QComboBox()
         self.fps.addItems(['24', '30', '60'])
         self.fps.setCurrentText('30')
@@ -1890,15 +1890,27 @@ class Studio(QMainWindow):
             self._set_cam(dict(cf.PRESETS[name], zoom=1.0, shift_x=0.0, shift_y=0.0))
 
     def _camera_changed(self, *_):
+        """Only the camera moved (orbiting, zooming, a preset): the live view just looks from the
+        new place - nothing about the book is rebuilt, so dragging around it stays smooth."""
         if not hasattr(self, 'framing') or not hasattr(self, 'resolution'):
             return
         w, h = RESOLUTIONS[self.resolution.currentText()]
         aspect = float(self._book().get('page_aspect', 1.4)) if self.books else 1.4
-        self.framing.set_view(self._cam(), aspect, w / h)
-        self._schedule_live()
+        cam = self._cam()
+        self.framing.set_view(cam, aspect, w / h)
+        live = getattr(self, 'live', None)
+        if live is not None and hasattr(live, 'set_view') and getattr(live, 'scene', None) is not None:
+            live.set_view(cam, aspect=w / h)
+        else:
+            self._schedule_live()
         if self.views.currentIndex() != 0:
             self.play_timer.stop()
             self._show_view(0)
+
+    def _book_or_size_changed(self, *_):
+        """A different book or picture size: the camera and the live view's content both change."""
+        self._camera_changed()
+        self._schedule_live()
 
     def _save_settings(self):
         self.settings.setValue('state', json.dumps(self._state()))

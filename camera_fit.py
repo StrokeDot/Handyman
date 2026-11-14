@@ -62,18 +62,19 @@ def project(points, cam, r, u, f, lens, aspect):
 
 
 def fit_distance(points, tilt, turn, roll, lens, aspect, target, fill=0.9):
-    """Smallest distance at which every point sits inside `fill` of the frame."""
-    lo, hi = 0.3, 200.0
-    for _ in range(60):
-        mid = (lo + hi) / 2
-        cam, r, u, f = pose(tilt, turn, roll, mid, target)
-        x, y, depth = project(points, cam, r, u, f, lens, aspect)
-        ok = depth.min() > 0.05 and np.abs(x).max() <= fill and np.abs(y).max() <= fill
-        if ok:
-            hi = mid
-        else:
-            lo = mid
-    return hi
+    """Smallest distance at which every point sits inside `fill` of the frame (between 0.3 and 200).
+
+    Worked out directly: moving the camera back along its line of sight does not turn it, so a
+    point p (relative to the target) projects to x = (p.r) / ((p.f + d) th); it is inside the frame
+    from d >= |p.r| / (fill th) - p.f on (the same for y), and in front of the camera from
+    d > 0.05 - p.f. The answer is the largest of those (the same as searching for it, at once)."""
+    _cam, r, u, f = pose(tilt, turn, roll, 1.0, target)
+    p = np.asarray(points, dtype=float) - np.asarray(target, dtype=float)
+    th = SENSOR / 2 / lens
+    tv = th / aspect
+    pf = p @ f
+    need = np.concatenate([np.abs(p @ r) / (fill * th) - pf, np.abs(p @ u) / (fill * tv) - pf, 0.05 - pf])
+    return float(min(max(need.max(), 0.3), 200.0))
 
 
 def shot(cam_settings, frac, base_target, book_w, book_h, points, aspect):

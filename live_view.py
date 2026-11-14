@@ -23,6 +23,8 @@ from journal_live import JournalPreview
 from live_hands import LiveHands
 
 try:
+    import OpenGL
+    OpenGL.ERROR_CHECKING = False      # (checking every call roughly doubles each call's cost while drawing)
     from OpenGL import GL as gl
     GL_IMPORT_ERROR = None
 except Exception as exc:  # PyOpenGL missing or no OpenGL driver
@@ -255,6 +257,10 @@ class LiveView(QOpenGLWidget):
         self.drag_pages = False
         self.drag_sheet = None
         self.drag_progress = 0.0
+        self.drag_target = None          # ('cover', None) or ('sheet', k) once the drag has a direction
+        self.drag_way = 0                # +1 pulling left (forward), -1 pulling right (back)
+        self._drag_base = None           # the pose when the drag began
+        self.manual = None               # what a finished drag left showing (until play / seek)
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
         self._timer.start(16)
@@ -291,11 +297,18 @@ class LiveView(QOpenGLWidget):
                                  clip_list=values.get('clip_list'))
         self.layout = self.scene.layout
         self.timeline = self.scene.timeline
-        self.journal = None
         if book.get('engine') == 'journal':
-            # same shapes and camera as journal_scene.py (the final render)
-            self.journal = JournalPreview(book, values.get('page_count') or book.get('page_count'),
-                                          values.get('page_shape') or 'flat', values.get('turn_style') or 'natural')
+            # same shapes and camera as journal_scene.py (the final render); made again only when the
+            # book itself changes (making it forgets every page shape it has worked out)
+            jkey = (book.get('folder'), tuple(sorted((k, str(v)) for k, v in book.items())),
+                    values.get('page_count') or book.get('page_count'), values.get('page_shape') or 'flat',
+                    values.get('turn_style') or 'natural')
+            if getattr(self, 'journal', None) is None or getattr(self, '_journal_key', None) != jkey:
+                self.journal = JournalPreview(book, values.get('page_count') or book.get('page_count'),
+                                              values.get('page_shape') or 'flat', values.get('turn_style') or 'natural')
+                self._journal_key = jkey
+        else:
+            self.journal, self._journal_key = None, None
         self.frame = min(self.frame, self.timeline.frames - 1)
         self._sheet_cache.clear()
         self.cam = dict(v.get('cam', self.cam))
@@ -323,6 +336,8 @@ class LiveView(QOpenGLWidget):
         self.update()
 
     def play(self, on=True):
+        if on:
+            self.manual = None
         if on and self.frame >= self.timeline.frames - 1:
             self.frame = 0.0
         self.playing = on
@@ -350,6 +365,7 @@ class LiveView(QOpenGLWidget):
         return f'Pages {2 * done}–{2 * done + 1}'
 
     def seek(self, frame):
+        self.manual = None                         # (back to the timeline)
         self.frame = float(max(0, min(frame, self.timeline.frames - 1)))
         self.frameChanged.emit(int(self.frame), self.timeline.frames)
         self.update()
@@ -384,23 +400,66 @@ class LiveView(QOpenGLWidget):
                 return k
         return None
 
+    def _drag_target_for(self, pose, way):
+        """What a drag moves: pulling left opens a closed cover, else turns the next page over;
+        pulling right turns the last turned page back, or closes the cover once none is turned."""
+        cover = float(pose.get('cover_progress', 1.0))
+        prog = [float(p) for p in pose.get('sheet_progress', [])]
+        if way > 0:
+            if cover < 0.5:
+                return ('cover', None)
+            nxt = next((k for k, p in enumerate(prog) if p < 1.0), None)
+            return ('sheet', nxt) if nxt is not None else None
+        turned = [k for k, p in enumerate(prog) if p >= 1.0]
+        if turned and cover >= 0.5:
+            return ('sheet', turned[-1])
+        return ('cover', None) if cover >= 0.5 else None
+
+    def _with_drag(self, pose):
+        """The timeline's pose with what the mouse is doing (or left done) applied to it."""
+        cover, sheets = None, {}
+        if self.manual:
+            cover, sheets = self.manual.get('cover'), dict(self.manual.get('sheets', {}))
+        if self._drag_base is not None and self.drag_target is not None:
+            if self.drag_target[0] == 'cover':
+                cover = self.drag_progress
+            else:
+                sheets[self.drag_target[1]] = self.drag_progress
+        if cover is None and not sheets:
+            return pose
+        pose = dict(pose, sheet_progress=list(pose['sheet_progress']))
+        for k, v in sheets.items():
+            if 0 <= k < len(pose['sheet_progress']):
+                pose['sheet_progress'][k] = float(v)
+        if cover is not None and self.scene is not None:
+            sc = self.scene
+            angle, slide = sc.layout.opening(float(cover), slide=sc.slide, smoothness=sc.smoothness)
+            pose.update(cover_progress=float(cover), cover_angle=angle, cover_slide=slide)
+        return pose
+
     def mousePressEvent(self, e):
         shift = bool(e.modifiers() & Qt.KeyboardModifier.ShiftModifier)
-        if (self.drag_pages or shift) and e.button() == Qt.MouseButton.LeftButton:
-            sheet = self._next_sheet()
-            if sheet is not None:
-                self.drag_sheet = sheet
-                self.drag_progress = 0.0
-                self.page_drag.begin(e.position().x(), e.position().y())
-                self.setCursor(Qt.CursorShape.ClosedHandCursor)
-                return
+        if (self.drag_pages or shift) and e.button() == Qt.MouseButton.LeftButton and self.scene is not None:
+            self._drag_base = self._with_drag(self.scene.evaluate(self.frame))
+            self.drag_target, self.drag_way = None, 0
+            self.page_drag.begin(e.position().x(), e.position().y())
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            return
         self._last, self._button = e.position(), e.button()
         self.setCursor(Qt.CursorShape.ClosedHandCursor)
 
     def mouseMoveEvent(self, e):
-        if self.drag_sheet is not None:
+        if self._drag_base is not None:
             span = max(1.0, self.width() * 0.55)
-            self.drag_progress = self.page_drag.move(e.position().x(), e.position().y(), span)
+            dx = self.page_drag.start_x - e.position().x()
+            way = 1 if dx > 0 else -1 if dx < 0 else 0
+            if way and way != self.drag_way:                 # (the direction picks what moves)
+                self.drag_way = way
+                self.drag_target = self._drag_target_for(self._drag_base, way)
+                self.drag_sheet = self.drag_target[1] if self.drag_target and self.drag_target[0] == 'sheet' else None
+            amount = min(1.0, abs(dx) / span)
+            self.page_drag.progress = amount
+            self.drag_progress = amount if self.drag_way > 0 else 1.0 - amount
             self.update()
             return
         if self._last is None:
@@ -410,16 +469,23 @@ class LiveView(QOpenGLWidget):
         (self.orbit if self._button == Qt.MouseButton.LeftButton else self.pan).emit(d.x(), d.y())
 
     def mouseReleaseEvent(self, _):
-        if self.drag_sheet is not None:
-            done = self.page_drag.finish()
-            k = self.drag_sheet
-            self.drag_sheet = None
-            self.drag_progress = 0.0
-            if done >= 1.0:
-                tl = self.timeline
-                start = int(self.frame)
-                self.pageTurned.emit(start, int(tl.turn), float(self.values.get('smoothness', 1.0)))
-                self.seek(min(tl.frames - 1, tl.turn_start(k) + tl.turn))
+        if self._drag_base is not None:
+            done = self.page_drag.finish() >= 1.0
+            target, way = self.drag_target, self.drag_way
+            self._drag_base, self.drag_target, self.drag_way = None, None, 0
+            self.drag_sheet, self.drag_progress = None, 0.0
+            if done and target is not None:
+                kind, k = target
+                if kind == 'sheet' and way > 0:
+                    tl = self.timeline
+                    self.pageTurned.emit(int(self.frame), int(tl.turn), float(self.values.get('smoothness', 1.0)))
+                # what the drag finished on stays shown (the timeline is not changed by it)
+                m = dict(self.manual or {}, sheets=dict((self.manual or {}).get('sheets', {})))
+                if kind == 'cover':
+                    m['cover'] = 1.0 if way > 0 else 0.0
+                else:
+                    m['sheets'][k] = 1.0 if way > 0 else 0.0
+                self.manual = m
             self.update()
             self.setCursor(Qt.CursorShape.OpenHandCursor)
             return
@@ -670,7 +736,7 @@ class LiveView(QOpenGLWidget):
             self._build_textures()
         L = self.layout
         f = self.frame
-        pose = self.scene.evaluate(f)
+        pose = self._with_drag(self.scene.evaluate(f))
         frac = pose['camera_frac']
         if getattr(self, 'journal', None) is not None:
             return self._paint_journal(pose, frac, x0, y0, w, h)
@@ -723,7 +789,7 @@ class LiveView(QOpenGLWidget):
         self._sheet(0.0, L.base_right + 0.0015, L.base_right + 0.0015, self._tex_pages['right'], self._tex_pages['blank'])
         for k in range(L.turns):
             zr, zl = L.turn_levels(k)
-            t = self.drag_progress if k == self.drag_sheet else pose['sheet_progress'][k]
+            t = pose['sheet_progress'][k]
             self._sheet(t, zr, zl, self._tex_pages[('f', k)], self._tex_pages[('b', k)], k,
                         smoothness=pose['smoothness'])
         self._spine(angle / math.pi, leather)
@@ -826,10 +892,6 @@ class LiveView(QOpenGLWidget):
         gl.glRotatef(float(rot[1]), 0, 1, 0)
         gl.glRotatef(float(rot[0]), 1, 0, 0)
         gl.glScalef(float(scale[0]), float(scale[1]), float(scale[2]))
-        if self.drag_sheet is not None:
-            pose = dict(pose, sheet_progress=list(pose['sheet_progress']))
-            if self.drag_sheet < len(pose['sheet_progress']):
-                pose['sheet_progress'][self.drag_sheet] = self.drag_progress
         self.journal.draw(pose, self._journal_tex, _hex_rgb(self.book.get('leather_color')),
                           _hex_rgb(self.book.get('paper_color')))
         hands = getattr(self, 'hands', None)
