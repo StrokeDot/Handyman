@@ -1,5 +1,9 @@
 # Changes
 
+## 0.28.3
+- **The arm no longer sticks out across the book**: the elbow used to point out to the side, nearly level with the hand, so the whole sleeved arm lay across the picture. Now it hangs down and back towards the body, as a reader's does (and Arthur Morgan's): the forearm comes up from below to the book and mostly only the glove and cuff are seen. The shoulders are placed where a seated reader's are (closer in, behind the book, and above it when the book is held up).
+- With the new arm the hand also holds the page better when turning back (it slips 0.6 cm instead of 4.6) and goes through the paper far less often.
+
 ## 0.28.2
 - **Dragging with the mouse opens and closes the covers**: on a closed book, pulling left opens the front cover (before, a page came off over the closed cover). Pulling right turns the last page back, and closes the cover once you are back at the start. What you drag to stays shown until you play or move the timeline.
 - **Turning the view around the book is much smoother**: moving the camera no longer rebuilds the whole live view after every pause (the book, its page shapes and the timeline were all made again each time); the camera's framing is worked out directly instead of by trial; the hands' soft shadow is kept while the frame does not change; and the drawing no longer checks every graphics call for errors. About 5 times less work per picture on the computer's side.

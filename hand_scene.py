@@ -25,7 +25,8 @@ import journal_geom as G
 HERE = os.path.dirname(os.path.abspath(__file__))
 ASSET = os.path.join(HERE, 'resources', 'hand', 'hand.blend')
 
-SHOULDER_CM = (33.0, -30.0, 30.0)   # right of the spine, in front of the bottom edge, above the table
+SHOULDER_CM = (22.0, -32.0, 32.0)   # right of the spine, in front of the bottom edge, above the table
+ELBOW_POLE = (0.35, -0.6, -0.72)    # which way the elbow points: a little out, back towards the body, down
 LEFT_SHOULDER_CM = (-3.0, -30.0, 30.0)   # the left shoulder (the reader sits a little to the right)
 REST_CM = (50.0, -5.0, 5.0)         # where the hand waits before the first turn and after the last (resting, front right)
 GRAB_UP = 0.42                      # catch the edge this far up from the bottom (share of page height)
@@ -110,7 +111,8 @@ PAD_GAP_CM = 0.3                    # finger pads rest this far above the paper
 LAY_PAGE = (0.55, 0.45)              # laying a page down: the hand slides to here on it (along, up)
 LAY_COVER = (0.55, 0.7)             # ...and on the cover
 LEFT_HOLD = (0.88, 0.0)              # the left hand holds the open book here on the cover (along, up)
-RIGHT_SHOULDER_UNDER_CM = (30.0, -28.0, 2.0)  # ...and the right one (level with it: the arm comes from the near side, not over the book)
+RIGHT_SHOULDER_UNDER_CM = (20.0, -30.0, 18.0)  # ...and the right one: behind the book and above it (the book is
+                                                # held at chest height, below the shoulders - the arm comes up from below)
 LEFT_SHOULDER_UNDER_CM = (-12.0, -26.0, -28.0)   # holding the book up from beneath: the left shoulder is below it
 UNDER_X = (0.4, -0.45)              # ...its finger pads under this share of the page's width (closed book, open book)
 UNDER_UP = 0.58                     # ...this share of the way up the book
@@ -352,7 +354,10 @@ class Hand:
         W = S + dirv * d
         a = (d * d + self.l_up ** 2 - self.l_lo ** 2) / (2 * d)
         h = math.sqrt(max(self.l_up ** 2 - a * a, 0.0))
-        pole = Vector((1.0, -0.15, -0.45))                            # the elbow points out, a little down
+        # the elbow hangs down and back towards the body (as a reader's - and Arthur Morgan's - does),
+        # only a little out to the side: the forearm rises from below to the book, the upper arm
+        # stays by the body instead of sticking out level with the hand
+        pole = Vector(ELBOW_POLE)
         pole = (pole - dirv * pole.dot(dirv)).normalized()
         E = S + dirv * a + pole * h
         floor = ELBOW_ABOVE_CM / 100.0                                # metres above the table
