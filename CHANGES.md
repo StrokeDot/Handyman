@@ -1,5 +1,8 @@
 # Changes
 
+## 0.28.1
+- **The live view's hands are ready about 5 times faster**: working out the hand's movement (the step that starts Blender after you change something) went from about 110 seconds to about 22 on the test timeline. The movement is exactly the same as before - the time was going into working out the same page shapes over and over, which are now remembered.
+
 ## 0.28.0
 - **A new, artist-made hand**: the home-made hand is replaced by a sculpted, game-quality first-person arm - leather gloves with stitching, padding and wear, and a coat sleeve with real folds and a buttoned cuff. The gloves are recoloured to worn brown leather (like Arthur Morgan's). The fingers bend cleanly into the page grip, the hand rests flat, and the forearm turns smoothly along its length.
 - The model is "Hand With Gloves" by JUST (@teenjust500) on Sketchfab, CC BY 4.0 - credited with links in **Settings > Sources**.

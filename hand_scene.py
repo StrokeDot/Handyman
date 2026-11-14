@@ -631,6 +631,22 @@ class Hand:
         return self.pose(p, best[1], 0.0, 1.0)
 
 
+def _cached_state(state_at):
+    """state_at(f) remembered per frame: asked again for a frame, it gives the same answer and sets
+    the book's shape back to that frame (both cheap), instead of working the frame out again."""
+    memo = {}
+
+    def cached(f):
+        if f not in memo:
+            memo[f] = state_at(f)
+        else:
+            ts, cw, theta = memo[f]
+            G.set_opening(theta)
+            G.set_turned(ts)
+        return memo[f]
+    return cached
+
+
 def _surface(g, along, up):
     """Bilinear point and frame on a sheet's grid (rows go up the page, columns from the spine to
     the fore-edge)."""
@@ -654,6 +670,30 @@ def _surface(g, along, up):
     e_in = np.cross(n, e_edge)
     e_in /= np.linalg.norm(e_in)
     return point, (e_in, e_edge, n)
+
+
+def _surface_column(g, along, ups):
+    """_surface for many heights at one place along the sheet, all at once (same arithmetic):
+    points (n, 3) and the page's normals there (n, 3)."""
+    nr, nc = g.shape[0], g.shape[1]
+    c = min(max(along, 0.0), 1.0) * (nc - 1)
+    c0 = min(int(math.floor(c)), nc - 2)
+    fc = c - c0
+    col = g[:, c0] * (1 - fc) + g[:, c0 + 1] * fc
+    ys = col[:, 1]
+    ups = np.clip(np.asarray(ups, float), 0.0, 1.0)
+    target = ys.min() + ups * (ys.max() - ys.min())
+    r = np.interp(target, ys, np.arange(nr))
+    r0 = np.minimum(np.floor(r).astype(int), nr - 2)
+    fr = (r - r0)[:, None]
+    point = col[r0] * (1 - fr) + col[r0 + 1] * fr
+    d_row = col[r0 + 1] - col[r0]
+    d_col = (g[r0, c0 + 1] - g[r0, c0]) * (1 - fr) + (g[r0 + 1, c0 + 1] - g[r0 + 1, c0]) * fr
+    e_edge = d_row / np.linalg.norm(d_row, axis=1, keepdims=True)
+    e_in = -d_col / np.linalg.norm(d_col, axis=1, keepdims=True)
+    n = np.cross(e_edge, e_in)
+    n /= np.linalg.norm(n, axis=1, keepdims=True)
+    return point, n
 
 
 def _basis(a, f):
@@ -729,6 +769,7 @@ def plan(hand, n_frames, fps, state_at, strap_u=None, held_up=False):
     journal's strap first). Time between pages is shared out so the hand never has to rush."""
     global LAST_PHASES
     KEY_DEBUG.clear()
+    state_at = _cached_state(state_at)                           # (the book's state: once per frame)
     cm = 1.0 / hand.pw                                           # one centimetre in book units
     PAD_GAP, LET_GO_OUT, LET_GO_BACK, TRAVEL_LIFT = (x * cm for x in (PAD_GAP_CM, LET_GO_OUT_CM, LET_GO_BACK_CM,
                                                                         TRAVEL_LIFT_CM))
@@ -991,18 +1032,38 @@ def plan(hand, n_frames, fps, state_at, strap_u=None, held_up=False):
         skin_pts = np.where(kinds > 0)[0][::3]
         skin_kind = kinds[skin_pts]
 
+    grids = {}
+
+    def page_grid(k, f, way):
+        """Points and normals over thing k at frame f (13 x 15, the thumb's side counting as front),
+        worked out once per frame: the page's shape is computed once for all of them."""
+        key = (k, f, way)
+        if key not in grids:
+            pts = []
+            if k == 'cover' or k == 'strap':
+                for i in range(13):
+                    for j in range(15):
+                        p, fr, _ = where(k, f, 0.03 + 0.94 * i / 12, 0.03 + 0.94 * j / 14)
+                        pts.append((np.array(p), np.array(fr[2]) * way))
+            else:
+                ts, cw = state_at(f)[:2]
+                g = G.sheet_state(k, ts[k], cw[k])
+                ups = [0.03 + 0.94 * j / 14 for j in range(15)]
+                for i in range(13):
+                    P_, N_ = _surface_column(g, 0.03 + 0.94 * i / 12, ups)
+                    pts.extend((P_[j], N_[j] * way) for j in range(15))
+            if len(grids) > 4000:
+                grids.clear()
+            grids[key] = (np.array([q[0] for q in pts]), np.array([q[1] for q in pts]))
+        return grids[key]
+
     def clear_page(k, f, pose, margin_cm=KEY_CLEAR_CM, straddle=False, settle=False, way=1, thumb_under=False):
         """The hand as posed (the wrist's limits may turn it a little), moved along the page's
         normal so that no finger goes into the page thing k: all of it behind the page, or with
         straddle (holding it by its edge) the thumb's tip in front and the rest behind; settle:
         also down onto it (laying it flat: the hand rests on the page, not over it)."""
-        grid = []
-        for i in range(13):
-            for j in range(15):
-                p, fr, _ = where(k, f, 0.03 + 0.94 * i / 12, 0.03 + 0.94 * j / 14)
-                grid.append((np.array(p), np.array(fr[2]) * way))   # (the thumb's side counts as front)
-        G_p = np.array([g[0] for g in grid])
-        G_n = np.array([g[1] for g in grid])
+        G_p, G_n = page_grid(k, f, way)
+        G_sq = (G_p * G_p).sum(1)
         spacing = max(np.linalg.norm(G_p[1] - G_p[0]), np.linalg.norm(G_p[15] - G_p[0])) + 1e-9
         extra = (margin_cm - KEY_CLEAR_CM) * cm             # (more room asked for than the hand's own thickness)
         for _ in range(4):
@@ -1021,7 +1082,8 @@ def plan(hand, n_frames, fps, state_at, strap_u=None, held_up=False):
                 ev.to_mesh_clear()
                 Vs = co.reshape(-1, 3)[skin_pts] @ Ms[:3, :3].T + Ms[:3, 3]
                 J = np.concatenate([J, Vs])
-            d2 = ((J[:, None, :] - G_p[None]) ** 2).sum(2)
+            # (squared distances to every grid point at once: |j|^2 + |g|^2 - 2 j.g)
+            d2 = np.maximum((J * J).sum(1)[:, None] + G_sq[None] - 2.0 * (J @ G_p.T), 0.0)
             idx = d2.argmin(1)
             sd = ((J - G_p[idx]) * G_n[idx]).sum(1)
             inpl = np.sqrt(np.maximum(d2[np.arange(len(J)), idx] - sd ** 2, 0.0))
