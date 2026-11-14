@@ -1,5 +1,8 @@
 # Changes
 
+## 0.29.2
+- **The page-turn movement is back to how it was in 0.29.0**: the "push the page" change in 0.29.1 looked worse, so it has been undone. Everything else is unchanged.
+
 ## 0.29.1
 - **The hand pushes the page instead of turning over with it**: while a page turned, the hand was fixed to the page and turned with it (half a circle), so the wrist and forearm were wrung round to follow it. Now, as in Red Dead Redemption 2, the hand keeps its own angle and simply moves: it takes the bottom corner, then pushes low across towards the spine while the page rises and turns by itself, its grip sliding down the page's bottom edge; past standing it lets go. The forearm now turns only about 18 degrees during a turn (before about 70), and the page cuts into the hand in fewer frames than ever.
 - After letting go the hand comes back out from under the falling page (a little towards you) on its way to the corner.

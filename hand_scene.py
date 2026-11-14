@@ -58,7 +58,6 @@ KEY_CONTACT_UP = 0.18               # ...this share up it, from lifting it until
 OVER_S = 0.55                       # going to the left page's corner to turn a page back takes this long...
 LOW_CM = (2.5, 1.2)                 # ...low along the book's bottom edge: this far out past it, this high
 DROP_S = 0.45                       # after letting a page go, back at the corner in this long
-DROP_OUT_CM = 3.0                   # ...and coming out towards the reader this much on the way
 DROP_LIFT_CM = 1.5                  # ...barely lifting
 OVER_CM = 7.0                       # ...this high over the book
 KEY_BACK_GRIP = 0.25                # ...holding it, the fingers this closed
@@ -70,9 +69,6 @@ KEY_LIFT_DEG = 25.0                 # lifting: at this page angle
 KEY_UPRIGHT = (1.0, 0.55, 0.6, -0.3)     # standing page: by its free edge this share up; fingers closed; thumb gap cm
 KEY_UPRIGHT_WRIST_CM = (3.0, -9.0, -3.0)
 KEY_RELEASE_DEG = 118.0             # the thumb has slipped off past the edge by this angle...
-PUSH_LOW_CM = 4.5                   # pushing a page over the hand stays about this low (its grip slides to the spine)
-PUSH_FROM_GRIP_DEG = (12.0, 32.0)   # ...holding the corner at first, wholly behind the page (pushing) from here
-PUSH_TURN_SHARE = 0.2               # ...and turns only this share of the page's turn (it pushes, it does not follow)
 KEY_BACK_RELEASE_DEG = 102.0        # (a page turned back: let go just past upright - carried further the forearm
 #  would have to turn past what it can)
 KEY_RELEASE_CM = (-3.8, 0.0, -3.0)  # ...this far (out past the free edge, behind the page; page frame, cm)
@@ -1189,9 +1185,10 @@ def plan(hand, n_frames, fps, state_at, strap_u=None, held_up=False):
         if kk not in keys_local:
             keys_local[kk] = build_keys(k, cur)
         K = keys_local[kk]
-        # (key poses: only the reach is used - see below)
+        # as Arthur Morgan: carried by its corner past upright, then let go - the page falls by
         # itself and the hand goes straight back to the book's lower right corner (no reaching
         # after it to push it over and press it down: that is what wrung the arm round)
+        order = ['reach', 'lift', 'upright', 'release']
         seq, phases = {}, {}
         for f in range(cur['arrive'], cur['start'] + 1):
             seq[f], phases[f] = key_pose_at(k, f, K['reach'], K['reach'], 0.0, way=way), f'reach {k}'
@@ -1199,37 +1196,15 @@ def plan(hand, n_frames, fps, state_at, strap_u=None, held_up=False):
         for f in range(cur['start'], cur['done'] + 1):
             KEY_DEBUG.pop(f, None)
         end_turn = min(cur['land'], cur['done'])                 # (no time to lay it: off it early)
-        # As Arthur Morgan does: the hand keeps its own angle and PUSHES the page - it does not
-        # turn over with it. It takes the bottom corner and moves low across towards the spine;
-        # the page rises and turns between its thumb and fingers, which slide down the page's
-        # bottom edge towards the spine as it stands up (so the hand never climbs). Only a small
-        # share of the page's turn reaches the wrist, as a real wrist gives a little.
-        f0 = cur['start']
-        P0, fw0, up0, amt0 = np.array(seq[f0][0]), np.array(seq[f0][1]), np.array(seq[f0][2]), seq[f0][3]
-        along0, up_at = K['reach']['at']
-        D0 = P0 - eff_frame(k, f0, along0, up_at, way)[0]          # the hand from the corner it holds
-        let_go = KEY_RELEASE_DEG if way > 0 else KEY_BACK_RELEASE_DEG
-        for f in range(f0 + 1, end_turn + 1):
+        for f in range(cur['start'] + 1, end_turn + 1):
             top = max(top, math.degrees(page_angle(k, f, way)))    # never back: the hand only goes on
-            th = math.radians(top)
-            along = min(along0, PUSH_LOW_CM * cm / max(math.sin(th), 1e-6))
-            c = eff_frame(k, f, along, up_at, way)[0]
-            a = -way * th * PUSH_TURN_SHARE
-            ca, sa = math.cos(a), math.sin(a)
-            Ry = np.array(((ca, 0.0, sa), (0.0, 1.0, 0.0), (-sa, 0.0, ca)))
-            v = _smooth((top - (let_go - 20.0)) / 20.0)            # (opening just before letting go)
-            pose = [tuple(c + Ry @ D0), tuple(Ry @ fw0), tuple(Ry @ up0), amt0 + (LOOSE - amt0) * v, 0.0]
-            # lifting the corner: thumb on one side, fingers on the other; once the page is up the
-            # whole hand is behind it, pushing it on (the thumb has slipped off the edge)
-            held = clear_page(k, f, pose, KEY_CLEAR_CM * 0.7, straddle=True, way=way, thumb_under=way < 0)
-            w = _smooth((top - PUSH_FROM_GRIP_DEG[0]) / (PUSH_FROM_GRIP_DEG[1] - PUSH_FROM_GRIP_DEG[0]))
-            if w > 0:
-                behind = clear_page(k, f, pose, KEY_CLEAR_CM, way=way)
-                held = [tuple(np.array(held[0]) * (1 - w) + np.array(behind[0]) * w)] + list(held[1:])
-            seq[f] = held
+            i = max(0, max(j for j in range(len(order) - 1) if K[order[j]]['deg'] <= top))
+            a, b = K[order[i]], K[order[i + 1]]
+            u = min(1.0, (top - a['deg']) / max(1e-6, b['deg'] - a['deg']))
+            seq[f] = key_pose_at(k, f, a, b, u, stage=order[i] == 'upright', way=way)
             phases[f] = f'turn {k}'
-            KEY_DEBUG[f] = ('lift' if w < 0.5 else 'push', 'push', round(min(1.0, top / let_go), 2), round(top, 1), way)
-            if top >= let_go:                                    # let go: the page falls on by itself
+            KEY_DEBUG[f] = (order[i], order[i + 1], round(u, 2), round(top, 1), way)
+            if order[i + 1] == 'release' and u >= 1.0:           # let go: the page falls on by itself
                 break
         return seq, phases
 
@@ -1538,12 +1513,8 @@ def plan(hand, n_frames, fps, state_at, strap_u=None, held_up=False):
                 start[4] + (end[4] - start[4]) * w]
 
     def drop_back(start, end, u):
-        """Having let a page go: back to the corner (the hand moves; the arm follows), dipping a
-        little towards the reader, out from under the falling page."""
-        u = min(1.0, max(0.0, u))
-        p = _blend(start, end, _smoother(u), DROP_LIFT_CM * cm)
-        dip = math.sin(math.pi * u) * DROP_OUT_CM * cm
-        return [tuple(np.array(p[0]) + np.array((0.0, -dip, 0.0)))] + list(p[1:])
+        """Having let a page go: straight back to the corner (the hand moves; the arm follows)."""
+        return _blend(start, end, _smoother(min(1.0, max(0.0, u))), DROP_LIFT_CM * cm)
 
     drop_n = max(3, round(DROP_S * fps))
     way_of = {id(seq): cur.get('way', 1) for cur, (seq, _) in zip(info, seqs)}
