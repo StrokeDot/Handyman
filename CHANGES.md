@@ -1,5 +1,12 @@
 # Changes
 
+## 0.29.0
+- **Pages are turned by the bottom corner, as in Red Dead Redemption 2**: between turns the right hand rests at the book's lower right corner (thumb on the page, fingers round the edge). To turn a page it takes the bottom corner right there, carries it up past standing and lets it go - the page falls over by itself - and goes straight back to the corner. Before, it climbed halfway up the page (near the top for the cover) and then reached after the page to push it over and press it down, which wrung the arm round.
+- **Turning a page back**: the hand slides low along the bottom of the book to the left page's lower left corner (without covering the pages), takes its tip, pulls it over and lets go just past standing.
+- **The cover is opened the same way**, by its bottom corner.
+- **No more arm twitching**: the elbow could jump 30-47 cm in a single frame (it flipped from one side of the arm to the other when it met the lowest it was allowed to go), and the forearm could spin a full turn in one frame as the hand neared palm up. Now the elbow moves smoothly (at most 7 cm a frame, with the hand), the forearm only ever turns as far as a real one can (it now turns between -45 and +9 degrees instead of +-180), and the hand's poses are chosen so the arm is never wrung. With the book held up, the forearm comes up from below it.
+- **New camera: "First person (like Arthur Morgan)"** - from the reader's own eyes, nearly straight down on the book, the hands coming in from below. The other cameras are unchanged.
+
 ## 0.28.3
 - **The arm no longer sticks out across the book**: the elbow used to point out to the side, nearly level with the hand, so the whole sleeved arm lay across the picture. Now it hangs down and back towards the body, as a reader's does (and Arthur Morgan's): the forearm comes up from below to the book and mostly only the glove and cuff are seen. The shoulders are placed where a seated reader's are (closer in, behind the book, and above it when the book is held up).
 - With the new arm the hand also holds the page better when turning back (it slips 0.6 cm instead of 4.6) and goes through the paper far less often.
