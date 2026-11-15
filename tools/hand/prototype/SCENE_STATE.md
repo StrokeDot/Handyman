@@ -34,7 +34,19 @@ gaussian over the path. Pose at any p = slerp between steps -> identical whichev
 - IK reaches every target exactly (0.0 mm) as long as the target is within reach; the far edge of a
   standing page is not (hence the sliding grip).
 
-## Current results (run5)
+## Settings sweep (2026-11-16) - one change at a time, measured
+| variant | wrist median / max / at rest | crossings max (lift) | turn per step |
+|---|---|---|---|
+| base (shoulder z 0.05, slant 60, cross weight 1.5) | 40 / 90 / 49 | 181 (181) | 18.9 |
+| shoulder lower (z -0.08 / -0.18) | worse (54-60 / 99-117) | 155-249 | 18-24 |
+| slant 75 | 31 / 58 / 31 | 253 (199) | 16.4 |
+| shoulder raised z 0.15, slant 75, weight 4 | 21 / 36 / 11 | 170 | 12.8 |
+| **chosen: shoulder (0.32, -0.30, 0.15), slant 90, weight 8** | **24 / 53 / 24** | **125 (56)** | **9.7** |
+Raising the shoulder (the arm comes down onto the book from above the right side, as from a seated
+reader's shoulder) is what straightens the wrist; the crossing weight trades a little wrist for clean
+fingers.
+
+## Results before the sweep (run5)
 contact error max 2.1 mm | wrist bend median 40, max 90 (p 0.25-0.35) | hand turn per step max 18.8 deg |
 points crossing the page max 181 (p 0.25-0.35; ~40 elsewhere) | scrub difference 0.0
 Open: the lift (p 0.25-0.35); the resting grip's 49 deg wrist; sleeve corrective shapes (elbow pinch);

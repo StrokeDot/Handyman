@@ -28,12 +28,15 @@ from mathutils import Matrix, Quaternion, Vector
 ASSET = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..', 'resources', 'hand', 'hand.blend')
 PW, PH = 0.15, 0.21                  # page width, height (m)
 Z0 = 0.012                           # the page lies this high (on the rest of the block)
-SHOULDER = Vector((0.32, -0.32, 0.05))
-POLE = Vector((0.75, -0.3, -0.6)).normalized()   # which way the elbow points
+_env = lambda k, d: tuple(float(x) for x in os.environ[k].split(',')) if k in os.environ else d   # (for test sweeps)
+SHOULDER = Vector(_env('PROTO_SHOULDER', (0.32, -0.30, 0.15)))
+POLE = Vector(_env('PROTO_POLE', (0.75, -0.3, -0.6))).normalized()   # which way the elbow points
 GRIP = (0.95, 0.16)                  # the pinch on the page: share of its width from the spine, share up
 REST = (1.0, 0.2)                    # resting: on the page's edge here (page flat)
 STAND_ALONG = 0.5                    # with the page standing up the pinch is this far out from the spine
-MAX_SLANT = 60                       # degrees the thumb->index line may slant from straight through the page
+MAX_SLANT = int(_env('PROTO_SLANT', (90,))[0])
+CROSS_W = _env('PROTO_XW', (8.0,))[0]          # cost per point of the hand crossing the page
+#                         # degrees the thumb->index line may slant from straight through the page
 VIEW_UP = Vector((0.0, -0.45, 1.0)).normalized()   # towards the reader's eyes (up and towards him)
 RETURN_AT = 0.88                     # after letting go, back to resting from here
 LAG = 0.35                           # the page's free edge lags this much behind its hinge (curl)
@@ -244,6 +247,15 @@ class Arm:
 
 
 # ---------------------------------------------------------------- the pose for every p
+def _gauss(A, sigma):
+    """Gaussian smoothing along the first axis, edges held."""
+    r = int(3 * sigma)
+    k = np.exp(-0.5 * (np.arange(-r, r + 1) / sigma) ** 2)
+    k /= k.sum()
+    P = np.concatenate([np.repeat(A[:1], r, 0), A, np.repeat(A[-1:], r, 0)])
+    return np.stack([np.convolve(P[:, j], k, mode='valid') for j in range(A.shape[1])], 1)
+
+
 def solve(arm, samples=61, keep=70, max_step=9.0):
     """The hand's rotation on a fixed grid of p, planned over the whole turn at once (dynamic
     programming over the best candidate grips at each step): the wrist as comfortable as possible
@@ -262,7 +274,7 @@ def solve(arm, samples=61, keep=70, max_step=9.0):
             back = R @ Vector((1, 0, 0))                          # (the back of the hand: bone +X)
             c += max(0.0, 0.25 - back.dot(VIEW_UP)) * 120.0       # (palm towards the page, back to the eyes)
             if holding:
-                c += arm.crossing(R, fr, along, GRIP[1]) * 1.5
+                c += arm.crossing(R, fr, along, GRIP[1]) * CROSS_W
             cands.append((c, R.to_quaternion()))
         cands.sort(key=lambda c: c[0])
         steps.append(cands[:keep])
@@ -295,8 +307,7 @@ def solve(arm, samples=61, keep=70, max_step=9.0):
         quats.append(q)
     # smooth the path (the candidates are on a coarse grid of angles): a gaussian over the steps
     Q = np.array([q[:] for q in quats])
-    from scipy.ndimage import gaussian_filter1d
-    Q = gaussian_filter1d(Q, 1.5, axis=0, mode='nearest')
+    Q = _gauss(Q, 1.5)                                     # (no scipy in Blender's own Python)
     Q /= np.linalg.norm(Q, axis=1, keepdims=True)
     return [Quaternion(q) for q in Q]
 
@@ -358,6 +369,68 @@ def evaluate(arm, page, psis, p):
                 wrist_bend=bend, elbow_z=elbow.z, skin_on_page=through), bones
 
 
+def bake_animation(arm, page, quats, frames=120, fps=30):
+    """Turn the result into an ordinary Blender animation (frame 1 = p 0, last frame = p 1), so it
+    plays in Blender's own timeline: keyframes on the IK target, the elbow pole, the hand's aim and the
+    fingers; the page's shape as shape keys blended frame by frame."""
+    sc = bpy.context.scene
+    sc.render.fps, sc.frame_start, sc.frame_end = fps, 1, frames
+    pb = arm.rig.pose.bones
+    fingers = [b for b in pb if b.name.startswith(('thumb', 'index', 'middle', 'ring', 'pinky'))]
+    # the page: one shape key every 2 frames, each fading in and out around its frame
+    page.shape_key_add(name='Basis', from_mix=False)
+    na, nu = page['grid']
+    keys = []
+    for k, f in enumerate(range(1, frames + 1, 2)):
+        p = (f - 1) / (frames - 1)
+        set_page(page, 0.0)
+        sk = page.shape_key_add(name=f'p{k:03d}', from_mix=False)
+        theta = pose_at(arm, quats, p)[0]
+        co = []
+        for i in range(na + 1):
+            for j in range(nu + 1):
+                co.extend(page_point(i / na, j / nu, theta)[0])
+        sk.data.foreach_set('co', co)
+        keys.append((f, sk))
+    set_page(page, 0.0)
+    for idx, (f, sk) in enumerate(keys):
+        for g in (f - 2, f, f + 2):
+            sk.value = 1.0 if g == f else 0.0
+            sk.keyframe_insert('value', frame=g)
+    for f in range(1, frames + 1):
+        p = (f - 1) / (frames - 1)
+        theta, W, R, fing = pose_at(arm, quats, p)
+        arm.apply(W, R, fing)
+        arm.wrist_t.keyframe_insert('location', frame=f)
+        arm.pole_t.keyframe_insert('location', frame=f)
+        arm.aim.keyframe_insert('rotation_quaternion', frame=f)
+        for b in fingers:
+            b.keyframe_insert('rotation_quaternion', frame=f)
+    sc.frame_set(1)
+
+
+def setup_view(cam_from, cam_to, lens=35):
+    """Blender's window looking through the first-person camera, solid shading with shadows."""
+    sc = bpy.context.scene
+    cam = sc.camera
+    cam.location = cam_from
+    cam.rotation_mode = 'QUATERNION'
+    cam.rotation_quaternion = (Vector(cam_to) - Vector(cam_from)).to_track_quat('-Z', 'Y')
+    cam.data.lens = lens
+    win = bpy.context.window
+    if win is not None and 'Layout' in bpy.data.workspaces:
+        win.workspace = bpy.data.workspaces['Layout']
+    for screen in bpy.data.screens:                        # (every 3D view, also when built without a window)
+        for area in screen.areas:
+            if area.type == 'VIEW_3D':
+                sp = area.spaces.active
+                sp.region_3d.view_perspective = 'CAMERA'
+                sp.shading.type = 'SOLID'
+                sp.shading.show_shadows = True
+                sp.shading.show_cavity = True
+                sp.overlay.show_overlays = False
+
+
 def render(out, name, cam_from, cam_to, lens=35):
     sc = bpy.context.scene
     cam = sc.camera
@@ -373,7 +446,11 @@ def main():
     args = [a for a in sys.argv[1:] if a != '--']
     out = args[0]
     os.makedirs(out, exist_ok=True)
-    bpy.ops.wm.read_factory_settings(use_empty=True)
+    if bpy.app.background:
+        bpy.ops.wm.read_factory_settings(use_empty=True)
+    else:                                   # (run from Blender's own window: empty the scene instead)
+        for o in list(bpy.data.objects):
+            bpy.data.objects.remove(o, do_unlink=True)
     sc = bpy.context.scene
     sc.render.engine = 'BLENDER_WORKBENCH'
     sc.display.shading.light, sc.display.shading.color_type = 'STUDIO', 'MATERIAL'
@@ -405,7 +482,7 @@ def main():
                    scrub_diff=scrub)
     json.dump(dict(summary=summary, samples=report), open(os.path.join(out, 'checks.json'), 'w'), indent=1)
     print('SUMMARY', json.dumps(summary))
-    for p in (0.0, 0.25, 0.5, 0.75, 1.0):
+    for p in (() if '--norender' in args else (0.0, 0.25, 0.5, 0.75, 1.0)):
         theta, W, R, fing = pose_at(arm, psis, p)
         set_page(page, theta)
         arm.apply(W, R, fing)
@@ -413,6 +490,11 @@ def main():
         tag = f'{int(p * 100):03d}'
         render(out, f'fp_{tag}.png', Vector((0.03, -0.42, 0.42)), Vector((0.0, -0.02, 0.0)))     # first person
         render(out, f'close_{tag}.png', C + Vector((0.10, -0.16, 0.10)), C + Vector((0.03, -0.03, 0.0)), lens=50)
+    if '--bake' in args:
+        for o in (arm.wrist_t, arm.pole_t, arm.aim):
+            o.hide_viewport = True
+        bake_animation(arm, page, psis)
+        setup_view(Vector((0.03, -0.42, 0.42)), Vector((0.0, -0.02, 0.0)))
     if '--save' in args:
         bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(args[args.index('--save') + 1]))
 
