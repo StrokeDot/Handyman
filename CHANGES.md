@@ -1,5 +1,10 @@
 # Changes
 
+## 0.30.2
+- **Blender 5.3**: the app works with Blender 5.3 and uses the newest Blender you have installed. In Settings, under "Blender (the 3D engine)", you can pick which installed version to use.
+- **Automatic fallback**: if Blender fails on a render or while working out the hands, the app tries again by itself with the next installed version (for example 5.3, then 5.2), so a problem in a new Blender does not stop your work.
+- A copied book no longer loses its paper texture.
+
 ## 0.30.1
 - **The arm comes in from the right, as Arthur Morgan's does**: the forearm used to come straight up from below, so the hand always showed its knuckles with the fingers pointing away up the page, like a fist reaching forward. Now the right shoulder sits further out and the elbow is out to the side: the forearm comes in from the lower right at an angle, the hand holds the edge side-on, and moving over the pages its fingers point left - as in the game. On the left page the sleeve now stays at the bottom edge instead of lying across the book.
 - The wrist bends hard far less often (in half as many moments) and the forearm turns less.
