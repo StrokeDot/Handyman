@@ -224,6 +224,8 @@ def _texture_path(book, name):
     if book.get('folder'):
         candidates.append(Path(book['folder']) / name)
     candidates.append(paths.resource_dir() / name)
+    # a copied book may not carry the bundled textures (paper.png, leather.png) in its own folder
+    candidates.append(paths.resource_dir() / 'resources' / 'templates' / Path(name).name)
     for p in candidates:
         if p.exists():
             return str(p)

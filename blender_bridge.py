@@ -25,23 +25,52 @@ def _version_key(path):
     return [int(n) for n in nums[-3:]] if nums else [0]
 
 
+SEARCH = (r'C:\Program Files\Blender Foundation\Blender*\blender.exe',
+          r'C:\Program Files (x86)\Steam\steamapps\common\Blender\blender.exe',
+          r'%LOCALAPPDATA%\Programs\Blender Foundation\Blender*\blender.exe',
+          r'%ProgramFiles%\Blender Foundation\Blender*\blender.exe')
+
+
+def version_from_path(path):
+    """'5.3' from a path like .../Blender 5.3/blender.exe, or '' when the folder name has no version."""
+    m = re.search(r'Blender[ _-]?(\d+\.\d+)', str(path or ''), re.I)
+    return m.group(1) if m else ''
+
+
+def find_blenders():
+    """Every installed Blender as (version, path), newest first, each path once."""
+    found, seen = [], set()
+    for pattern in SEARCH:
+        for p in glob.glob(os.path.expandvars(pattern)):
+            key = os.path.normcase(os.path.abspath(p))
+            if key not in seen:
+                seen.add(key)
+                found.append(p)
+    found.sort(key=_version_key, reverse=True)
+    return [(version_from_path(p) or '?', p) for p in found]
+
+
+def fallback_blender(current):
+    """The next installed Blender to try when `current` fails (the newest other one), or None."""
+    if not current:
+        return None
+    cur = os.path.normcase(os.path.abspath(str(current)))
+    others = [p for _v, p in find_blenders() if os.path.normcase(os.path.abspath(p)) != cur]
+    older = [p for p in others if _version_key(p) < _version_key(current)]
+    return (older or others or [None])[0]
+
+
 def find_blender(saved=None):
-    """Most recent Blender install, or None."""
+    """The Blender to use: the one picked in Settings, else the most recent install, or None."""
     # CI and portable installs can point at Blender explicitly.
     env = os.environ.get('MOTIONCRAFT_BLENDER') or os.environ.get('HANDYMAN_BLENDER')
     if env and Path(env).is_file():
         return str(env)
     if saved and Path(saved).is_file():
         return str(saved)
-    candidates = []
-    for pattern in (r'C:\Program Files\Blender Foundation\Blender*\blender.exe',
-                    r'C:\Program Files (x86)\Steam\steamapps\common\Blender\blender.exe',
-                    os.path.expandvars(r'%LOCALAPPDATA%\Programs\Blender Foundation\Blender*\blender.exe'),
-                    os.path.expandvars(r'%ProgramFiles%\Blender Foundation\Blender*\blender.exe')):
-        candidates += glob.glob(pattern)
-    candidates.sort(key=_version_key, reverse=True)
-    if candidates:
-        return candidates[0]
+    found = find_blenders()
+    if found:
+        return found[0][1]
     return shutil.which('blender')
 
 

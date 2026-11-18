@@ -173,6 +173,7 @@ class RenderWorker(QThread):
         self.proc = None
         self.procs = []
         self.cancelled = False
+        self.blender_failed = False      # True when Blender itself failed (a fallback Blender may work)
 
     def cancel(self):
         self.cancelled = True
@@ -229,6 +230,7 @@ class RenderWorker(QThread):
                 t.join(timeout=5)
         except OSError as exc:
             self.cancel()
+            self.blender_failed = True
             self.failed.emit(f'Could not start Blender: {exc}')
             return
         if self.cancelled:
@@ -236,6 +238,7 @@ class RenderWorker(QThread):
             return
         if any(p.returncode for p in self.procs) or error:
             self.cancel()
+            self.blender_failed = True
             self.failed.emit((error or 'Blender stopped unexpectedly.') + '\n\nLast Blender output:\n' + '\n'.join(tail))
             return
         if self.encode_opts:
@@ -921,6 +924,13 @@ class Studio(QMainWindow):
         sv = QVBoxLayout(st)
         eng = QGroupBox('Blender (the 3D engine)')
         el = QVBoxLayout(eng)
+        vrow = QHBoxLayout()
+        vrow.addWidget(QLabel('Version:'))
+        self.blender_pick = QComboBox()
+        self.blender_pick.setToolTip('Which installed Blender the app uses. If a render fails, the app '
+                                     'tries again by itself with the next installed version.')
+        vrow.addWidget(self.blender_pick, 1)
+        el.addLayout(vrow)
         self.blender_label = QLabel()
         self.blender_label.setWordWrap(True)
         el.addWidget(self.blender_label)
@@ -2140,6 +2150,18 @@ class Studio(QMainWindow):
         self._prune_hand_bakes()
 
     def _hands_failed(self, msg):
+        w = self._hand_worker
+        fb = bb.fallback_blender(w.blender)
+        if fb and not getattr(w, 'is_fallback', False):
+            # the chosen Blender could not work out the hands: try once with the next installed one
+            self._hand_worker = HandBakeWorker(fb, w.job_path, w.out_path)
+            self._hand_worker.is_fallback = True
+            self._hand_worker.finished_ok.connect(self._hands_ready)
+            self._hand_worker.failed.connect(self._hands_failed)
+            self._hand_worker.progress.connect(self._hands_progress)
+            self._hand_worker.start()
+            self.status.setText(f'Trying the hands again with Blender {bb.version_from_path(fb)}…')
+            return
         self.status.setText(msg)
         if getattr(self, '_hands_pending', False):
             self._update_hands()
@@ -2260,9 +2282,38 @@ class Studio(QMainWindow):
         self.status.setText(f'The live 3D view is not available on this PC ({reason[:120]}); showing the outline instead.')
 
     # --------------------------------------------------------------- blender
+    def _fill_blender_pick(self):
+        """Lists the installed Blenders, newest first; the first entry follows the newest install."""
+        saved = self.settings.value('blender') or ''
+        found = bb.find_blenders()
+        pick = self.blender_pick
+        pick.blockSignals(True)
+        pick.clear()
+        newest = f' (Blender {found[0][0]})' if found else ''
+        pick.addItem(f'Newest installed{newest}', '')
+        for ver, path in found:
+            pick.addItem(f'Blender {ver}', path)
+        if saved and pick.findData(saved) < 0:
+            pick.addItem(f'Blender {bb.version_from_path(saved) or "(custom)"}  -  {saved}', saved)
+        pick.setCurrentIndex(max(0, pick.findData(saved)))
+        pick.blockSignals(False)
+        if not getattr(self, '_blender_pick_wired', False):
+            pick.currentIndexChanged.connect(self._blender_picked)
+            self._blender_pick_wired = True
+
+    def _blender_picked(self, _index):
+        path = self.blender_pick.currentData() or ''
+        self.settings.setValue('blender', path)
+        self.blender = bb.find_blender(path or None)
+        self._update_blender_label()
+
     def _update_blender_label(self):
+        if hasattr(self, 'blender_pick') and self.blender_pick.count() == 0:
+            self._fill_blender_pick()
         if self.blender:
-            self.blender_label.setText(f'Blender: {self.blender}')
+            fb = bb.fallback_blender(self.blender)
+            extra = f'<br>If it fails, the app tries again with Blender {bb.version_from_path(fb)}.' if fb else ''
+            self.blender_label.setText(f'Using: {self.blender}{extra}')
         else:
             self.blender_label.setText('<b>Blender not found.</b> Install it free from blender.org '
                                        '(the normal Windows installer), then restart this app, '
@@ -2274,6 +2325,7 @@ class Studio(QMainWindow):
         if path:
             self.blender = path
             self.settings.setValue('blender', path)
+            self._fill_blender_pick()
             self._update_blender_label()
 
     def _test_blender(self):
@@ -2308,7 +2360,13 @@ class Studio(QMainWindow):
         self._busy(True)
         self.status.setText('Starting Blender… (the first frame is slower while materials compile)')
         workers = 2 if self.parallel.isChecked() else 1
-        self.worker = RenderWorker(self.blender, job, encode_opts, workers=workers)
+        self._last_run = (job, on_done, encode_opts)
+        self._run_blender = self.blender
+        self._tried_fallback = False
+        self._launch(self.blender, job, on_done, encode_opts, workers)
+
+    def _launch(self, blender, job, on_done, encode_opts, workers):
+        self.worker = RenderWorker(blender, job, encode_opts, workers=workers)
         self.worker.progress.connect(self._on_progress)
         self.worker.message.connect(self.status.setText)
         self.worker.finished_ok.connect(on_done)
@@ -2323,6 +2381,18 @@ class Studio(QMainWindow):
                             f'about {int(left // 60)} min {int(left % 60)} s left')
 
     def _on_failed(self, msg):
+        worker = self.worker
+        fb = bb.fallback_blender(getattr(self, '_run_blender', None))
+        if (worker is not None and getattr(worker, 'blender_failed', False) and fb
+                and not getattr(self, '_tried_fallback', False)):
+            # Blender itself failed (e.g. a new version with a change): try once with the next one
+            self._tried_fallback = True
+            job, on_done, encode_opts = self._last_run
+            self.status.setText(f'Blender {bb.version_from_path(self._run_blender) or ""} stopped; '
+                                f'trying again with Blender {bb.version_from_path(fb)}…')
+            self._run_blender = fb
+            self._launch(fb, job, on_done, encode_opts, worker.workers)
+            return
         self._busy(False)
         self.status.setText('Stopped.')
         box = QMessageBox(self)

@@ -381,10 +381,14 @@ def page_material(name, paper, content, roughness=0.72):
     A full-bleed page image (parchment included) simply replaces the paper."""
     mat = bpy.data.materials.new(name)
     nt, bsdf, out = principled(mat)
-    base = nt.nodes.new('ShaderNodeTexImage')
-    base.image = image(paper)
-    base.interpolation = 'Cubic'
-    base.extension = 'EXTEND'
+    if paper:
+        base = nt.nodes.new('ShaderNodeTexImage')
+        base.image = image(paper)
+        base.interpolation = 'Cubic'
+        base.extension = 'EXTEND'
+    else:                                      # no paper texture: plain cream paper
+        base = nt.nodes.new('ShaderNodeRGB')
+        base.outputs['Color'].default_value = (0.86, 0.80, 0.68, 1.0)
     col = base.outputs['Color']
     if content:
         tx = nt.nodes.new('ShaderNodeTexImage')

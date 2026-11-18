@@ -89,7 +89,7 @@ def main():
     base = dict(width=640, height=360, fps=24, start_hold=0.3, turn_seconds=1.4, pause=0.4, end_hold=0.3,
                 start_closed=True, open_seconds=1.6, open_at=0.04, curl=0.9, quality='Final (recommended)',
                 blend='Ink on paper (blends in)')
-    shots = []
+    shots, failed = [], False
     for name, cam in (('eye', dict(tilt=50, turn=0, roll=-3, lens=35, zoom=1.0, move='none')),
                       ('top', dict(tilt=89, turn=0, roll=0, lens=50, zoom=1.0, move='none'))):
         s = dict(base, cam=cam)
@@ -102,6 +102,7 @@ def main():
         job = bb.make_job(s, book, pages, out / name, frames=frames, quality=quality)
         job['samples'] = 24
         ok, files = render(blender, job, out / name, f'{engine} {name}')
+        failed = failed or not ok
         shots.append((name, frames, files))
     sheet_w = 640 * 4
     rows = sum((len(f) + 3) // 4 for _, _, f in shots) or 1
@@ -123,6 +124,8 @@ def main():
         row += (len(files) + 3) // 4
     sheet.save(out / f'sheet_{engine}.png')
     print('sheet written')
+    if failed:                         # a broken render must fail the check, not pass silently
+        sys.exit(1)
 
 
 if __name__ == '__main__':
