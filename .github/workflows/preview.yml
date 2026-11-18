@@ -51,14 +51,22 @@ jobs:
         run: |
           mkdir -p out
           UA="Mozilla/5.0 (X11; Linux x86_64) motioncraft-ci"
-          curl -sSL -A "$UA" https://download.blender.org/release/ -o out/releases.html
-          DIR=$(grep -oE 'Blender[0-9]+\.[0-9]+/' out/releases.html | sort -u -V | tail -1)
-          curl -sSL -A "$UA" "https://download.blender.org/release/$DIR" -o out/dir.html
-          FILE=$(grep -oE 'blender-[0-9]+\.[0-9]+\.[0-9]+-linux-x64\.tar\.xz' out/dir.html | sort -u -V | tail -1)
-          VER=$(echo "$FILE" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
-          echo "Blender dir=$DIR file=$FILE" | tee out/find.log
+          # blender.org sometimes answers automated requests with a bot check, so official
+          # mirrors of the same release folder are tried too.
+          FILE=""
+          for BASE in https://download.blender.org/release https://mirrors.ocf.berkeley.edu/blender/release \
+                      https://ftp.nluug.nl/pub/graphics/blender/release https://mirror.clarkson.edu/blender/release; do
+            curl -sSL -A "$UA" "$BASE/" -o out/releases.html || continue
+            DIR=$(grep -oE 'Blender[0-9]+\.[0-9]+/' out/releases.html | sort -u -V | tail -1 || true)
+            [ -n "$DIR" ] || continue
+            curl -sSL -A "$UA" "$BASE/$DIR" -o out/dir.html || continue
+            FILE=$(grep -oE 'blender-[0-9]+\.[0-9]+\.[0-9]+-linux-x64\.tar\.xz' out/dir.html | sort -u -V | tail -1 || true)
+            [ -n "$FILE" ] && break
+          done
+          echo "Blender base=$BASE dir=$DIR file=$FILE" | tee out/find.log
           test -n "$FILE"
-          echo "url=https://download.blender.org/release/$DIR$FILE" >> "$GITHUB_OUTPUT"
+          VER=$(echo "$FILE" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          echo "url=$BASE/$DIR$FILE" >> "$GITHUB_OUTPUT"
           echo "version=$VER" >> "$GITHUB_OUTPUT"
 
       - name: Cache Blender
