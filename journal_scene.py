@@ -21,7 +21,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import journal_geom as G  # noqa: E402
 import scene  # noqa: E402
-from book_scene import setup_render, log  # noqa: E402
+from book_scene import setup_render, log, parent_book_motion, place_book_motion  # noqa: E402
 from page_curl import layout_pages  # noqa: E402
 
 
@@ -426,7 +426,7 @@ def build(job):
     book = job['book']
     sheets = int(job.get('page_count') or book.get('page_count') or 10)
     G.configure(sheets, float(book.get('page_aspect', 1.4318)), **G.book_dims(book), page_shape=job.get('page_shape', 'flat'),
-                turn_style=job.get('turn_style', 'natural'))
+                turn_style='cinematic' if job.get('opening_style') == 'cinematic' else job.get('turn_style', 'natural'))
     images = list(job.get('images') or [])
     leather_rgb = book.get('leather_color', (0.12, 0.05, 0.02))
 
@@ -500,7 +500,7 @@ def build(job):
                   page_material(f'Page{2 * k + 2:03d}', paper_even, get(2 * k + 1)), m_edge):
             ob.data.materials.append(m)
         obs.append(ob)
-    strap = build_strap(root, m_leather) if book.get('strap') else None
+    strap = build_strap(root, m_leather) if book.get('strap') and job.get('opening_style') != 'cinematic' else None
     return root, pivot, sp, core, obs, strap
 
 
@@ -599,7 +599,9 @@ def add_shadow_catcher(root):
 
 def place_camera(cam, job, frac):
     """The app's camera settings (preset, zoom, shift, slow move), framed like the live preview."""
-    pos, r, u, f, lens = G.camera(job['cam'], frac, job['width'] / job['height'], G.real_size(job.get('book')))
+    pos, r, u, f, lens = G.camera(job['cam'], frac, job['width'] / job['height'], G.real_size(job.get('book')),
+                                  cinematic=job.get('opening_style') == 'cinematic',
+                                  slide=job.get('slide', True), smoothness=job.get('smoothness', 1.0))
     from mathutils import Matrix
     cam.matrix_world = Matrix([[r[i], u[i], -f[i], pos[i]] for i in range(3)] + [[0.0, 0.0, 0.0, 1.0]])
     cam.data.lens = float(lens)
@@ -640,13 +642,13 @@ def make_hands(job, root, sc, n_sheets, strap_u, held_up):
     """The hands and their poses for every frame: (hand, plan, left hand, left plan), each None
     when not shown. Shared by the render and the live view's hand bake (hand_bake.py), so the
     live view moves exactly as the video."""
-    if not job.get('hand'):
+    if not job.get('hand') or sc.opening_style == 'cinematic':
         return None, None, None, None
     import hand_scene
 
     def state_at(f):
         pose = sc.evaluate(f)
-        theta = G.cover_angle(float(pose['cover_progress']))
+        theta = G.pose_cover_angle(pose)
         G.set_opening(theta)
         prog = pose['sheet_progress']
         ts = [float(prog[k]) if k < len(prog) else 0.0 for k in range(n_sheets)]
@@ -690,7 +692,8 @@ def job_scene(job):
                      job['start_hold'], job['turn_seconds'], job['pause'], job['end_hold'],
                      job.get('open_seconds', 0.0), job.get('slide', True),
                      page_count=G.N_SHEETS, smoothness=job.get('smoothness', 1.0),
-                     recorded_clips=job.get('recorded_clips'), clip_list=job.get('clip_list'))
+                     recorded_clips=job.get('recorded_clips'), clip_list=job.get('clip_list'),
+                     opening_style=job.get('opening_style'))
     return sc
 
 
@@ -707,7 +710,9 @@ def main():
         tune_cycles(sc_b)
     root, pivot, sp, core, obs, strap = build(job)
     setup_lights_world()
-    held_up = bool(job.get('hand')) and job.get('hand_left', True) and job.get('hand_left_style') == 'under'
+    cinematic = job.get('opening_style') == 'cinematic'
+    held_up = cinematic or (bool(job.get('hand')) and job.get('hand_left', True)
+                             and job.get('hand_left_style') == 'under')
     if not held_up:                    # a book held up in the hand has no table under it
         add_shadow_catcher(root)
     cam_data = bpy.data.cameras.new('Camera')
@@ -738,19 +743,21 @@ def main():
     last_w = None
     last_key, last_path = None, None
     base_loc = tuple(root.location)
+    if cinematic:
+        parent_book_motion(root, base_loc)
     last_theta = None
     last_core = None
     started = time.time()
     log(f'TOTAL {len(frames)}')
     for i, f in enumerate(frames):
         pose = sc.evaluate(f)
-        theta = G.cover_angle(float(pose['cover_progress']))
+        theta = G.pose_cover_angle(pose)
         w_open = G.set_opening(theta)            # pages relax into their curve as the cover opens
         w_open = (round(w_open, 7), round(G.OPEN_B, 7))   # ...and the spine rolls open under them
         if w_open != last_w:
             last = [None] * len(obs)
             last_w = w_open
-        root.location = (base_loc[0] + float(pose.get('cover_slide', 0.0)), base_loc[1], base_loc[2])
+        place_book_motion(root, pose, base_loc)
         pivot.rotation_euler = (0.0, -theta, 0.0)
         pv = G.cover_pivot(theta)
         pivot.location = (float(pv[0]), 0.0, float(pv[1]))
@@ -789,7 +796,7 @@ def main():
         path = os.path.join(out, f'frame_{offset + i:06d}.png')
         cam_key = None if job['cam'].get('move', 'none') == 'none' else round(float(pose['camera_frac']), 6)
         key = (round(theta, 7), w_open, tuple(round(float(x), 7) for x in prog), cam_key,
-               round(float(pose.get('cover_slide', 0.0)), 7), hand_key, strap_key)
+               round(float(pose.get('cover_slide', 0.0)), 7), pose['book_motion'], hand_key, strap_key)
         if key == last_key and last_path:
             shutil.copyfile(last_path, path)          # nothing moved: same picture, no render
         else:

@@ -137,7 +137,7 @@ def test_every_page_shape_and_turn_style_stays_clear():
     """Curved pages and all turn styles: landed pages above the cover and each other, turning
     pages above the stack, paper never stretched."""
     for shape in ('flat', 'curved', 'very curved'):
-        for style in ('natural', 'corner peel', 'quick'):
+        for style in ('natural', 'corner peel', 'quick', 'cinematic'):
             G.configure(10, 1.4318, page_shape=shape, turn_style=style)
             n = G.N_SHEETS
             for layer in range(2):

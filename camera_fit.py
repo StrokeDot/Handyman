@@ -4,6 +4,7 @@ Pure numpy. The camera looks at the book from any tilt / turn / roll, and its di
 found automatically so the whole book (including a page rising mid-turn) fits in frame.
 """
 import math
+from functools import lru_cache
 import numpy as np
 
 from page_curl import sheet_vertices
@@ -25,13 +26,45 @@ MOVES = {'Still': 'none', 'Slow push-in': 'push', 'Slow pull-out': 'pull', 'Slow
 BOOK_CORNERS = 8  # the first 8 book_points are the book itself; the rest are a rising page
 
 
-def book_points(page_w, page_h, margin, top):
+def book_points(page_w, page_h, margin, top, cinematic=False):
     """Points the camera keeps in view: the open book's 8 corners, then a page rising mid-turn."""
     hx, hy = page_w + margin, page_h / 2 + margin
     pts = [(x, y, z) for x in (-hx, hx) for y in (-hy, hy) for z in (0.0, top)]
-    for p in (0.45, 0.6, 0.75):
-        pts.extend(sheet_vertices(p, page_w, page_h, 9, 5, top, top).tolist())
+    times = np.linspace(.1, .9, 9) if cinematic else (0.45, 0.6, 0.75)
+    for p in times:
+        pts.extend(sheet_vertices(p, page_w, page_h, 9, 5, top, top, cinematic=cinematic).tolist())
     return np.array(pts, dtype=float)
+
+
+@lru_cache(maxsize=64)
+def opening_points(page_w, cover_w, cover_h, hinge, thickness, slide, smoothness):
+    """A fixed framing envelope for the tilting boards throughout the opening."""
+    from scene import cinematic_book_pose, cinematic_opening
+
+    def axes(rx, ry, rz):
+        x, y, z = np.radians((rx, ry, rz))
+        cx, cy, cz = np.cos((x, y, z))
+        sx, sy, sz = np.sin((x, y, z))
+        return np.array(((cz * cy, cz * sy * sx - sz * cx, cz * sy * cx + sz * sx),
+                         (sz * cy, sz * sy * sx + cz * cx, sz * sy * cx - cz * sx),
+                         (-sy, cy * sx, cy * cx)))
+
+    left = np.array([(x, y, z) for x in (-cover_w, 0) for y in (-cover_h / 2, cover_h / 2)
+                     for z in (0, thickness)])
+    right = left * (-1, 1, 1)
+    points = []
+    for progress in np.linspace(0, 1, 41):
+        lift = cinematic_opening(progress, smoothness)
+        angle = math.pi * (1 - lift)
+        cover_rotation = axes(0, math.degrees(angle), 0)
+        pivot = np.array((0, 0, hinge))
+        front = (left - pivot) @ cover_rotation.T + pivot
+        offset, rotation = cinematic_book_pose(progress, page_w)
+        frame = np.concatenate((front, right))
+        if slide:
+            frame[:, 0] -= cover_w * (1 - lift) / 2
+        points.append(frame @ axes(*rotation).T + offset)
+    return np.concatenate(points)
 
 
 def pose(tilt, turn, roll, dist, target):
@@ -80,7 +113,7 @@ def fit_distance(points, tilt, turn, roll, lens, aspect, target, fill=0.9):
     return float(min(max(need.max(), 0.3), 200.0))
 
 
-def shot(cam_settings, frac, base_target, book_w, book_h, points, aspect):
+def shot(cam_settings, frac, base_target, book_w, book_h, points, aspect, cinematic=False):
     """Camera at a point of the video (frac 0..1), including the chosen slow move.
 
     Returns (position, right, up, forward, lens).
@@ -97,7 +130,8 @@ def shot(cam_settings, frac, base_target, book_w, book_h, points, aspect):
         turn += -5.0 + 10.0 * a
     # The book fills most of the frame; the tip of a rising page may briefly pass the top edge.
     dist = max(fit_distance(points[:BOOK_CORNERS], tilt, turn, roll, lens, aspect, base_target, fill=0.9),
-               fit_distance(points, tilt, turn, roll, lens, aspect, base_target, fill=1.25)) / zoom
+               fit_distance(points, tilt, turn, roll, lens, aspect, base_target,
+                            fill=.9 if cinematic else 1.25)) / zoom
     target = np.asarray(base_target, dtype=float) + np.array([c.get('shift_x', 0.0) * book_w / 2,
                                                               c.get('shift_y', 0.0) * book_h / 2, 0.0])
     cam, r, u, f = pose(tilt, turn, roll, dist, target)

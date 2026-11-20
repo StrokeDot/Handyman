@@ -90,7 +90,7 @@ class JournalPreview:
     # ------------------------------------------------------------------ drawing
     def draw(self, pose, tex, leather_rgb, paper_rgb):
         """tex: {'front_ext','back_ext','front_in','back_in','spine', ('page', i) or 'paper_odd'/'paper_even'}."""
-        theta = G.cover_angle(float(pose['cover_progress']))
+        theta = G.pose_cover_angle(pose)
         G.set_opening(theta)          # pages flat while closed, curved once the cover lifts off them
         slide = float(pose.get('cover_slide', 0.0))
         gl.glPushMatrix()

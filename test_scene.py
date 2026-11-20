@@ -140,6 +140,25 @@ def test_scene_from_clip_list():
     assert s.evaluate(10)['cover_progress'] > 0
 
 
+def test_cinematic_opening_uses_v9_beats_without_changing_the_clip_timeline():
+    import math
+    clips = [dict(kind='open', start=8, duration=81), dict(kind='turn', start=100, duration=20),
+             dict(kind='turn_back', start=135, duration=20)]
+    regular = scene.Scene(1, page_count=4, clip_list=clips)
+    cinematic = scene.Scene(1, page_count=4, clip_list=clips, opening_style='cinematic')
+    paused, peel, swing, settled = (cinematic.evaluate(f) for f in (8, 40, 65, 88))
+    assert paused['cover_angle'] == math.pi and paused['book_motion'][1] != (0., 0., 0.)
+    assert math.radians(155) < peel['cover_angle'] < math.radians(177)
+    assert 0 < swing['cover_angle'] < peel['cover_angle']
+    assert settled['cover_angle'] == settled['cover_slide'] == 0
+    assert settled['book_motion'] == ((0., 0., 0.), (0., 0., 0.))
+    assert cinematic.frames == regular.frames
+    for f in range(cinematic.frames):
+        assert cinematic.evaluate(f)['sheet_progress'] == regular.evaluate(f)['sheet_progress']
+    start_open = scene.Scene(1, opening_style='cinematic')
+    assert start_open.evaluate(0)['book_motion'] == settled['book_motion']
+
+
 if __name__ == '__main__':
     for name, fn in list(globals().items()):
         if name.startswith('test_'):
