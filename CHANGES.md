@@ -1,5 +1,10 @@
 # Changes
 
+## 0.31.0
+- **Cinematic book opening and page turns** adds a second opening style in the Animation panel. The book tilts, the cover peels up before swinging open, and each page curls over without hands.
+- The opening style is saved with the project and works in the live preview and transparent Blender exports.
+- Standard cover lift is the default for new projects and for projects saved before this update.
+
 ## 0.30.2
 - **Blender 5.3**: the app works with Blender 5.3 and uses the newest Blender you have installed. In Settings, under "Blender (the 3D engine)", you can pick which installed version to use.
 - **Automatic fallback**: if Blender fails on a render or while working out the hands, the app tries again by itself with the next installed version (for example 5.3, then 5.2), so a problem in a new Blender does not stop your work.
