@@ -2,15 +2,11 @@
 import types
 
 from live_view import LiveView as LV
+from scene import Scene
 
 
-class _Layout:
-    def opening(self, o, slide=False, smoothness=1.0):
-        return o * 3.14159, 0.0
-
-
-def _view(manual=None, base=None, target=None, progress=0.0):
-    sc = types.SimpleNamespace(layout=_Layout(), slide=False, smoothness=1.0)
+def _view(manual=None, base=None, target=None, progress=0.0, opening_style='standard'):
+    sc = Scene(2, slide=False, opening_style=opening_style)
     return types.SimpleNamespace(manual=manual, _drag_base=base, drag_target=target, drag_progress=progress, scene=sc)
 
 
@@ -35,7 +31,8 @@ def test_pulling_right_turns_the_last_page_back_then_closes_the_cover():
 def test_a_cover_drag_moves_the_cover_and_leaves_the_pages():
     v = _view(base={}, target=('cover', None), progress=0.4)
     p = LV._with_drag(v, _pose(0.0, [0, 0]))
-    assert abs(p['cover_progress'] - 0.4) < 1e-9 and abs(p['cover_angle'] - 0.4 * 3.14159) < 1e-9
+    angle, _ = v.scene.layout.opening(0.4, slide=False)
+    assert p['cover_progress'] == 0.4 and p['cover_angle'] == angle
     assert p['sheet_progress'] == [0, 0]
 
 
@@ -43,3 +40,11 @@ def test_what_a_finished_drag_left_stays_shown():
     v = _view(manual={'cover': 1.0, 'sheets': {0: 1.0}})
     p = LV._with_drag(v, _pose(0.0, [0, 0]))
     assert p['cover_progress'] == 1.0 and p['sheet_progress'] == [1.0, 0]
+
+
+def test_dragging_the_cinematic_cover_recomputes_the_whole_book_pose():
+    v = _view(base={}, target=('cover', None), progress=0.4, opening_style='cinematic')
+    pose = LV._with_drag(v, v.scene.evaluate(0))
+    assert pose['book_motion'] == v.scene.cover_pose(0.4)['book_motion']
+    assert pose['book_motion'] != v.scene.evaluate(0)['book_motion']
+    assert pose['sheet_progress'] == v.scene.evaluate(0)['sheet_progress']
