@@ -16,6 +16,11 @@ import numpy as np
 PEEL_SHARE = 0.28   # part of each turn spent lifting the corner before the page goes over
 GUTTER = 0.5        # how steeply a resting page rises out of the spine (radians at the spine)
 GUTTER_POWER = 5.0  # higher = the curve stays closer to the spine
+CINEMATIC_LAG = 1.5 / 14.0  # the upper edge trails the lower one in the V9 turn
+
+
+def cinematic_bend(progress):
+    return 1.43 * np.sin(np.pi * progress)
 
 
 def gutter_angle(s, width, gutter=GUTTER):
@@ -49,7 +54,7 @@ def ease(t, smoothness=1.0):
 
 def sheet_vertices(p, width, height, nx, ny, z_right, z_left,
                    curl=0.9, lag=0.10, corner=0.6, power=1.6, peel=1.1, peel_share=PEEL_SHARE,
-                   gutter=0.0, smoothness=1.0):
+                   gutter=0.0, smoothness=1.0, cinematic=False):
     """Vertex positions of one sheet at turn progress p (0 = flat right, 1 = flat left).
 
     The first `peel_share` of the turn lifts the bottom outer corner (the hand grabbing it),
@@ -64,6 +69,8 @@ def sheet_vertices(p, width, height, nx, ny, z_right, z_left,
     Returns float array of shape (ny * nx, 3).
     """
     p = float(np.clip(p, 0.0, 1.0))
+    if cinematic:
+        peel_share = 0.0
     if peel_share > 0:
         lift = float(ease(p / peel_share, smoothness))
         t = max(0.0, (p - peel_share) / (1.0 - peel_share))
@@ -83,6 +90,11 @@ def sheet_vertices(p, width, height, nx, ny, z_right, z_left,
     bend = curl * np.sin(math.pi * tr) * (1.0 + corner * (1.0 - v))
     frac = (s / width) ** power
     angle = theta[:, None] + bend[:, None] * frac[None, :]
+    if cinematic:
+        delay = CINEMATIC_LAG * v
+        tr = np.clip((p - delay) / (1.0 - delay), 0.0, 1.0)
+        eased = ease(tr, smoothness)
+        angle = math.pi * eased[:, None] + (curl / 0.9) * cinematic_bend(eased)[:, None] * (s / width - 0.38)
     g_right, g_left = gutter if isinstance(gutter, (tuple, list)) else (gutter, gutter)
     if g_right or g_left:
         # Resting on the right the page rises out of the spine; resting on the left, mirrored.

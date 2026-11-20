@@ -11,6 +11,7 @@ its tangent angle a(s) along the arc length s from the binding, so paper never s
 """
 import math
 import numpy as np
+from page_curl import CINEMATIC_LAG, cinematic_bend, ease
 
 # ---- dimensions ------------------------------------------------------------------------
 W = 1.0                    # page width (binding to fore-edge)
@@ -309,6 +310,8 @@ LEAD = 0.16        # how far the top outer corner trails the bottom outer corner
 SIG = 1.4          # how much the bend is concentrated at the outer edge (higher = only the edge)
 
 TURN_STYLES = {
+    # V9: lift the leading corner, carry the curl across, and let the sheet settle.
+    'cinematic': dict(E=ease, B=lambda t: .62 * cinematic_bend(ease(t)), LEAD=CINEMATIC_LAG, SIG=1.0),
     # the original: the page lifts and swings over in one smooth arc
     'natural': dict(E=E, B=B, LEAD=0.16, SIG=1.4),
     # like a hand-made After Effects turn: the bottom corner peels up slowly, the page whips over
@@ -588,6 +591,12 @@ def cover_angle(opening):
     return float(THETA_EASE(opening)) * THETA_OPEN
 
 
+def pose_cover_angle(pose):
+    if pose.get('opening_style') == 'cinematic':
+        return (1.0 - pose['cover_angle'] / math.pi) * THETA_OPEN
+    return cover_angle(float(pose['cover_progress']))
+
+
 _TURN_PTS = {}
 
 
@@ -625,7 +634,7 @@ def real_size(book):
         return None
 
 
-def camera(cam_settings, frac, aspect, real=None):
+def camera(cam_settings, frac, aspect, real=None, cinematic=False, slide=True, smoothness=1.0):
     """The app's camera settings applied to this book: (position, right, up, forward, lens).
     Same controls as the classic book (presets, zoom, shift, slow moves). The framing keeps the
     open book AND the page standing up mid-turn inside the picture, aiming a little above the
@@ -644,6 +653,9 @@ def camera(cam_settings, frac, aspect, real=None):
     top = ZJ
     corners = cf.book_points(W, H, COVER_MARGIN, top)[:cf.BOOK_CORNERS]
     pts = np.concatenate([corners, turn_points()])
+    if cinematic:
+        envelope = cf.opening_points(W, WC + SPINE_GAP, HC, (ZJ + TB) / 2, TB, slide, smoothness)
+        pts = np.concatenate((pts, envelope))
     # Centre the open book and the standing page together in the picture, then fit them with a
     # margin all round: no cut-off page tip, no wasted empty band under the book.
     base = np.array([0.0, 0.0, top])

@@ -10,15 +10,48 @@ the app is exactly what gets exported. This is step 1 of the rebuild: it reprodu
 build on the same Scene.
 """
 import book_model as bm
-from clips import Clip, ClipTimeline, clip_from_dict
+from clips import Clip, ClipTimeline, clip_from_dict, ease_smooth
+
+
+# V9's opening pose relative to its reading pose. Offsets are in page widths
+# and angles are degrees, so this can play on any of the app's book templates.
+CINEMATIC_POSES = (
+    (0.00, (-.035, .055, -.065), (-24., -11., 11.)),
+    (0.20, (-.060, .045, -.035), (-30., -20., 15.)),
+    (0.42, (-.025, .049, -.020), (-24., -16., 12.)),
+    (0.62, (.020, .052, -.030), (-12., 7., 4.)),
+    (0.79, (.015, .036, -.021), (-2., 5., -1.)),
+    (0.91, (.010, .010, .006), (1.2, -1.4, .4)),
+    (1.00, (0., 0., 0.), (0., 0., 0.)),
+)
+
+
+def cinematic_opening(progress, smoothness):
+    """A small peel, the main swing, then the last few degrees of settling."""
+    def phase(start, end):
+        return ease_smooth((progress - start) / (end - start), smoothness)
+
+    return (18 * phase(.22, .46) + 159 * phase(.41, .88) + 3 * phase(.90, 1.0)) / 180
+
+
+def cinematic_book_pose(progress, page_width):
+    for (start, offset, rotation), (end, next_offset, next_rotation) in zip(
+            CINEMATIC_POSES, CINEMATIC_POSES[1:]):
+        if progress <= end:
+            t = ease_smooth((progress - start) / (end - start))
+            return (tuple(page_width * (a + (b - a) * t) for a, b in zip(offset, next_offset)),
+                    tuple(a + (b - a) * t for a, b in zip(rotation, next_rotation)))
+    return CINEMATIC_POSES[-1][1:]
 
 
 class Scene:
     def __init__(self, turns, page_aspect=1.4, open_at=0.04, fps=30, start_hold=0.8,
                  turn_seconds=1.4, pause=0.8, end_hold=1.5, open_seconds=0.0, slide=True,
-                 page_count=None, smoothness=1.0, recorded_clips=None, clip_list=None):
+                 page_count=None, smoothness=1.0, recorded_clips=None, clip_list=None,
+                 opening_style='standard'):
         self.slide = bool(slide)
         self.smoothness = float(smoothness)
+        self.opening_style = 'cinematic' if opening_style == 'cinematic' else 'standard'
         # Physical model: every configured sheet exists. start_index sheets are already flipped
         # left (state 1.0), the next `turns` sheets animate, the rest stay right (state 0.0).
         self.start_index = 0
@@ -79,10 +112,18 @@ class Scene:
         """Spine heights (right, left) of the k-th turning sheet."""
         return self.layout.sheet_levels(k)
 
+    def cover_pose(self, progress):
+        """Cover and whole-book pose, also used when dragging the cover in the live view."""
+        cinematic = self.opening_style == 'cinematic'
+        lift = cinematic_opening(progress, self.smoothness) if cinematic else progress
+        angle, slide = self.layout.opening(lift, slide=self.slide,
+                                           smoothness=0.0 if cinematic else self.smoothness)
+        return dict(cover_progress=progress, cover_angle=angle, cover_slide=slide,
+                    opening_style=self.opening_style,
+                    book_motion=cinematic_book_pose(progress, self.layout.page_w) if cinematic else None)
+
     def evaluate(self, frame):
         """Everything's pose at `frame`. Both renderers draw from this one answer."""
-        o = self.opening(frame)
-        angle, slide = self.layout.opening(o, slide=self.slide, smoothness=self.smoothness)
         # One state entry per PHYSICAL sheet, so state and geometry arrays always match.
         # Sheets before the start are already left; scheduled sheets animate; the rest stay right.
         sheet_progress = []
@@ -97,9 +138,7 @@ class Scene:
             sheet_progress = [self.progress(frame, k) for k in range(self.turns)]
         return dict(
             frame=int(frame),
-            cover_progress=o,
-            cover_angle=angle,
-            cover_slide=slide,
+            **self.cover_pose(self.opening(frame)),
             smoothness=self.smoothness,
             sheet_progress=sheet_progress,
             active_turn=self.timeline.active_turn(frame),

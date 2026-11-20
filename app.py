@@ -774,6 +774,11 @@ class Studio(QMainWindow):
         av = QVBoxLayout(anim)
         timing = QGroupBox('Timing (seconds)')
         f = QFormLayout(timing)
+        self.opening_style = QComboBox()
+        self.opening_style.addItem('Standard cover lift', 'standard')
+        self.opening_style.addItem('Cinematic opening and page turns', 'cinematic')
+        self.opening_style.setToolTip('Cinematic uses the prototype’s book tilt, cover peel and page curl.')
+        f.addRow('Book opening style', self.opening_style)
         self.turn_style = QComboBox()
         for label, key in (('Natural (smooth arc)', 'natural'),
                            ('Corner peel (like After Effects)', 'corner peel'),
@@ -840,6 +845,10 @@ class Studio(QMainWindow):
         for w in (self.hand_skin, self.hand_sleeve):
             w.setEnabled(False)
             self.hand_turns.toggled.connect(w.setEnabled)
+        self.hand_turns.toggled.connect(self._update_opening_controls)
+        self.hand_left.toggled.connect(self._update_opening_controls)
+        self.opening_style.currentIndexChanged.connect(self._update_opening_controls)
+        self.opening_style.currentIndexChanged.connect(self._schedule_live)
         flip = QPushButton('Add a fast flip…')
         flip.setToolTip('Flip through many pages quickly, like riffling them with your thumb')
         flip.clicked.connect(self._fast_flip)
@@ -988,6 +997,18 @@ class Studio(QMainWindow):
         s.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         s.setWidget(widget)
         return s
+
+    def _cinematic_opening(self):
+        return self.opening_style.currentData() == 'cinematic'
+
+    def _update_opening_controls(self, *_):
+        standard = not self._cinematic_opening()
+        hands = standard and self.hand_turns.isChecked()
+        self.turn_style.setEnabled(standard)
+        self.hand_turns.setEnabled(standard)
+        for widget in (self.hand_left, self.hand_size, self.hand_skin, self.hand_sleeve):
+            widget.setEnabled(hands)
+        self.hand_left_style.setEnabled(hands and self.hand_left.isChecked())
 
     def _update_engine_ui(self, *_):
         """Hide controls the chosen book does not use, so only what matters is on screen."""
@@ -1697,6 +1718,7 @@ class Studio(QMainWindow):
                     start_hold=self.start_s.value(), turn_seconds=self.turn_s.value(),
                     pause=self.pause_s.value(), end_hold=self.end_s.value(),
                     start_closed=self.start_closed.isChecked(), open_seconds=self.open_s.value(),
+                    opening_style=self.opening_style.currentData(),
                     open_at=book_model.OPEN_AT[self.open_at.currentText()], open_at_label=self.open_at.currentText(),
                     curl=self.curl.value() / 100, cam=self._cam(), quality=self.quality.currentText(),
                     blend=self.blend.currentText(), page_count=self.page_count.value(),
@@ -1705,7 +1727,8 @@ class Studio(QMainWindow):
                     clip_list=self.edited_clips, transform=self._transform(),
                     page_shape=self.page_shape.currentData() or 'flat',
                     turn_style=self._turn_style(),
-                    hand=self.hand_turns.isChecked(), hand_left=self.hand_left.isChecked(),
+                    hand=self.hand_turns.isChecked() and not self._cinematic_opening(),
+                    hand_left=self.hand_left.isChecked(),
                     hand_left_style=self.hand_left_style.currentData() or 'on', hand_size=self.hand_size.value(),
                     hand_skin=self.hand_skin.currentData() or '', hand_sleeve=self.hand_sleeve.currentData() or '',
                     page_fits=self._page_fits())
@@ -1713,11 +1736,14 @@ class Studio(QMainWindow):
     def _turn_style(self):
         """The page turn style; with the hand turning the pages the default smooth arc becomes the
         hand's push (the page stands up straight and is pushed over by the palm)."""
+        if self._cinematic_opening():
+            return 'cinematic'
         style = self.turn_style.currentData() or 'natural'
         return 'pushed' if style == 'natural' and self.hand_turns.isChecked() else style
 
     def _state(self):
         v = self._values()
+        v['hand'] = self.hand_turns.isChecked()
         v['turn_style'] = self.turn_style.currentData() or 'natural'     # the choice itself, not the hand's
         v.update(resolution=self.resolution.currentText(), mov=self.mov.isChecked(), webm=self.webm.isChecked(),
                  keep_png=self.keep_png.isChecked(), mov_size=self.mov_size.currentData() or 'small',
@@ -1762,6 +1788,7 @@ class Studio(QMainWindow):
         if 'hand_size' in v:
             self.hand_size.setValue(int(v['hand_size']))
         for combo, key, default in ((self.page_shape, 'page_shape', 'flat'), (self.turn_style, 'turn_style', 'natural'),
+                                    (self.opening_style, 'opening_style', 'standard'),
                                     (self.hand_left_style, 'hand_left_style', 'on')):
             j = combo.findData(v.get(key, default))
             if j >= 0:
@@ -2099,7 +2126,7 @@ class Studio(QMainWindow):
         if live is None or not hasattr(live, 'set_hands'):
             return
         book = self._book() if self.books else {}
-        if not self.hand_turns.isChecked() or book.get('engine') != 'journal' or not self.blender:
+        if self._cinematic_opening() or not self.hand_turns.isChecked() or book.get('engine') != 'journal' or not self.blender:
             live.set_hands(None)
             return
         try:
@@ -2133,6 +2160,8 @@ class Studio(QMainWindow):
 
     def _hands_progress(self, done):
         """How far along working out the hands is, and roughly how long is left."""
+        if self._cinematic_opening():
+            return
         took = time.time() - getattr(self, '_hand_started', time.time())
         left = ''
         if done > 0.05:
@@ -2141,6 +2170,9 @@ class Studio(QMainWindow):
         self.status.setText(f'Working out the hands\' movement for the live view… {round(done * 100)}%{left}')
 
     def _hands_ready(self, path):
+        if self._cinematic_opening():
+            self._hands_pending = False
+            return
         if getattr(self, '_hands_pending', False):
             self._update_hands()
             return
@@ -2150,6 +2182,9 @@ class Studio(QMainWindow):
         self._prune_hand_bakes()
 
     def _hands_failed(self, msg):
+        if self._cinematic_opening():
+            self._hands_pending = False
+            return
         w = self._hand_worker
         fb = bb.fallback_blender(w.blender)
         if fb and not getattr(w, 'is_fallback', False):
@@ -2451,7 +2486,9 @@ class Studio(QMainWindow):
         if not blender:
             self.status.setText('Blender was not found — the glTF viewport needs it to export.')
             return
-        job = self._job(self._values(), self._scratch('gltf'), quality='draft')
+        values = self._values()
+        values['opening_style'] = 'standard'
+        job = self._job(values, self._scratch('gltf'), quality='draft')
         job['glb_path'] = str(paths.cache_dir('gltf') / 'book.glb')
         self._gltf_worker = GltfWorker(blender, job)
         self._gltf_worker.finished_ok.connect(self._gltf_ready)

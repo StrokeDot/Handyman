@@ -17,6 +17,7 @@ The app checks for new versions at startup and can install them itself.
 - **Book**: pick a template, or *Make a copy…* and *Edit…* to design a new one (leather, paper, emblem, title, stitching).
   Templates live in `%APPDATA%\MotionCraft\books` and are never uploaded anywhere.
 - **Pages**: add images in reading order. Page 1 is the left page, page 2 the right page; each turn shows the next two.
+- In **Animation**, choose **Standard cover lift** or **Cinematic opening and page turns**. The cinematic sequence tilts and opens the book, then curls each page over without showing hands.
 - **Preview still** first, then **Render video**. Each render gets its own folder with a transparent ProRes 4444 MOV
   (and optionally WebM and PNG frames).
 - **Save project…** keeps the pages and settings for later.

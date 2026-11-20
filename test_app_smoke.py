@@ -27,6 +27,17 @@ def main():
     assert w._apply_state(state) == 0
     job = w._job(w._values(), tempfile.mkdtemp())
     assert job['book']['leather_color'] and job['open_seconds'] > 0
+    assert job['opening_style'] == 'standard'
+    w.hand_turns.setChecked(True)
+    w.opening_style.setCurrentIndex(w.opening_style.findData('cinematic'))
+    saved = w._state()
+    job = w._job(w._values(), tempfile.mkdtemp())
+    assert saved['opening_style'] == job['opening_style'] == 'cinematic'
+    assert saved['hand'] and not job['hand'] and not w.hand_turns.isEnabled()
+    w._apply_state(state)
+    w._apply_state(saved)
+    assert w.opening_style.currentData() == 'cinematic' and not w._values()['hand']
+    w._apply_state(state)
     for name in app.cf.PRESETS:
         w.shot.setCurrentText(name)
         assert w._cam()['tilt'] == round(app.cf.PRESETS[name]['tilt'])

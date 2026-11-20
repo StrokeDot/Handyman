@@ -548,9 +548,9 @@ def make_sheet(name, mat, t, z_right, z_left, curl, parent, edge=None):
     return link_object(bpy.data.objects.new(name, mesh), parent)
 
 
-def update_sheet(ob, t, z_right, z_left, curl, smoothness=1.0):
+def update_sheet(ob, t, z_right, z_left, curl, smoothness=1.0, cinematic=False):
     verts = sheet_vertices(t, PAGE_W, PAGE_H, GRID_X, GRID_Y, z_right, z_left, curl=curl,
-                           gutter=LAYOUT.gutter, smoothness=smoothness)
+                           gutter=LAYOUT.gutter, smoothness=smoothness, cinematic=cinematic)
     all_verts, _, _ = _sheet_solid(verts, GRID_X, GRID_Y)
     ob.data.vertices.foreach_set('co', all_verts.astype(np.float32).ravel())
     ob.data.update()
@@ -821,7 +821,12 @@ class Camera:
         top = LAYOUT.camera_top()
         self.target = (0.0, 0.0, top)
         self.book_w, self.book_h = 2 * (PAGE_W + COVER_MARGIN), PAGE_H + 2 * COVER_MARGIN
-        self.points = cf.book_points(PAGE_W, PAGE_H, COVER_MARGIN, top)
+        self.cinematic = job.get('opening_style') == 'cinematic'
+        self.points = cf.book_points(PAGE_W, PAGE_H, COVER_MARGIN, top, cinematic=self.cinematic)
+        if self.cinematic:
+            envelope = cf.opening_points(PAGE_W, self.book_w / 2, self.book_h, LAYOUT.hinge, COVER_T,
+                                         job.get('slide', True), job.get('smoothness', 1.0))
+            self.points = np.concatenate((self.points, envelope))
         data = bpy.data.cameras.new('Camera')
         data.sensor_width = cf.SENSOR
         data.sensor_fit = 'HORIZONTAL'
@@ -836,7 +841,7 @@ class Camera:
 
     def place(self, frac):
         cam, r, u, f, lens = self.cf.shot(self.settings, frac, self.target, self.book_w, self.book_h,
-                                          self.points, self.aspect)
+                                          self.points, self.aspect, cinematic=self.cinematic)
         rows = self.cf.matrix_rows(cam, r, u, f)
         try:
             from mathutils import Matrix
@@ -944,6 +949,31 @@ def setup_render(job):
 
 # ------------------------------------------------------------------------ main
 
+def parent_book_motion(root, position):
+    """Put the opening motion inside the user's book placement, like the live viewport."""
+    placement = link_object(bpy.data.objects.new('Book Placement', None))
+    placement.location = position
+    placement.rotation_euler = root.rotation_euler
+    placement.scale = root.scale
+    root.parent = placement
+    root.location = (0., 0., 0.)
+    root.rotation_euler = (0., 0., 0.)
+    root.scale = (1., 1., 1.)
+
+
+def place_book_motion(root, pose, base_position):
+    slide = pose['cover_slide']
+    motion = pose['book_motion']
+    if motion is None:
+        root.location = (base_position[0] + slide, base_position[1], base_position[2])
+        return
+    offset, angles = motion
+    # The slide lies in book space, so the tilt moves it along with the whole book.
+    root.rotation_euler = tuple(math.radians(a) for a in angles)
+    from mathutils import Vector
+    root.location = Vector(offset) + root.rotation_euler.to_matrix() @ Vector((slide, 0., 0.))
+
+
 def main():
     job_path = sys.argv[sys.argv.index('--') + 1]
     with open(job_path, encoding='utf-8') as fh:
@@ -961,7 +991,11 @@ def main():
                      job['start_hold'], job['turn_seconds'], job['pause'], job['end_hold'],
                      job.get('open_seconds', 0.0), job.get('slide', True),
                      page_count=job.get('page_count'), smoothness=job.get('smoothness', 1.0),
-                     recorded_clips=job.get('recorded_clips'), clip_list=job.get('clip_list'))
+                     recorded_clips=job.get('recorded_clips'), clip_list=job.get('clip_list'),
+                     opening_style=job.get('opening_style'))
+    cinematic = sc.opening_style == 'cinematic'
+    if cinematic:
+        parent_book_motion(root, BOOK_POS)
     frames = job.get('frames') or list(range(sc.frames))
     out = job['out_dir']
     os.makedirs(out, exist_ok=True)
@@ -972,13 +1006,13 @@ def main():
         pose = sc.evaluate(f)
         if camera.moving:
             camera.place(pose['camera_frac'])
-        angle, slide = pose['cover_angle'], pose['cover_slide']
+        angle = pose['cover_angle']
         pivot.rotation_euler = (0, angle, 0)
         spine_key.value = angle / math.pi
         hinge_v, _ = bm.hinge_ribbon(LAYOUT, angle)
         hinge_ob.data.vertices.foreach_set('co', hinge_v.astype(np.float32).ravel())
         hinge_ob.data.update()
-        root.location = (slide + BOOK_POS[0], BOOK_POS[1], BOOK_POS[2])
+        place_book_motion(root, pose, BOOK_POS)
         for k, (ob, zr, zl) in enumerate(moving):
             # Every built sheet must have a progress entry. A silent fallback here used to pin
             # surplus sheets in the landed state, which showed the final page from frame one.
@@ -987,7 +1021,8 @@ def main():
                 f'for {len(moving)} sheets) - turn count and sheet count disagree')
             t = pose['sheet_progress'][k]
             if t != last_t[k]:
-                update_sheet(ob, t, zr, zl, job['curl'], smoothness=pose['smoothness'])
+                update_sheet(ob, t, zr, zl, job['curl'], smoothness=pose['smoothness'],
+                             cinematic=cinematic)
                 last_t[k] = t
         bpy.context.scene.frame_current = f
         bpy.context.scene.render.filepath = os.path.join(out, f'frame_{i:06d}.png')

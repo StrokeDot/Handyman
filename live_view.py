@@ -294,18 +294,20 @@ class LiveView(QOpenGLWidget):
                                  v.get('start_closed', True), page_count=values.get('page_count'),
                                  smoothness=values.get('smoothness', 1.0),
                                  recorded_clips=values.get('recorded_clips'),
-                                 clip_list=values.get('clip_list'))
+                                 clip_list=values.get('clip_list'), opening_style=values.get('opening_style'))
         self.layout = self.scene.layout
         self.timeline = self.scene.timeline
         if book.get('engine') == 'journal':
             # same shapes and camera as journal_scene.py (the final render); made again only when the
             # book itself changes (making it forgets every page shape it has worked out)
+            turn_style = ('cinematic' if self.scene.opening_style == 'cinematic'
+                          else values.get('turn_style') or 'natural')
             jkey = (book.get('folder'), tuple(sorted((k, str(v)) for k, v in book.items())),
                     values.get('page_count') or book.get('page_count'), values.get('page_shape') or 'flat',
-                    values.get('turn_style') or 'natural')
+                    turn_style)
             if getattr(self, 'journal', None) is None or getattr(self, '_journal_key', None) != jkey:
                 self.journal = JournalPreview(book, values.get('page_count') or book.get('page_count'),
-                                              values.get('page_shape') or 'flat', values.get('turn_style') or 'natural')
+                                              values.get('page_shape') or 'flat', turn_style)
                 self._journal_key = jkey
         else:
             self.journal, self._journal_key = None, None
@@ -432,9 +434,7 @@ class LiveView(QOpenGLWidget):
             if 0 <= k < len(pose['sheet_progress']):
                 pose['sheet_progress'][k] = float(v)
         if cover is not None and self.scene is not None:
-            sc = self.scene
-            angle, slide = sc.layout.opening(float(cover), slide=sc.slide, smoothness=sc.smoothness)
-            pose.update(cover_progress=float(cover), cover_angle=angle, cover_slide=slide)
+            pose.update(self.scene.cover_pose(float(cover)))
         return pose
 
     def mousePressEvent(self, e):
@@ -743,8 +743,14 @@ class LiveView(QOpenGLWidget):
 
         # Camera, exactly as the final render frames it.
         top = L.camera_top()
-        pts = cf.book_points(L.page_w, L.page_h, bm.COVER_MARGIN, top)
-        cam, r, u, fw, lens = cf.shot(self.cam, frac, (0.0, 0.0, top), L.book_w, L.cover_h, pts, self.aspect)
+        cinematic = self.scene.opening_style == 'cinematic'
+        pts = cf.book_points(L.page_w, L.page_h, bm.COVER_MARGIN, top, cinematic=cinematic)
+        if cinematic:
+            envelope = cf.opening_points(L.page_w, L.cover_w, L.cover_h, L.hinge, bm.COVER_T,
+                                         self.scene.slide, self.scene.smoothness)
+            pts = np.concatenate((pts, envelope))
+        cam, r, u, fw, lens = cf.shot(self.cam, frac, (0.0, 0.0, top), L.book_w, L.cover_h,
+                                     pts, self.aspect, cinematic=cinematic)
         gl.glViewport(x0, y0, w, h)
         gl.glMatrixMode(gl.GL_PROJECTION)
         gl.glLoadIdentity()
@@ -773,6 +779,7 @@ class LiveView(QOpenGLWidget):
         gl.glRotatef(float(rot[1]), 0, 1, 0)
         gl.glRotatef(float(rot[0]), 1, 0, 0)
         gl.glScalef(float(scale[0]), float(scale[1]), float(scale[2]))
+        self._apply_book_motion(pose)
         gl.glTranslatef(slide, 0, 0)
         leather = _hex_rgb(self.book.get('leather_color'))
         back_leather = _hex_rgb(self.book.get('back_cover_color') or self.book.get('leather_color'))
@@ -862,7 +869,10 @@ class LiveView(QOpenGLWidget):
         """Journal-engine book: shapes and camera from journal_geom, exactly as the render."""
         journal_geom.configure(journal_geom.N_SHEETS, float(self.book.get('page_aspect', 1.4318)),
                               **journal_geom.book_dims(self.book))
-        cam, r, u, fw, lens = journal_geom.camera(self.cam, frac, self.aspect, journal_geom.real_size(self.book))
+        cam, r, u, fw, lens = journal_geom.camera(
+            self.cam, frac, self.aspect, journal_geom.real_size(self.book),
+            cinematic=self.scene.opening_style == 'cinematic', slide=self.scene.slide,
+            smoothness=self.scene.smoothness)
         gl.glViewport(x0, y0, w, h)
         gl.glMatrixMode(gl.GL_PROJECTION)
         gl.glLoadIdentity()
@@ -892,10 +902,11 @@ class LiveView(QOpenGLWidget):
         gl.glRotatef(float(rot[1]), 0, 1, 0)
         gl.glRotatef(float(rot[0]), 1, 0, 0)
         gl.glScalef(float(scale[0]), float(scale[1]), float(scale[2]))
+        self._apply_book_motion(pose)
         self.journal.draw(pose, self._journal_tex, _hex_rgb(self.book.get('leather_color')),
                           _hex_rgb(self.book.get('paper_color')))
         hands = getattr(self, 'hands', None)
-        if hands is not None:                     # baked by Blender: the render's own movement
+        if hands is not None and self.scene.opening_style != 'cinematic':
             gl.glPushMatrix()                     # the hands go with the book as it slides
             try:
                 gl.glTranslatef(float(pose.get('cover_slide', 0.0)), 0.0, 0.0)
@@ -919,6 +930,16 @@ class LiveView(QOpenGLWidget):
         gl.glPopMatrix()
 
     # ------------------------------------------------------------- drawing
+    @staticmethod
+    def _apply_book_motion(pose):
+        motion = pose['book_motion']
+        if motion is not None:
+            offset, rotation = motion
+            gl.glTranslatef(*offset)
+            gl.glRotatef(rotation[2], 0, 0, 1)
+            gl.glRotatef(rotation[1], 0, 1, 0)
+            gl.glRotatef(rotation[0], 1, 0, 0)
+
     def _box(self, x0, x1, y0, y1, z0, z1, colour):
         gl.glDisable(gl.GL_TEXTURE_2D)
         gl.glColor3f(*colour)
@@ -1012,7 +1033,8 @@ class LiveView(QOpenGLWidget):
         if ck not in self._sheet_cache:
             v = sheet_vertices(t, L.page_w, L.page_h, NX, NY, zr, zl,
                                curl=self.values.get('curl', 0.9), gutter=L.gutter,
-                               smoothness=smoothness).astype(np.float32)
+                               smoothness=smoothness,
+                               cinematic=self.scene.opening_style == 'cinematic').astype(np.float32)
             if len(self._sheet_cache) > 400:      # make room first (clearing after storing lost it)
                 self._sheet_cache.clear()
             self._sheet_cache[ck] = (v, grid_normals(v).astype(np.float32))
