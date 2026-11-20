@@ -1,0 +1,27 @@
+00:00.354  cycles           | WARNING CUEW initialization failed: Error opening the library
+00:00.355  cycles           | WARNING HIPEW initialization failed: Error opening HIP dynamic library
+INFO Cycles on CPU (no GPU found)
+INFO Cycles tuned: 24 samples (adaptive), persistent data, denoiser OPENIMAGEDENOISE
+TOTAL 7
+00:08.350  render           | Saved: 'out/eye/frame_000000.png'
+PROGRESS 1 7
+00:15.673  render           | Saved: 'out/eye/frame_000001.png'
+PROGRESS 2 7
+00:22.594  render           | Saved: 'out/eye/frame_000002.png'
+PROGRESS 3 7
+00:29.639  render           | Saved: 'out/eye/frame_000003.png'
+PROGRESS 4 7
+00:36.865  render           | Saved: 'out/eye/frame_000004.png'
+PROGRESS 5 7
+00:43.875  render           | Saved: 'out/eye/frame_000005.png'
+PROGRESS 6 7
+00:50.704  render           | Saved: 'out/eye/frame_000006.png'
+PROGRESS 7 7
+DONE
+Blender 5.3.0 (hash 02f0899d78e3 built 2026-11-10 01:31:18)
+
+Blender quit
+/home/runner/work/Handyman/Handyman/journal_scene.py:37: DeprecationWarning: 'Material.use_nodes' is expected to be removed in Blender 6.0
+  mat.use_nodes = True
+/home/runner/work/Handyman/Handyman/journal_scene.py:580: DeprecationWarning: 'World.use_nodes' is expected to be removed in Blender 6.0
+  world.use_nodes = True

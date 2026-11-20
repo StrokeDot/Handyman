@@ -1,0 +1,4 @@
+ok test_leather_journal_is_the_only_book
+ok test_upgrade_ships_leather_journal_and_keeps_old_books_safe
+ok test_users_own_books_stay_listed
+ALL 3 UPGRADE TESTS PASSED
