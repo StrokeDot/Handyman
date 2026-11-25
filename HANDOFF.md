@@ -1,6 +1,8 @@
 # MotionCraft — Handoff (2026-11-25)
 
-> Assistants: read this first, then keep it current. Update it at the end of each work session and push it.
+> Assistants: read this first. After **every** change, update this file in the repo (push to `main`) and locally at
+> `C:\Users\Alejandro\AppData\Roaming\MotionCraft\HANDOFF.md`; send it to the owner when a new task starts.
+> Full rules: `AGENTS.md`.
 
 MotionCraft (repo `StrokeDot/Handyman`, formerly Handyman) is a Windows app (Python + PySide6) that drives
 Blender to render book page-turn animations from user-designed book templates. The current goal is a
